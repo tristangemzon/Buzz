@@ -433,19 +433,29 @@ function App(): JSX.Element {
 
       {talk.call && talk.call.state !== 'ringing' && (
         <div className="call-bar">
-          <span className="call-dot" />
-          {talk.call.state === 'inviting' ? (
-            <span>Calling {alias}…</span>
-          ) : (
-            <span>On a call with {alias} · {fmtCallTime(talk.elapsedSec)}</span>
-          )}
+          <div className="call-bar-row">
+            <span className="call-dot" />
+            {talk.call.state === 'inviting' ? (
+              <span className="call-bar-title">Calling {alias}…</span>
+            ) : (
+              <span className="call-bar-title">{alias} · {fmtCallTime(talk.elapsedSec)}</span>
+            )}
+            <span className="spacer" />
+            {talk.call.state === 'active' && (
+              <button onClick={() => talk.toggleMute()} title={talk.muted ? 'Unmute' : 'Mute'}>
+                {talk.muted ? 'Unmute' : 'Mute'}
+              </button>
+            )}
+            <button onClick={() => void talk.endCall()}>End</button>
+          </div>
           {talk.call.state === 'active' && (
             <div className="call-waves">
               <div className="call-wave-pair">
                 <span className="call-wave-label">You</span>
                 <WaveformCanvas
                   getAnalyser={talk.getMicAnalyser}
-                  color={talk.muted ? '#888' : '#7cf'}
+                  color={talk.muted ? '#5a5a5a' : '#33ff66'}
+                  bg="#001a05"
                   active={!talk.muted}
                 />
               </div>
@@ -453,18 +463,12 @@ function App(): JSX.Element {
                 <span className="call-wave-label">Them</span>
                 <WaveformCanvas
                   getAnalyser={talk.getRemoteAnalyser}
-                  color="#ff7eb6"
+                  color="#ff3399"
+                  bg="#1a0010"
                 />
               </div>
             </div>
           )}
-          <span className="spacer" />
-          {talk.call.state === 'active' && (
-            <button onClick={() => talk.toggleMute()} title={talk.muted ? 'Unmute' : 'Mute'}>
-              {talk.muted ? 'Unmute' : 'Mute'}
-            </button>
-          )}
-          <button onClick={() => void talk.endCall()}>End</button>
         </div>
       )}
       {talk.error && <div className="error" style={{ margin: '0 6px 6px' }}>{talk.error}</div>}

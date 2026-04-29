@@ -12,7 +12,7 @@ export function WaveformCanvas(props: {
   width?: number;
   active?: boolean;
 }): JSX.Element {
-  const { getAnalyser, color = '#7cf', bg = '#001428', height = 28, width = 120, active = true } = props;
+  const { getAnalyser, color = '#33ff66', bg = '#001a05', height = 22, width = 90, active = true } = props;
   const ref = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const dataRef = useRef<Uint8Array | null>(null);

@@ -1060,8 +1060,8 @@ html[data-chat-theme='compact'] .chat-log > div {
 .call-waves {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-left: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .call-wave-pair {
   display: flex;
@@ -1070,6 +1070,8 @@ html[data-chat-theme='compact'] .chat-log > div {
   background: #001428;
   padding: 2px 4px;
   border: 1px solid #062459;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 .call-wave-label {
   font-size: 9px;
@@ -1077,6 +1079,7 @@ html[data-chat-theme='compact'] .chat-log > div {
   letter-spacing: 0.5px;
   color: #9cf;
   min-width: 26px;
+  flex: 0 0 auto;
 }
 .waveform {
   image-rendering: pixelated;
