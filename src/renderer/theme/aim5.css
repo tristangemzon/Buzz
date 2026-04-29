@@ -236,6 +236,57 @@ button:disabled {
   text-decoration: line-through;
   font-style: italic;
 }
+
+/* Buddy List split layout: buddies on top, chat rooms pinned below. */
+.buddylist-split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+  padding: 6px;
+}
+.buddylist-buddies {
+  flex: 1;
+  min-height: 60px;
+}
+.buddylist-rooms {
+  display: flex;
+  flex-direction: column;
+  /* Pinned panel — fixed-ish height so the buddies list flexes above. */
+  flex: 0 0 38%;
+  min-height: 100px;
+  max-height: 50%;
+  gap: 2px;
+}
+.buddylist-rooms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: bold;
+  font-size: 11px;
+  padding: 0 2px;
+}
+.buddylist-rooms-new {
+  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 1;
+  font-weight: bold;
+  cursor: pointer;
+}
+.buddylist-rooms-list {
+  flex: 1;
+  min-height: 0;
+}
+.room-glyph {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  margin-right: 4px;
+  color: var(--c-title, #444);
+  font-weight: bold;
+}
 .warn-badge {
   display: inline-block;
   margin-left: 6px;

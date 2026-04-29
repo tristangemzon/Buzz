@@ -206,9 +206,6 @@ function App(): JSX.Element {
         <button onClick={() => setShowInfo(true)}>My Info</button>
         <button onClick={() => setShowProfile(true)}>My Profile</button>
         <button onClick={() => setShowThemes(true)}>Themes</button>
-        <button onClick={() => { setRoomName(''); setRoomMembers(new Set()); setShowRoom(true); }}>
-          Chat Room
-        </button>
         <button
           onClick={async () => {
             try {
@@ -243,41 +240,82 @@ function App(): JSX.Element {
         <button onClick={signOff}>Sign Off</button>
       </div>
 
-      <div className="bevel-in list" style={{ margin: 6 }}>
-        {Object.keys(grouped).length === 0 ? (
-          <div className="row muted" style={{ padding: 10 }}>
-            No buddies yet. Click <b>Add Buddy</b> and paste a buddy code.
-          </div>
-        ) : (
-          Object.entries(grouped).map(([g, arr]) => (
-            <div key={g}>
-              <div className="group">
-                {g} ({arr.filter((b) => b.status !== 'offline').length}/{arr.length})
-              </div>
-              {arr.map((b) => (
-                <div
-                  className={`row${b.blocked ? ' blocked' : ''}`}
-                  key={b.peerId}
-                  onDoubleClick={() => openIm(b.peerId)}
-                  onContextMenu={(e) => openCtx(e, b.peerId)}
-                  title={
-                    awayMessages[b.peerId]
-                      ? `${b.peerId}\nAway: ${awayMessages[b.peerId]}`
-                      : b.peerId
-                  }
-                >
-                  <span className={`status ${b.status}`} />
-                  {b.alias}
-                  {b.warnLevel > 0 && (
-                    <span className="warn-badge" title={`Warned ${b.warnLevel}%`}>
-                      {b.warnLevel}%
-                    </span>
-                  )}
-                </div>
-              ))}
+      <div className="buddylist-split">
+        <div className="bevel-in list buddylist-buddies">
+          {Object.keys(grouped).length === 0 ? (
+            <div className="row muted" style={{ padding: 10 }}>
+              No buddies yet. Click <b>Add Buddy</b> and paste a buddy code.
             </div>
-          ))
-        )}
+          ) : (
+            Object.entries(grouped).map(([g, arr]) => (
+              <div key={g}>
+                <div className="group">
+                  {g} ({arr.filter((b) => b.status !== 'offline').length}/{arr.length})
+                </div>
+                {arr.map((b) => (
+                  <div
+                    className={`row${b.blocked ? ' blocked' : ''}`}
+                    key={b.peerId}
+                    onDoubleClick={() => openIm(b.peerId)}
+                    onContextMenu={(e) => openCtx(e, b.peerId)}
+                    title={
+                      awayMessages[b.peerId]
+                        ? `${b.peerId}\nAway: ${awayMessages[b.peerId]}`
+                        : b.peerId
+                    }
+                  >
+                    <span className={`status ${b.status}`} />
+                    {b.alias}
+                    {b.warnLevel > 0 && (
+                      <span className="warn-badge" title={`Warned ${b.warnLevel}%`}>
+                        {b.warnLevel}%
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="buddylist-rooms">
+          <div className="buddylist-rooms-header">
+            <span>Chat Rooms</span>
+            <button
+              className="buddylist-rooms-new"
+              title="New chat room"
+              onClick={() => {
+                setRoomName('');
+                setRoomMembers(new Set());
+                setShowRoom(true);
+              }}
+            >
+              +
+            </button>
+          </div>
+          <div className="bevel-in list buddylist-rooms-list">
+            {rooms.length === 0 ? (
+              <div className="row muted" style={{ padding: 8 }}>
+                No chat rooms. Click <b>+</b> to create one.
+              </div>
+            ) : (
+              rooms.map((r) => (
+                <div
+                  className="row"
+                  key={r.id}
+                  onDoubleClick={() => void window.buzzWindows.openChat(r.id)}
+                  title={`${r.members.length} member(s)`}
+                >
+                  <span className="room-glyph">#</span>
+                  {r.name}
+                  <span className="muted" style={{ marginLeft: 6, fontSize: 11 }}>
+                    ({r.members.length})
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {showAdd && (
@@ -389,22 +427,8 @@ function App(): JSX.Element {
             ))}
           </div>
           {rooms.length > 0 && (
-            <div style={{ marginTop: 6, borderTop: '1px solid #ccc', paddingTop: 4 }}>
-              <div style={{ fontSize: 11, opacity: 0.7 }}>Existing rooms:</div>
-              <div style={{ maxHeight: 80, overflowY: 'auto' }}>
-                {rooms.map((r) => (
-                  <button
-                    key={r.id}
-                    style={{ display: 'block', width: '100%', textAlign: 'left' }}
-                    onClick={() => {
-                      setShowRoom(false);
-                      void window.buzzWindows.openChat(r.id);
-                    }}
-                  >
-                    {r.name} ({r.members.length})
-                  </button>
-                ))}
-              </div>
+            <div style={{ marginTop: 6, fontSize: 11, opacity: 0.7 }}>
+              Tip: existing rooms are listed in the bottom panel — double-click to open.
             </div>
           )}
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
