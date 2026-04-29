@@ -792,11 +792,15 @@ export class Session {
     if (req && req.direction !== 'out') return;
     repos.deleteBuddyRequest(this.db, peerId);
     if (p.accepted) {
-      // Promote our pending entry to a real buddy. We don't have an alias
-      // here unless the original request stashed one; use the screenName the
-      // remote announced as a sensible default.
-      const alias = p.screenName?.trim() || `${peerId.slice(0, 8)}…`;
+      // Prefer the alias we picked locally when sending the request; fall
+      // back to the screen name the remote announced; finally a short id.
+      const alias =
+        req?.screenName?.trim() ||
+        p.screenName?.trim() ||
+        `${peerId.slice(0, 8)}…`;
       repos.addBuddy(this.db, peerId, alias, 'Buddies');
+      // Drop them out of the "Nearby" list now that they're a buddy.
+      this.forgetDiscovered(peerId);
     }
     const ev: BuddyRequestResolvedEvent = { peerId, accepted: p.accepted };
     this.broadcast(IPC.EvtBuddyRequestResolved, ev);
