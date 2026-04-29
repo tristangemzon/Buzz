@@ -276,18 +276,23 @@ export function registerIpc(session: Session): void {
     const db = requireDb(session);
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
-    const { roomId, keyB64, createdAt, members: full } = await rooms.createRoom({ name, members });
-    repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
-    repos.setRoomMembers(db, roomId, full);
-    // Auto-create the default "general" channel locally. We don't broadcast
-    // it: every member's session will create its own default on invite.
-    repos.upsertRoomChannel(db, {
+    // Build the default channel UP FRONT so we can ship its id along with
+    // the invite — every member then uses the same default-channel id.
+    const createdAt = Date.now();
+    const defaultChannel = {
       id: randomUUID(),
-      roomId,
       name: 'general',
       isDefault: true,
       createdAt,
+    };
+    const { roomId, keyB64, members: full } = await rooms.createRoom({
+      name,
+      members,
+      channels: [defaultChannel],
     });
+    repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
+    repos.setRoomMembers(db, roomId, full);
+    repos.upsertRoomChannel(db, { ...defaultChannel, roomId });
     const s = await sodium();
     session.cacheRoomKey(roomId, s.from_base64(keyB64, s.base64_variants.ORIGINAL));
     session.cacheRoomMembers(roomId, full);
@@ -299,7 +304,14 @@ export function registerIpc(session: Session): void {
     if (!rooms) throw new Error('Locked');
     const room = repos.getRoom(db, roomId);
     if (!room) throw new Error('Unknown room');
-    const members = await rooms.invite(roomId, peerId, room.name);
+    // Snapshot channels so the invitee inherits the same channel ids.
+    const channels = repos.listRoomChannels(db, roomId).map((c) => ({
+      id: c.id,
+      name: c.name,
+      isDefault: c.isDefault,
+      createdAt: c.createdAt,
+    }));
+    const members = await rooms.invite(roomId, peerId, room.name, channels);
     repos.setRoomMembers(db, roomId, members);
     session.cacheRoomMembers(roomId, members);
     return { id: roomId, name: room.name, members, createdAt: room.createdAt };

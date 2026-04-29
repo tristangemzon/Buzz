@@ -112,6 +112,7 @@ export class RoomService {
   async createRoom(opts: {
     name: string;
     members: string[];
+    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
   }): Promise<{ roomId: string; keyB64: string; createdAt: number; members: string[] }> {
     const s = await sodium();
     const roomId = randomUUID();
@@ -132,6 +133,7 @@ export class RoomService {
               members: fullMembers,
               keyB64,
               ts: createdAt,
+              channels: opts.channels,
             })
             .catch(() => undefined),
         ),
@@ -139,7 +141,12 @@ export class RoomService {
     return { roomId, keyB64, createdAt, members: fullMembers };
   }
 
-  async invite(roomId: string, peerId: string, name: string): Promise<string[]> {
+  async invite(
+    roomId: string,
+    peerId: string,
+    name: string,
+    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>,
+  ): Promise<string[]> {
     const key = this.bridge.getRoomKey(roomId);
     if (!key) throw new Error('Unknown or non-member room');
     const s = await sodium();
@@ -153,6 +160,7 @@ export class RoomService {
         members,
         keyB64,
         ts: Date.now(),
+        channels,
       })
       .catch(() => undefined);
     await this.broadcastMeta(roomId, { roomId, members, name });

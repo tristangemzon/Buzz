@@ -356,8 +356,42 @@ export class Session {
             return;
           }
           this.roomMembers.set(p.roomId, [...p.members]);
-          // Ensure the room has a default "general" channel locally.
-          if (!repos.getDefaultChannelId(this.db, p.roomId)) {
+          // Apply the channel snapshot from the inviter so we share the same
+          // channel ids (avoids divergent default-channel UUIDs that would
+          // produce ghost "channel" placeholders on first message).
+          if (p.channels && p.channels.length > 0) {
+            for (const ch of p.channels) {
+              repos.upsertRoomChannel(this.db, {
+                id: ch.id,
+                roomId: p.roomId,
+                name: ch.name,
+                isDefault: ch.isDefault,
+                createdAt: ch.createdAt,
+              });
+            }
+            // Clean up any pre-existing placeholder default that was created
+            // before this fix landed (different id, same room).
+            const desiredDefault = p.channels.find((c) => c.isDefault);
+            if (desiredDefault) {
+              const all = repos.listRoomChannels(this.db, p.roomId);
+              for (const c of all) {
+                if (c.id !== desiredDefault.id && (c.isDefault || c.name === 'channel')) {
+                  // Reattribute its messages to the real default and drop it.
+                  this.db
+                    .prepare(
+                      'UPDATE room_messages SET channel_id=? WHERE channel_id=?',
+                    )
+                    .run(desiredDefault.id, c.id);
+                  repos.deleteRoomChannel(this.db, c.id);
+                  this.broadcast(IPC.EvtRoomChannel, {
+                    kind: 'removed',
+                    channel: c,
+                  } satisfies RoomChannelEvent);
+                }
+              }
+            }
+          } else if (!repos.getDefaultChannelId(this.db, p.roomId)) {
+            // Legacy peer (pre-channels) — fall back to a local default.
             const ch: RoomChannel = {
               id: randomUUID(),
               roomId: p.roomId,
@@ -377,28 +411,12 @@ export class Session {
         },
         onMessage: (fromPeerId, m) => {
           if (!this.db) return;
-          // Ensure the channel exists locally; if a peer references a channel
-          // we don't know about yet, auto-create a placeholder so the message
-          // is preserved.
+          // If the peer references a channel we don't know about (or sends
+          // legacy frames without channelId), route it to our local default
+          // channel rather than creating a ghost placeholder — the channel
+          // will materialize properly when its `room-channel-add` arrives.
           let channelId = m.channelId;
-          if (channelId) {
-            const existing = repos.getRoomChannel(this.db, channelId);
-            if (!existing) {
-              const placeholder: RoomChannel = {
-                id: channelId,
-                roomId: m.roomId,
-                name: 'channel',
-                isDefault: false,
-                createdAt: m.ts,
-              };
-              repos.upsertRoomChannel(this.db, placeholder);
-              this.broadcast(IPC.EvtRoomChannel, {
-                kind: 'added',
-                channel: placeholder,
-              } satisfies RoomChannelEvent);
-            }
-          } else {
-            // Legacy peer (pre-channels): route to default channel.
+          if (!channelId || !repos.getRoomChannel(this.db, channelId)) {
             channelId = repos.getDefaultChannelId(this.db, m.roomId) ?? '';
           }
           const stored: RoomMessage = {

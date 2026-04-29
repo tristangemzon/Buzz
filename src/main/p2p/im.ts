@@ -49,6 +49,10 @@ export type Frame =
       members: string[];
       keyB64: string; // 32-byte secretbox key, base64
       ts: number;
+      // Channel list at the time of invite, so the invitee creates the same
+      // channel ids the inviter is using (avoids divergent default-channel
+      // UUIDs that would otherwise produce ghost "channel" placeholders).
+      channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
     }
   | {
       type: 'room-msg';
@@ -77,6 +81,7 @@ export type RoomInvitePayload = {
   members: string[];
   keyB64: string;
   ts: number;
+  channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
 };
 export type RoomMsgPayload = {
   roomId: string;
@@ -301,6 +306,7 @@ export class ImService {
             members: f.members,
             keyB64: f.keyB64,
             ts: f.ts,
+            channels: Array.isArray(f.channels) ? f.channels : undefined,
           });
         }
         break;
