@@ -8,6 +8,7 @@ export const IPC = {
   AuthLock: 'auth:lock',
   AuthGetPlatform: 'auth:platform',
   AuthGetMyId: 'auth:getMyId',
+  AuthFactoryReset: 'auth:factoryReset',
 
   // buddies
   BuddiesList: 'buddies:list',

@@ -557,6 +557,62 @@ button:disabled {
   gap: 8px;
   padding: 8px 12px 12px;
 }
+.modal-actions button.danger {
+  background: #c8302a;
+  color: #fff;
+  border: 1px solid #7a1c18;
+}
+.modal-actions button.danger:hover:not(:disabled) {
+  background: #b02923;
+}
+.modal-actions button.danger:disabled {
+  opacity: 0.6;
+}
+
+/* Sectioned settings dialog (cog menu on Sign On). */
+.settings-modal {
+  min-width: 480px;
+  max-width: 560px;
+}
+.settings-body {
+  display: flex;
+  min-height: 220px;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-right: 1px solid #bbb;
+  background: #ececec;
+  min-width: 110px;
+}
+.settings-nav-item {
+  text-align: left;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings-nav-item:hover {
+  background: #e0e8f5;
+}
+.settings-nav-item.active {
+  background: #fff;
+  border-color: #888;
+  font-weight: bold;
+}
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+.settings-danger {
+  border: 1px solid #c8302a;
+  background: #fff5f4;
+  padding: 10px;
+  border-radius: 3px;
+}
 
 .label {
   font-size: 11px;

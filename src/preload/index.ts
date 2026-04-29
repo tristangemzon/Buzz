@@ -14,6 +14,7 @@ const api: AppApi = {
   createIdentity: (req) => ipcRenderer.invoke(IPC.AuthCreate, req),
   unlock: (req) => ipcRenderer.invoke(IPC.AuthUnlock, req),
   lock: () => ipcRenderer.invoke(IPC.AuthLock),
+  factoryReset: () => ipcRenderer.invoke(IPC.AuthFactoryReset),
   getPlatform: () => ipcRenderer.invoke(IPC.AuthGetPlatform),
   getMyId: () => ipcRenderer.invoke(IPC.AuthGetMyId),
 

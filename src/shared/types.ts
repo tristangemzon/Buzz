@@ -52,6 +52,7 @@ export type AppApi = {
   createIdentity(req: CreateIdentityReq): Promise<{ profileId: string; buddyCode: string }>;
   unlock(req: UnlockReq): Promise<{ ok: true; profileId: string; buddyCode: string }>;
   lock(): Promise<void>;
+  factoryReset(): Promise<void>;
   getPlatform(): Promise<Platform>;
   getMyId(): Promise<{ peerId: string; buddyCode: string; screenName: string }>;
 

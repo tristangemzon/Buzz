@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
-import { NetworkSettings } from '../../components/NetworkSettings';
+import { SignOnSettings } from '../../components/SignOnSettings';
 import type { ProfileSummary } from '@shared/schemas';
 
 type Mode = 'signin' | 'create';
@@ -157,13 +157,30 @@ function App(): JSX.Element {
         </div>
         <button
           className="signon-cog"
-          title="Network settings"
-          aria-label="Network settings"
+          title="Settings"
+          aria-label="Settings"
           onClick={() => setShowSettings(true)}
         >
           ⚙
         </button>
-        {showSettings && <NetworkSettings onClose={() => setShowSettings(false)} />}
+        {showSettings && (
+          <SignOnSettings
+            onClose={() => setShowSettings(false)}
+            onReset={() => {
+              // After a factory reset, profiles are gone — re-fetch and snap
+              // back to the create-account flow.
+              setSelectedId('');
+              setScreenName('');
+              setPass('');
+              setPass2('');
+              setErr('');
+              window.buzz.listProfiles().then((list) => {
+                setProfiles(list);
+                setMode('create');
+              });
+            }}
+          />
+        )}
       </div>
     </div>
   );

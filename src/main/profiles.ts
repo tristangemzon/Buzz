@@ -97,6 +97,31 @@ export function removeProfile(id: string): void {
   }
 }
 
+// Wipe all local Buzz state: every profile (keystores + encrypted DBs), the
+// profile index, and the plaintext network-mode config. The user must be
+// locked before calling this — Session.factoryReset enforces that. Best
+// effort: errors per-file are swallowed so a partial reset still proceeds.
+export function wipeAll(): void {
+  // Drop the profile index.
+  try {
+    fs.rmSync(indexPath(), { force: true });
+  } catch {
+    /* ignore */
+  }
+  // Drop every per-profile dir.
+  try {
+    fs.rmSync(profilesRoot(), { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  // Drop the network-mode config.
+  try {
+    fs.rmSync(path.join(userData(), 'network.json'), { force: true });
+  } catch {
+    /* ignore */
+  }
+}
+
 // Move legacy single-profile install (userData/keystore.bin + buzz.sqlite)
 // into a new profile dir so existing users keep their identity & history.
 // Idempotent: does nothing if profiles.json already has entries or no legacy

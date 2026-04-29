@@ -70,6 +70,17 @@ export class Session {
     return profiles.listProfiles();
   }
 
+  // Wipe ALL local data — every profile (keystore + encrypted DB), the
+  // plaintext profile index, and the network-mode config. Forces a lock
+  // first so the open DB is closed cleanly. Used by the SignOn settings
+  // "Reset all data" flow.
+  async factoryReset(): Promise<void> {
+    if (this.state === 'unlocked') {
+      await this.lock();
+    }
+    profiles.wipeAll();
+  }
+
   async create(
     screenName: string,
     passphrase: string,

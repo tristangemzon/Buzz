@@ -66,6 +66,7 @@ export function registerIpc(session: Session): void {
     return { ok: true as const, profileId: r.profileId, buddyCode: r.buddyCode };
   });
   handle(IPC.AuthLock, null, () => session.lock());
+  handle(IPC.AuthFactoryReset, null, () => session.factoryReset());
   handle(IPC.AuthGetPlatform, null, () => platform());
   handle(IPC.AuthGetMyId, null, () => ({
     peerId: session.peerIdStr(),
