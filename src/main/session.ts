@@ -1,0 +1,472 @@
+// Session: holds the unlocked DB, libp2p node, and IM service. Locked by
+// default; unlock() / create() bring it online.
+
+import path from 'node:path';
+import * as fsp from 'node:fs/promises';
+import { app, BrowserWindow } from 'electron';
+import type { Libp2p } from 'libp2p';
+
+import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
+import { openDb, type Db } from './db/open.js';
+import * as repos from './db/repos.js';
+import { ImService } from './p2p/im.js';
+import { MailboxService } from './p2p/mailbox.js';
+import { PresenceManager } from './p2p/presence.js';
+import { RoomService } from './p2p/rooms.js';
+import { XferService } from './p2p/xfer.js';
+import { buddyCodeFor, createNode } from './p2p/node.js';
+import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
+import { IPC } from '@shared/ipc.js';
+import type {
+  ImAckEvent,
+  ImReceivedEvent,
+  BuddyStatusEvent,
+  PeerProfile,
+  RoomInvitedEvent,
+  RoomMembersEvent,
+  RoomMessage,
+  XferDoneEvent,
+  XferOfferEvent,
+  XferProgressEvent,
+} from '@shared/schemas.js';
+import { sodium } from './crypto/keystore.js';
+
+export type SessionState = 'locked' | 'unlocked';
+
+export class Session {
+  state: SessionState = 'locked';
+  identity: IdentityMaterial | null = null;
+  db: Db | null = null;
+  node: Libp2p | null = null;
+  im: ImService | null = null;
+  presence: PresenceManager | null = null;
+  xfer: XferService | null = null;
+  rooms: RoomService | null = null;
+  mailbox: MailboxService | null = null;
+  // Decoded room keys keyed by roomId. Populated on bringUp from DB and on
+  // accepted invites.
+  private roomKeys = new Map<string, Uint8Array>();
+  // In-memory cache of members per known room (mirror of room_members table).
+  private roomMembers = new Map<string, string[]>();
+  screenName = '';
+
+  private readonly keystore: Keystore;
+
+  constructor() {
+    this.keystore = Keystore.at(app.getPath('userData'));
+  }
+
+  hasIdentity(): Promise<boolean> {
+    return this.keystore.exists();
+  }
+
+  async create(screenName: string, passphrase: string): Promise<{ buddyCode: string }> {
+    if (await this.keystore.exists()) {
+      throw new Error('Identity already exists; unlock instead');
+    }
+    const id = await this.keystore.create(passphrase);
+    await this.bringUp(id, screenName);
+    return { buddyCode: this.buddyCode() };
+  }
+
+  async unlock(passphrase: string): Promise<{ buddyCode: string }> {
+    if (this.state === 'unlocked') return { buddyCode: this.buddyCode() };
+    const id = await this.keystore.unlock(passphrase);
+    await this.bringUp(id, '');
+    return { buddyCode: this.buddyCode() };
+  }
+
+  async lock(): Promise<void> {
+    if (this.presence) {
+      try {
+        await this.presence.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.xfer) {
+      try {
+        await this.xfer.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.im) {
+      try {
+        await this.im.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.node) {
+      try {
+        await this.node.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.db) this.db.close();
+    this.identity = null;
+    this.db = null;
+    this.node = null;
+    this.im = null;
+    this.presence = null;
+    this.xfer = null;
+    this.rooms = null;
+    if (this.mailbox) await this.mailbox.stop().catch(() => undefined);
+    this.mailbox = null;
+    this.roomKeys.clear();
+    this.roomMembers.clear();
+    this.state = 'locked';
+  }
+
+  buddyCode(): string {
+    if (!this.node) throw new Error('Locked');
+    return buddyCodeFor(this.node.peerId);
+  }
+
+  peerIdStr(): string {
+    if (!this.node) throw new Error('Locked');
+    return this.node.peerId.toString();
+  }
+
+  private async bringUp(id: IdentityMaterial, screenNameIfNew: string): Promise<void> {
+    this.identity = id;
+    const dbFile = path.join(app.getPath('userData'), 'buzz.sqlite');
+    this.db = openDb(dbFile, id.dbKey);
+
+    // Establish identity row in DB.
+    const network = loadNetworkConfig();
+    const node = await createNode({ identity: id, network });
+    this.node = node;
+    const peerIdStr = node.peerId.toString();
+    const existing = repos.getIdentity(this.db);
+    if (existing) {
+      this.screenName = existing.screenName;
+    } else {
+      const sn = screenNameIfNew || 'Buddy';
+      this.screenName = sn;
+      repos.setIdentity(this.db, peerIdStr, sn);
+    }
+    if (screenNameIfNew && existing) {
+      // honour rename via create flow when keystore was fresh
+      this.screenName = screenNameIfNew;
+      repos.setIdentity(this.db, peerIdStr, screenNameIfNew);
+    }
+
+    // In server mode, ensure the configured server's PeerId is registered as
+    // a mailbox relay so offline-message push/poll uses it transparently. The
+    // user can still add/remove other relays from prefs.
+    if (network.mode === 'server' && network.serverAddr) {
+      const relayPid = peerIdFromMultiaddr(network.serverAddr);
+      if (relayPid) {
+        const prefs = repos.getPrefs(this.db);
+        if (!prefs.mailboxRelays.includes(relayPid)) {
+          const next = [...prefs.mailboxRelays, relayPid].slice(0, 8);
+          repos.setPrefs(this.db, { mailboxRelays: next });
+        }
+      }
+    }
+
+    this.im = new ImService(
+      node,
+      {
+        onMessage: (peer, m) => this.handleIncoming(peer, m),
+        onAck: (peer, msgId, status) => this.handleAck(peer, msgId, status),
+        onTyping: (peer, typing) => this.broadcast(IPC.EvtTyping, { peerId: peer, typing }),
+        onProfile: (peer, p) => {
+          const ev: BuddyStatusEvent = {
+            peerId: peer,
+            status: (p.status as BuddyStatusEvent['status']) ?? 'online',
+            awayMessage: p.awayMessage,
+          };
+          this.broadcast(IPC.EvtBuddyStatus, ev);
+          // Cache the custom profile fields when present so the IM window
+          // can show a 'View Profile' pane styled to the buddy's choices.
+          const hasCustom =
+            !!p.aboutText ||
+            !!p.textColor ||
+            !!p.bgColor ||
+            !!p.fontFamily ||
+            !!p.avatar ||
+            !!p.bgImage;
+          if (this.db) {
+            const cached: PeerProfile = {
+              peerId: peer,
+              screenName: p.screenName ?? '',
+              aboutText: p.aboutText ?? '',
+              textColor: p.textColor ?? '',
+              bgColor: p.bgColor ?? '',
+              fontFamily: p.fontFamily ?? '',
+              avatarDataUrl: p.avatar ?? '',
+              bgImageDataUrl: p.bgImage ?? '',
+              lastSeen: Date.now(),
+            };
+            // Only write if any field is meaningful — avoids stomping a richer
+            // cached profile when the peer sends a bare presence-only update.
+            if (hasCustom || p.screenName) {
+              repos.upsertPeerProfile(this.db, cached);
+              this.broadcast(IPC.EvtPeerProfile, cached);
+            }
+          }
+        },
+        onRoomInvite: (peer, p) => this.rooms?.handleInvite(peer, p),
+        onRoomMsg: (peer, p) => this.rooms?.handleMsg(peer, p),
+        onRoomLeave: (peer, roomId) => this.rooms?.handleLeave(peer, roomId),
+        onRoomMeta: (peer, p) => this.rooms?.handleMeta(peer, p),
+      },
+      (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
+    );
+    await this.im.start();
+
+    // File transfer service (separate libp2p protocol).
+    this.xfer = new XferService(
+      node,
+      {
+        onOffer: (o) => {
+          if (!this.db) return;
+          // Persist a pending row so it shows in history even if declined.
+          repos.insertTransfer(this.db, {
+            id: o.id,
+            peerId: o.peerId,
+            direction: 'in',
+            fileName: o.fileName,
+            fileSize: o.fileSize,
+            fileHash: o.hash,
+            status: 'pending',
+            savedPath: null,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          const ev: XferOfferEvent = {
+            id: o.id,
+            peerId: o.peerId,
+            fileName: o.fileName,
+            fileSize: o.fileSize,
+            hash: o.hash,
+          };
+          this.broadcast(IPC.EvtXferOffered, ev);
+        },
+        onProgress: (id, peerId, direction, bytes, total) => {
+          const ev: XferProgressEvent = { id, peerId, direction, bytes, total };
+          this.broadcast(IPC.EvtXferProgress, ev);
+        },
+        onDone: (id, peerId, direction, fileName, ok, error, savedPath) => {
+          if (this.db) {
+            const status = ok ? 'complete' : error === 'declined' ? 'declined' : 'failed';
+            repos.updateTransferStatus(this.db, id, status, savedPath ?? null);
+          }
+          const ev: XferDoneEvent = { id, peerId, direction, fileName, ok, error, savedPath };
+          this.broadcast(IPC.EvtXferDone, ev);
+        },
+      },
+      (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
+      fsp,
+    );
+    await this.xfer.start();
+
+    await node.start();
+
+    // Presence after node is up so peer:connect events flow.
+    const db = this.db;
+    this.presence = new PresenceManager(
+      node,
+      this.im,
+      () => this.screenName,
+      {
+        getIdleMinutes: () => repos.getPrefs(db).idleMinutes,
+        getAwayMessage: () => repos.getPrefs(db).awayMessage,
+        getLastStatus: () => repos.getPrefs(db).lastStatus,
+        setLastStatus: (s) => {
+          repos.setPrefs(db, { lastStatus: s });
+        },
+        getProfile: () => repos.getPrefs(db).profile,
+      },
+      (peerId, status, awayMessage) => {
+        const ev: BuddyStatusEvent = { peerId, status, awayMessage };
+        this.broadcast(IPC.EvtBuddyStatus, ev);
+      },
+    );
+    this.presence.start();
+
+    // Multi-party chat rooms. Decode all known room keys into RAM so the
+    // RoomBridge can return them synchronously when encrypting/decrypting.
+    const s = await sodium();
+    for (const r of repos.listRooms(this.db)) {
+      try {
+        this.roomKeys.set(r.id, s.from_base64(r.keyB64, s.base64_variants.ORIGINAL));
+        this.roomMembers.set(r.id, r.members);
+      } catch {
+        // Corrupt key — skip.
+      }
+    }
+    this.rooms = new RoomService(
+      this.im,
+      {
+        onInvite: (fromPeerId, p) => {
+          if (!this.db) return;
+          // Persist room + key + roster, cache the key, and notify renderers.
+          repos.upsertRoom(this.db, {
+            id: p.roomId,
+            name: p.name,
+            keyB64: p.keyB64,
+            createdAt: p.ts,
+          });
+          repos.setRoomMembers(this.db, p.roomId, p.members);
+          try {
+            this.roomKeys.set(p.roomId, s.from_base64(p.keyB64, s.base64_variants.ORIGINAL));
+          } catch {
+            return;
+          }
+          this.roomMembers.set(p.roomId, [...p.members]);
+          const ev: RoomInvitedEvent = {
+            roomId: p.roomId,
+            name: p.name,
+            fromPeerId,
+            members: p.members,
+          };
+          this.broadcast(IPC.EvtRoomInvited, ev);
+        },
+        onMessage: (fromPeerId, m) => {
+          if (!this.db) return;
+          const stored: RoomMessage = {
+            id: m.id,
+            roomId: m.roomId,
+            fromPeerId,
+            fromName: m.fromName,
+            direction: 'in',
+            ts: m.ts,
+            body: m.body,
+          };
+          repos.insertRoomMessage(this.db, stored);
+          this.broadcast(IPC.EvtRoomMessage, stored);
+        },
+        onMembers: (roomId, members, name) => {
+          if (!this.db) return;
+          repos.setRoomMembers(this.db, roomId, members);
+          this.roomMembers.set(roomId, [...members]);
+          if (name) {
+            const cur = repos.getRoom(this.db, roomId);
+            if (cur && cur.name !== name) {
+              repos.upsertRoom(this.db, {
+                id: cur.id,
+                name,
+                keyB64: cur.keyB64,
+                createdAt: cur.createdAt,
+              });
+            }
+          }
+          const ev: RoomMembersEvent = { roomId, members };
+          this.broadcast(IPC.EvtRoomMembers, ev);
+        },
+        onLeave: (fromPeerId, roomId) => {
+          if (!this.db) return;
+          repos.removeRoomMember(this.db, roomId, fromPeerId);
+          const members = repos.getRoomMembers(this.db, roomId);
+          this.roomMembers.set(roomId, members);
+          const ev: RoomMembersEvent = { roomId, members };
+          this.broadcast(IPC.EvtRoomMembers, ev);
+        },
+      },
+      {
+        getRoomKey: (id) => this.roomKeys.get(id) ?? null,
+        getRoomMembers: (id) => this.roomMembers.get(id) ?? (this.db ? repos.getRoomMembers(this.db, id) : []),
+        myPeerId: () => this.peerIdStr(),
+        myScreenName: () => this.screenName,
+      },
+    );
+
+    // Offline mailbox relay. Acts as both a server (queues envelopes addressed
+    // to other peers and serves them on fetch) and a client (pushes our
+    // outgoing messages to relays when direct delivery fails, and polls
+    // relays for envelopes addressed to us).
+    this.mailbox = new MailboxService(
+      node,
+      this.db,
+      {
+        identity: id,
+        deliver: (m) => this.deliverMailboxMessage(m),
+      },
+      () => (this.db ? repos.getPrefs(this.db).mailboxRelays : []),
+    );
+    await this.mailbox.start();
+    // Best-effort initial poll. Don't block bringUp on it — relays may be
+    // unreachable; the periodic timer will retry.
+    void this.mailbox.pollAll().catch(() => undefined);
+
+    this.state = 'unlocked';
+  }
+
+  // Deliver a sealed-and-verified mailbox envelope as if it had arrived live.
+  // Returns true if accepted (caller acks the relay); false if dropped.
+  private async deliverMailboxMessage(m: {
+    id: string;
+    ts: number;
+    body: string;
+    fromPeerId: string;
+  }): Promise<boolean> {
+    if (!this.db || !this.im) return false;
+    if (repos.isBlocked(this.db, m.fromPeerId)) return true; // drop silently but ack
+    // De-dupe against existing local history (mailbox + retried sends).
+    const existing = this.db
+      .prepare('SELECT 1 FROM messages WHERE id=?')
+      .get(m.id) as { '1'?: number } | undefined;
+    if (existing) return true;
+    const msg: ImReceivedEvent = {
+      id: m.id,
+      peerId: m.fromPeerId,
+      direction: 'in',
+      ts: m.ts,
+      body: m.body,
+      status: 'delivered',
+    };
+    repos.insertMessage(this.db, msg);
+    this.broadcast(IPC.EvtImReceived, msg);
+    this.broadcast(IPC.EvtMailboxDelivered, { peerId: m.fromPeerId, count: 1 });
+    return true;
+  }
+
+  // Helpers used by IPC handlers to manipulate the in-memory key/member caches
+  // when a local user creates or destroys a room.
+  cacheRoomKey(roomId: string, key: Uint8Array): void {
+    this.roomKeys.set(roomId, key);
+  }
+  cacheRoomMembers(roomId: string, members: string[]): void {
+    this.roomMembers.set(roomId, [...members]);
+  }
+  forgetRoom(roomId: string): void {
+    this.roomKeys.delete(roomId);
+    this.roomMembers.delete(roomId);
+  }
+
+  private handleIncoming(peerId: string, m: { id: string; ts: number; body: string }): void {
+    if (!this.db || !this.im) return;
+    if (repos.isBlocked(this.db, peerId)) return;
+
+    const msg: ImReceivedEvent = {
+      id: m.id,
+      peerId,
+      direction: 'in',
+      ts: m.ts,
+      body: m.body,
+      status: 'delivered',
+    };
+    repos.insertMessage(this.db, msg);
+    this.broadcast(IPC.EvtImReceived, msg);
+
+    void this.im.send(peerId, { type: 'ack', id: m.id, status: 'delivered' }).catch(() => {});
+  }
+
+  private handleAck(peerId: string, id: string, status: 'delivered' | 'read' | 'failed'): void {
+    if (!this.db) return;
+    repos.setMessageStatus(this.db, id, status);
+    const ev: ImAckEvent = { id, status };
+    this.broadcast(IPC.EvtImAck, ev);
+  }
+
+  private broadcast(channel: string, payload: unknown): void {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(channel, payload);
+    }
+  }
+}

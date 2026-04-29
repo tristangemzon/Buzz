@@ -1,0 +1,74 @@
+// Stable identifiers for IPC channels. Keep in one place.
+export const IPC = {
+  // auth / identity
+  AuthHasIdentity: 'auth:hasIdentity',
+  AuthCreate: 'auth:create',
+  AuthUnlock: 'auth:unlock',
+  AuthLock: 'auth:lock',
+  AuthGetPlatform: 'auth:platform',
+  AuthGetMyId: 'auth:getMyId',
+
+  // buddies
+  BuddiesList: 'buddies:list',
+  BuddiesAdd: 'buddies:add',
+  BuddiesRemove: 'buddies:remove',
+  BuddiesRename: 'buddies:rename',
+  BuddiesBlock: 'buddies:block',
+  BuddiesWarn: 'buddies:warn',
+
+  // im
+  ImSend: 'im:send',
+  ImHistory: 'im:history',
+
+  // prefs
+  PrefsGet: 'prefs:get',
+  PrefsSet: 'prefs:set',
+
+  // network mode (readable while locked)
+  NetworkGet: 'network:get',
+  NetworkSet: 'network:set',
+
+  // presence
+  PresenceSetStatus: 'presence:setStatus',
+  PresenceGetSelf: 'presence:getSelf',
+
+  // profile
+  ProfileGetMy: 'profile:getMy',
+  ProfileSetMy: 'profile:setMy',
+  ProfileGetPeer: 'profile:getPeer',
+
+  // file transfer
+  XferOffer: 'xfer:offer',
+  XferRespond: 'xfer:respond',
+
+  // chat rooms
+  RoomsList: 'rooms:list',
+  RoomsCreate: 'rooms:create',
+  RoomsInvite: 'rooms:invite',
+  RoomsLeave: 'rooms:leave',
+  RoomsSend: 'rooms:send',
+  RoomsHistory: 'rooms:history',
+
+  // offline mailbox relay
+  MailboxStats: 'mailbox:stats',
+  MailboxAddRelay: 'mailbox:addRelay',
+  MailboxRemoveRelay: 'mailbox:removeRelay',
+  MailboxPoll: 'mailbox:poll',
+
+  // events (main -> renderer)
+  EvtBuddyStatus: 'evt:buddyStatus',
+  EvtImReceived: 'evt:imReceived',
+  EvtImAck: 'evt:imAck',
+  EvtTyping: 'evt:typing',
+  EvtError: 'evt:error',
+  EvtPeerProfile: 'evt:peerProfile',
+  EvtXferOffered: 'evt:xferOffered',
+  EvtXferProgress: 'evt:xferProgress',
+  EvtXferDone: 'evt:xferDone',
+  EvtRoomMessage: 'evt:roomMessage',
+  EvtRoomInvited: 'evt:roomInvited',
+  EvtRoomMembers: 'evt:roomMembers',
+  EvtMailboxDelivered: 'evt:mailboxDelivered',
+} as const;
+
+export type IpcChannel = (typeof IPC)[keyof typeof IPC];

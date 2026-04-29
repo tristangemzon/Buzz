@@ -1,0 +1,366 @@
+import { dialog, ipcMain, BrowserWindow } from 'electron';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { z, type ZodTypeAny } from 'zod';
+
+import { IPC } from '@shared/ipc.js';
+import {
+  AddBuddyReq,
+  CreateIdentityReq,
+  HistoryReq,
+  ImMessage,
+  PeerIdStr,
+  Prefs,
+  Profile,
+  PresenceSetStatusReq,
+  RoomCreateReq,
+  RoomHistoryReq,
+  RoomInviteReq,
+  RoomLeaveReq,
+  RoomSendReq,
+  MailboxAddRelayReq,
+  MailboxRemoveRelayReq,
+  NetworkConfig,
+  SendImReq,
+  SetPrefsReq,
+  UnlockReq,
+  XferOfferReq,
+  XferRespondReq,
+} from '@shared/schemas.js';
+import type { Platform } from '@shared/types.js';
+
+import * as repos from '../db/repos.js';
+import { sodium } from '../crypto/keystore.js';
+import { loadNetworkConfig, saveNetworkConfig } from '../network.js';
+import type { Session } from '../session.js';
+
+function platform(): Platform {
+  if (process.platform === 'darwin') return 'mac';
+  if (process.platform === 'win32') return 'windows';
+  return 'linux';
+}
+
+function handle<S extends ZodTypeAny, R>(
+  channel: string,
+  schema: S | null,
+  fn: (arg: z.infer<S>) => Promise<R> | R,
+): void {
+  ipcMain.handle(channel, async (_e, raw: unknown) => {
+    const arg = schema ? schema.parse(raw) : (undefined as z.infer<S>);
+    return fn(arg);
+  });
+}
+
+export function registerIpc(session: Session): void {
+  // ── auth ──────────────────────────────────────────────────────────────────
+  handle(IPC.AuthHasIdentity, null, () => session.hasIdentity());
+  handle(IPC.AuthCreate, CreateIdentityReq, async ({ screenName, passphrase }) => {
+    return session.create(screenName, passphrase);
+  });
+  handle(IPC.AuthUnlock, UnlockReq, async ({ passphrase }) => {
+    const r = await session.unlock(passphrase);
+    return { ok: true as const, buddyCode: r.buddyCode };
+  });
+  handle(IPC.AuthLock, null, () => session.lock());
+  handle(IPC.AuthGetPlatform, null, () => platform());
+  handle(IPC.AuthGetMyId, null, () => ({
+    peerId: session.peerIdStr(),
+    buddyCode: session.buddyCode(),
+    screenName: session.screenName,
+  }));
+
+  // ── buddies ───────────────────────────────────────────────────────────────
+  handle(IPC.BuddiesList, null, () => repos.listBuddies(requireDb(session)));
+  handle(IPC.BuddiesAdd, AddBuddyReq, ({ buddyCode, alias, group }) => {
+    repos.addBuddy(requireDb(session), buddyCode, alias, group);
+    return {
+      peerId: buddyCode,
+      alias,
+      group,
+      blocked: false,
+      warnLevel: 0,
+      status: 'offline' as const,
+    };
+  });
+  handle(IPC.BuddiesRemove, PeerIdStr, (peerId) => repos.removeBuddy(requireDb(session), peerId));
+  handle(
+    IPC.BuddiesRename,
+    z.object({ peerId: PeerIdStr, alias: z.string().min(1).max(64) }),
+    ({ peerId, alias }) => repos.renameBuddy(requireDb(session), peerId, alias),
+  );
+  handle(
+    IPC.BuddiesBlock,
+    z.object({ peerId: PeerIdStr, blocked: z.boolean() }),
+    ({ peerId, blocked }) => repos.blockBuddy(requireDb(session), peerId, blocked),
+  );
+  handle(
+    IPC.BuddiesWarn,
+    z.object({ peerId: PeerIdStr, delta: z.number().int().min(-100).max(100).default(10) }),
+    ({ peerId, delta }) => repos.warnBuddy(requireDb(session), peerId, delta),
+  );
+
+  // ── im ────────────────────────────────────────────────────────────────────
+  handle(IPC.ImSend, SendImReq, async ({ toPeerId, body }) => {
+    const db = requireDb(session);
+    const im = session.im;
+    if (!im) throw new Error('Locked');
+    const msg: ImMessage = ImMessage.parse({
+      id: randomUUID(),
+      peerId: toPeerId,
+      direction: 'out',
+      ts: Date.now(),
+      body,
+      status: 'queued',
+    });
+    repos.insertMessage(db, msg);
+    try {
+      await im.send(toPeerId, { type: 'msg', id: msg.id, ts: msg.ts, body: msg.body });
+      msg.status = 'sent';
+      repos.setMessageStatus(db, msg.id, 'sent');
+    } catch (err) {
+      // Direct send failed (peer offline / no route). If we have offline
+      // mailbox relays configured, try to push a sealed envelope through
+      // them so the recipient picks it up next time they're online.
+      const mbx = session.mailbox;
+      let queued = false;
+      if (mbx) {
+        queued = await mbx
+          .pushToRelays(toPeerId, { id: msg.id, ts: msg.ts, body: msg.body })
+          .catch(() => false);
+      }
+      if (queued) {
+        msg.status = 'sent';
+        repos.setMessageStatus(db, msg.id, 'sent');
+      } else {
+        msg.status = 'failed';
+        repos.setMessageStatus(db, msg.id, 'failed');
+        throw err;
+      }
+    }
+    return msg;
+  });
+  handle(IPC.ImHistory, HistoryReq, ({ peerId, limit, before }) =>
+    repos.history(requireDb(session), peerId, limit, before),
+  );
+
+  // ── prefs ────────────────────────────────────────────────────────────────────────────────────────────
+  // Pre-unlock callers (e.g. the SignOn window applying platform theme)
+  // should get sane defaults rather than an error.
+  handle(IPC.PrefsGet, null, () => {
+    if (!session.db) return Prefs.parse({});
+    return repos.getPrefs(session.db);
+  });
+  handle(IPC.PrefsSet, SetPrefsReq, (patch) => repos.setPrefs(requireDb(session), patch));
+
+  // ── network mode (pre-unlock readable) ───────────────────────────────────
+  handle(IPC.NetworkGet, null, () => loadNetworkConfig());
+  handle(IPC.NetworkSet, NetworkConfig, (cfg) => saveNetworkConfig(cfg));
+
+  // ── presence ─────────────────────────────────────────────────────────────────────────────────────────
+  handle(IPC.PresenceSetStatus, PresenceSetStatusReq, async ({ status, awayMessage }) => {
+    const p = session.presence;
+    if (!p) throw new Error('Locked');
+    // Persist away message text into prefs when provided so it survives
+    // restarts and can be edited from Preferences later.
+    if (status === 'away' && typeof awayMessage === 'string') {
+      repos.setPrefs(requireDb(session), { awayMessage });
+    }
+    return p.setStatus(status, awayMessage);
+  });
+  handle(IPC.PresenceGetSelf, null, () => {
+    const p = session.presence;
+    if (!p) throw new Error('Locked');
+    return p.getSelf();
+  });
+
+  // ── profile ──────────────────────────────────────────────────────────────
+  handle(IPC.ProfileGetMy, null, () => {
+    if (!session.db) return Profile.parse({});
+    return repos.getPrefs(session.db).profile;
+  });
+  handle(IPC.ProfileSetMy, Profile.partial(), async (patch) => {
+    const db = requireDb(session);
+    const current = repos.getPrefs(db).profile;
+    const merged = Profile.parse({ ...current, ...patch });
+    repos.setPrefs(db, { profile: merged });
+    // Push fresh profile to all currently-connected peers.
+    if (session.presence) await session.presence.rebroadcast();
+    return merged;
+  });
+  handle(IPC.ProfileGetPeer, PeerIdStr, (peerId) => {
+    const db = requireDb(session);
+    return repos.getPeerProfile(db, peerId);
+  });
+
+  // ── file transfer ────────────────────────────────────────────────────────
+  handle(IPC.XferOffer, XferOfferReq, async ({ toPeerId }) => {
+    const xfer = session.xfer;
+    if (!xfer) throw new Error('Locked');
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    const pick = await dialog.showOpenDialog(sender as BrowserWindow, {
+      title: 'Send a File',
+      properties: ['openFile'],
+    });
+    if (pick.canceled || !pick.filePaths[0]) return { id: '', cancelled: true } as const;
+    const filePath = pick.filePaths[0];
+    // Pre-insert a row so the IM window can show progress immediately.
+    const id = randomUUID();
+    const stat = await import('node:fs/promises').then((m) => m.stat(filePath));
+    const fileName = path.basename(filePath);
+    if (session.db) {
+      repos.insertTransfer(session.db, {
+        id,
+        peerId: toPeerId,
+        direction: 'out',
+        fileName,
+        fileSize: stat.size,
+        fileHash: '',
+        status: 'active',
+        savedPath: filePath,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
+    // The XferService allocates its own id internally; surface that through
+    // the started-event chain. Kick off, then return the picked metadata.
+    void xfer
+      .sendFile(toPeerId, filePath)
+      .catch(() => undefined);
+    return {
+      id,
+      cancelled: false,
+      fileName,
+      fileSize: stat.size,
+      peerId: toPeerId,
+    } as const;
+  });
+  handle(IPC.XferRespond, XferRespondReq, async ({ id, accept }) => {
+    const xfer = session.xfer;
+    if (!xfer) throw new Error('Locked');
+    if (!accept) {
+      xfer.respond(id, false);
+      return { ok: true as const };
+    }
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    // Look up the offer's filename from DB to suggest a default save name.
+    const row = session.db
+      ? (session.db
+          .prepare('SELECT file_name as fileName FROM transfers WHERE id=?')
+          .get(id) as { fileName?: string } | undefined)
+      : undefined;
+    const save = await dialog.showSaveDialog(sender as BrowserWindow, {
+      title: 'Save File As',
+      defaultPath: row?.fileName,
+    });
+    if (save.canceled || !save.filePath) {
+      xfer.respond(id, false);
+      return { ok: true as const };
+    }
+    if (session.db) {
+      repos.updateTransferStatus(session.db, id, 'active', save.filePath);
+    }
+    xfer.respond(id, true, save.filePath);
+    return { ok: true as const };
+  });
+
+  // ── chat rooms ───────────────────────────────────────────────────────────
+  handle(IPC.RoomsList, null, () => {
+    const db = requireDb(session);
+    return repos.listRooms(db).map(({ keyB64: _k, ...rest }) => rest);
+  });
+  handle(IPC.RoomsCreate, RoomCreateReq, async ({ name, members }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    const { roomId, keyB64, createdAt, members: full } = await rooms.createRoom({ name, members });
+    repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
+    repos.setRoomMembers(db, roomId, full);
+    const s = await sodium();
+    session.cacheRoomKey(roomId, s.from_base64(keyB64, s.base64_variants.ORIGINAL));
+    session.cacheRoomMembers(roomId, full);
+    return { id: roomId, name, members: full, createdAt };
+  });
+  handle(IPC.RoomsInvite, RoomInviteReq, async ({ roomId, peerId }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    const room = repos.getRoom(db, roomId);
+    if (!room) throw new Error('Unknown room');
+    const members = await rooms.invite(roomId, peerId, room.name);
+    repos.setRoomMembers(db, roomId, members);
+    session.cacheRoomMembers(roomId, members);
+    return { id: roomId, name: room.name, members, createdAt: room.createdAt };
+  });
+  handle(IPC.RoomsLeave, RoomLeaveReq, async ({ roomId }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    await rooms.leave(roomId);
+    repos.deleteRoom(db, roomId);
+    session.forgetRoom(roomId);
+    return { ok: true as const };
+  });
+  handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, body }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    const { id, ts } = await rooms.sendMessage(roomId, body);
+    const stored = {
+      id,
+      roomId,
+      fromPeerId: session.peerIdStr(),
+      fromName: session.screenName,
+      direction: 'out' as const,
+      ts,
+      body,
+    };
+    repos.insertRoomMessage(db, stored);
+    return stored;
+  });
+  handle(IPC.RoomsHistory, RoomHistoryReq, ({ roomId, limit, before }) =>
+    repos.roomHistory(requireDb(session), roomId, limit, before),
+  );
+
+  // ── offline mailbox relay ────────────────────────────────────────────────
+  handle(IPC.MailboxStats, null, () => {
+    const db = requireDb(session);
+    const prefs = repos.getPrefs(db);
+    return {
+      relayHeldCount: repos.mailboxCount(db),
+      relays: prefs.mailboxRelays,
+      lastPolledAt: session.mailbox?.lastPolledAt() ?? {},
+    };
+  });
+  handle(IPC.MailboxAddRelay, MailboxAddRelayReq, ({ peerId }) => {
+    const db = requireDb(session);
+    const prefs = repos.getPrefs(db);
+    const next = Array.from(new Set([...prefs.mailboxRelays, peerId])).slice(0, 8);
+    repos.setPrefs(db, { mailboxRelays: next });
+    return {
+      relayHeldCount: repos.mailboxCount(db),
+      relays: next,
+      lastPolledAt: session.mailbox?.lastPolledAt() ?? {},
+    };
+  });
+  handle(IPC.MailboxRemoveRelay, MailboxRemoveRelayReq, ({ peerId }) => {
+    const db = requireDb(session);
+    const prefs = repos.getPrefs(db);
+    const next = prefs.mailboxRelays.filter((x) => x !== peerId);
+    repos.setPrefs(db, { mailboxRelays: next });
+    return {
+      relayHeldCount: repos.mailboxCount(db),
+      relays: next,
+      lastPolledAt: session.mailbox?.lastPolledAt() ?? {},
+    };
+  });
+  handle(IPC.MailboxPoll, null, async () => {
+    const mbx = session.mailbox;
+    if (!mbx) throw new Error('Locked');
+    return mbx.pollAll();
+  });
+}
+
+function requireDb(s: Session) {
+  if (!s.db) throw new Error('Locked');
+  return s.db;
+}

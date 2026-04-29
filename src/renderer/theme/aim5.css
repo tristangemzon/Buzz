@@ -1,0 +1,643 @@
+/* AIM 5.x-flavoured skin with platform-aware font stack.
+   Apply data-platform="mac" | "windows" | "linux" on <html>. */
+
+:root {
+  --font-ui-windows: Tahoma, "MS Sans Serif", "Microsoft Sans Serif", sans-serif;
+  --font-ui-mac: "Lucida Grande", "Lucida Sans Unicode", Tahoma, "MS Sans Serif", sans-serif;
+  --font-chat-windows: "Times New Roman", Times, serif;
+  --font-chat-mac: "Lucida Grande", "Lucida Sans Unicode", "Times New Roman", serif;
+
+  --font-ui: var(--font-ui-windows);
+  --font-chat: var(--font-chat-windows);
+
+  --c-bg: #ece9d8;
+  --c-panel: #f5f4ea;
+  --c-bevel-light: #ffffff;
+  --c-bevel-dark: #7a7a7a;
+  --c-bevel-darker: #404040;
+  --c-title: #0a246a;
+  --c-title-text: #ffffff;
+  --c-link: #0033cc;
+  --c-text: #000000;
+  --c-yellow: #ffd44f; /* AIM running-man yellow */
+  --c-input-bg: #ffffff;
+}
+
+html[data-platform='mac'] {
+  --font-ui: var(--font-ui-mac);
+  --font-chat: var(--font-chat-mac);
+}
+
+html[data-platform='windows'],
+html[data-platform='linux'] {
+  --font-ui: var(--font-ui-windows);
+  --font-chat: var(--font-chat-windows);
+}
+
+/* User-selected skin override wins over platform default. */
+html[data-skin='mac'] {
+  --font-ui: var(--font-ui-mac);
+  --font-chat: var(--font-chat-mac);
+}
+html[data-skin='windows'] {
+  --font-ui: var(--font-ui-windows);
+  --font-chat: var(--font-chat-windows);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+input,
+textarea {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  user-select: text;
+}
+
+button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-bevel-darker);
+  border-top-color: var(--c-bevel-light);
+  border-left-color: var(--c-bevel-light);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+button:active {
+  border-top-color: var(--c-bevel-darker);
+  border-left-color: var(--c-bevel-darker);
+  border-bottom-color: var(--c-bevel-light);
+  border-right-color: var(--c-bevel-light);
+}
+button:disabled {
+  color: #888;
+  cursor: default;
+}
+
+/* Beveled boxes — used as the chrome around panels. */
+.bevel-out {
+  border: 2px solid;
+  border-color: var(--c-bevel-light) var(--c-bevel-darker) var(--c-bevel-darker)
+    var(--c-bevel-light);
+  background: var(--c-panel);
+}
+.bevel-in {
+  border: 2px solid;
+  border-color: var(--c-bevel-darker) var(--c-bevel-light) var(--c-bevel-light)
+    var(--c-bevel-darker);
+  background: var(--c-input-bg);
+}
+
+/* Title bar (Charcoal/Marine vibe). */
+.titlebar {
+  background: linear-gradient(to bottom, #1a3da9 0%, #0a246a 100%);
+  color: var(--c-title-text);
+  padding: 3px 4px 3px 6px;
+  font-weight: bold;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+  flex: 0 0 auto;
+}
+/* Only the OUTER titlebar (direct child of .window) is the OS drag handle.
+   Modal titlebars must remain non-draggable. */
+.window > .titlebar {
+  -webkit-app-region: drag;
+}
+.titlebar .runner {
+  width: 14px;
+  height: 14px;
+  background: var(--c-yellow);
+  border: 1px solid #000;
+  border-radius: 2px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.titlebar .title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.titlebar .controls {
+  display: flex;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+}
+.titlebar .controls button {
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Marlett", "Segoe UI Symbol", var(--font-ui);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: normal;
+  color: #000;
+  background: var(--c-panel);
+  border: 1px solid;
+  border-color: var(--c-bevel-light) var(--c-bevel-darker) var(--c-bevel-darker)
+    var(--c-bevel-light);
+  cursor: pointer;
+}
+.titlebar .controls button:active {
+  border-color: var(--c-bevel-darker) var(--c-bevel-light) var(--c-bevel-light)
+    var(--c-bevel-darker);
+  padding-top: 1px;
+  padding-left: 1px;
+}
+.titlebar .controls button.close {
+  /* Slightly red on hover to match later AIM/XP cue. */
+}
+.titlebar .controls button.close:hover {
+  background: #e8a0a0;
+}
+
+/* Anything inside the titlebar that should remain clickable. */
+.titlebar .runner,
+.titlebar select,
+.titlebar input,
+.titlebar a,
+.titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+/* List rows (buddy list, room members). */
+.list {
+  background: var(--c-input-bg);
+  overflow: auto;
+  flex: 1;
+}
+.list .group {
+  background: #d6d3c1;
+  padding: 2px 6px;
+  font-weight: bold;
+  border-bottom: 1px solid #aaa;
+  cursor: default;
+}
+.list .row {
+  padding: 2px 16px;
+  cursor: default;
+}
+.list .row:hover {
+  background: #e8eef8;
+}
+.list .row.selected {
+  background: #316ac5;
+  color: #fff;
+}
+.list .row .status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.list .row .status.online {
+  background: #2cc14a;
+}
+.list .row .status.away {
+  background: #f4b400;
+}
+.list .row .status.idle {
+  background: #cccccc;
+}
+.list .row .status.offline {
+  background: #888;
+  opacity: 0.6;
+}
+
+/* Warn / block treatments. */
+.list .row.blocked {
+  color: #888;
+  text-decoration: line-through;
+  font-style: italic;
+}
+.warn-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #b00000;
+  background: #ffe0e0;
+  border: 1px solid #b00000;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* Lightweight popup menu for right-click on a buddy row. */
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid #888;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+  padding: 2px 0;
+  font-size: 12px;
+}
+.ctx-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 4px 12px;
+  cursor: default;
+  font: inherit;
+}
+.ctx-menu button:hover {
+  background: #316ac5;
+  color: #fff;
+}
+.ctx-menu .sep {
+  height: 1px;
+  background: #ddd;
+  margin: 2px 0;
+}
+
+/* App layout. */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* The classic Win9x raised outer bevel — the OS frame is hidden. */
+  border: 2px solid;
+  border-color: var(--c-bevel-light) var(--c-bevel-darker) var(--c-bevel-darker)
+    var(--c-bevel-light);
+  background: var(--c-panel);
+  overflow: hidden;
+}
+.window > .body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 6px;
+}
+
+/* Chat surfaces use the chat font (ye olde Times, or Lucida on Mac). */
+.chat-log,
+.chat-input {
+  font-family: var(--font-chat);
+  font-size: 12px;
+}
+.chat-log {
+  padding: 6px;
+  overflow: auto;
+  background: var(--c-input-bg);
+  flex: 1;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.chat-log .me {
+  color: #b00000;
+  font-weight: bold;
+}
+.chat-log .them {
+  color: #0000b0;
+  font-weight: bold;
+}
+.chat-log .sys {
+  color: #555;
+  font-style: italic;
+}
+.chat-input {
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 6px;
+  background: var(--c-input-bg);
+  min-height: 64px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--c-panel);
+  border-bottom: 1px solid #c0bfb1;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.muted {
+  color: #555;
+}
+
+.code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: #fff;
+  padding: 2px 4px;
+  border: 1px solid #aaa;
+  user-select: text;
+  word-break: break-all;
+}
+
+.error {
+  color: #a00;
+  font-size: 11px;
+  min-height: 14px;
+}
+
+.signon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 18px;
+  gap: 10px;
+  background: var(--c-bg);
+  position: relative;
+}
+.signon h1 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--c-title);
+}
+.signon .runner-big {
+  width: 72px;
+  height: 72px;
+  background: var(--c-yellow);
+  border: 2px solid #000;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+.signon .row {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  gap: 2px;
+}
+.signon input {
+  padding: 4px 6px;
+}
+.signon .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Network-settings cog at bottom-right of the Sign On window. */
+.signon-cog {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Generic modal used for in-window dialogs (e.g. network settings). */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  min-width: 340px;
+  max-width: 460px;
+  background: var(--c-bg);
+  border: 1px solid #000;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+.modal-title {
+  background: var(--c-title-bar, #6d8bd1);
+  color: #fff;
+  font-weight: bold;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.modal-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-body .row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.modal-body .row.indent {
+  margin-left: 22px;
+  margin-top: 4px;
+}
+.modal-body .radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.modal-body .small {
+  font-size: 10px;
+  margin-left: 22px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+
+.label {
+  font-size: 11px;
+  color: #333;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THEMES — iChat-inspired window + chat layouts.
+   data-window-theme: classic (default AIM/XP) | aqua | graphite
+   data-chat-theme:   classic (default)        | balloons | compact
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Aqua: glossy blue/white iChat look. */
+html[data-window-theme='aqua'] {
+  --c-bg: #d6dfeb;
+  --c-panel: #f4f7fb;
+  --c-bevel-light: #ffffff;
+  --c-bevel-dark: #9ab1c9;
+  --c-bevel-darker: #5b7fa3;
+  --c-title: #4a78b8;
+  --c-title-text: #ffffff;
+  --c-input-bg: #ffffff;
+}
+html[data-window-theme='aqua'] .titlebar {
+  background: linear-gradient(
+    to bottom,
+    #b9d3ee 0%,
+    #6a96c6 45%,
+    #4a78b8 55%,
+    #6a96c6 100%
+  );
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid #335f9c;
+}
+html[data-window-theme='aqua'] .window {
+  border-radius: 8px;
+  border-color: #ffffff #5b7fa3 #5b7fa3 #ffffff;
+}
+html[data-window-theme='aqua'] .bevel-out {
+  border-radius: 6px;
+}
+html[data-window-theme='aqua'] .bevel-in {
+  border-radius: 4px;
+  border-color: #b8c4d4 #ffffff #ffffff #b8c4d4;
+}
+html[data-window-theme='aqua'] button {
+  border-radius: 8px;
+  background: linear-gradient(to bottom, #ffffff 0%, #e2ecf6 50%, #c8d8eb 100%);
+  border: 1px solid #6a8caf;
+}
+html[data-window-theme='aqua'] button:active {
+  background: linear-gradient(to bottom, #c8d8eb 0%, #e2ecf6 50%, #ffffff 100%);
+}
+html[data-window-theme='aqua'] .toolbar {
+  background: linear-gradient(to bottom, #eaf0f7, #d4dfee);
+  border-bottom: 1px solid #9ab1c9;
+}
+html[data-window-theme='aqua'] .list .row.selected {
+  background: linear-gradient(to bottom, #6a96c6, #4a78b8);
+}
+
+/* Graphite: muted greys, same shape. */
+html[data-window-theme='graphite'] {
+  --c-bg: #d4d4d4;
+  --c-panel: #ececec;
+  --c-bevel-light: #ffffff;
+  --c-bevel-dark: #9c9c9c;
+  --c-bevel-darker: #5e5e5e;
+  --c-title: #555555;
+  --c-title-text: #ffffff;
+}
+html[data-window-theme='graphite'] .titlebar {
+  background: linear-gradient(
+    to bottom,
+    #c8c8c8 0%,
+    #8b8b8b 45%,
+    #6e6e6e 55%,
+    #8b8b8b 100%
+  );
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid #4a4a4a;
+}
+html[data-window-theme='graphite'] .window {
+  border-radius: 8px;
+}
+html[data-window-theme='graphite'] button {
+  border-radius: 8px;
+  background: linear-gradient(to bottom, #ffffff 0%, #e2e2e2 50%, #c8c8c8 100%);
+  border: 1px solid #6e6e6e;
+}
+html[data-window-theme='graphite'] .list .row.selected {
+  background: linear-gradient(to bottom, #8b8b8b, #6e6e6e);
+}
+
+/* Balloons: iChat-style bubble layout in the chat log. */
+html[data-chat-theme='balloons'] .chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+.bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+}
+.bubble-row.out {
+  flex-direction: row-reverse;
+}
+.bubble-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #888;
+  object-fit: cover;
+  flex: 0 0 28px;
+  background: #ddd;
+}
+.bubble {
+  position: relative;
+  padding: 6px 10px;
+  border-radius: 14px;
+  max-width: 70%;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+.bubble-row.out .bubble {
+  background: var(--my-bubble, #d8f0ff);
+  color: #000;
+  border-bottom-right-radius: 4px;
+}
+.bubble-row.in .bubble {
+  background: var(--their-bubble, #eeeeee);
+  color: #000;
+  border-bottom-left-radius: 4px;
+}
+.bubble .meta {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+.bubble-name {
+  font-size: 10px;
+  color: #555;
+  margin: 0 6px 2px;
+}
+
+/* Compact: dense one-line-per-message variant. */
+html[data-chat-theme='compact'] .chat-log {
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 4px 6px;
+}
+html[data-chat-theme='compact'] .chat-log > div {
+  padding: 1px 0;
+}

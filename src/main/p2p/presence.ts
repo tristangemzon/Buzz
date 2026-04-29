@@ -1,0 +1,199 @@
+// PresenceManager: owns local presence state (online/away/idle/invisible) and
+// drives profile broadcasts to currently-connected peers via the IM protocol.
+//
+// Wire model:
+//   - On peer:connect, push our profile to that peer (unless invisible).
+//   - On peer:disconnect, emit a synthetic BuddyStatusEvent {status:'offline'}
+//     to the renderer.
+//   - On setStatus, push profile to all connected peers; persist baseStatus
+//     (only 'online' / 'invisible') to prefs.
+//   - Idle detection: poll powerMonitor.getSystemIdleTime() every IDLE_POLL_MS.
+//     If base='online' and idle >= idleMinutes*60 → effective='idle' and
+//     rebroadcast. On activity (idle<threshold) flip back to 'online'.
+//   - Invisible: send a single profile {status:'offline'} to current peers
+//     on entering invisible, then suppress further broadcasts.
+
+import { powerMonitor } from 'electron';
+import type { Libp2p } from '@libp2p/interface';
+import type { ImService } from './im.js';
+import type { Profile, Status, SelectableStatus, SelfPresence } from '@shared/schemas.js';
+
+const IDLE_POLL_MS = 30_000;
+
+export type BroadcastFn = (peerId: string, status: Status, awayMessage?: string) => void;
+export type PrefsBridge = {
+  getIdleMinutes(): number;
+  getAwayMessage(): string;
+  getLastStatus(): 'online' | 'invisible';
+  setLastStatus(s: 'online' | 'invisible'): void;
+  getProfile(): Profile;
+};
+
+export class PresenceManager {
+  private base: SelectableStatus = 'online';
+  private effective: Status = 'online';
+  private awayMessage: string | undefined;
+  private timer: NodeJS.Timeout | null = null;
+  private started = false;
+  // Track peers we have an active connection with so we can target broadcasts.
+  private readonly connected = new Set<string>();
+
+  constructor(
+    private readonly node: Libp2p,
+    private readonly im: ImService,
+    private readonly screenName: () => string,
+    private readonly prefs: PrefsBridge,
+    private readonly broadcastToRenderer: BroadcastFn,
+  ) {}
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+
+    this.base = this.prefs.getLastStatus();
+    this.awayMessage = this.prefs.getAwayMessage() || undefined;
+    this.effective = this.base === 'invisible' ? 'invisible' : 'online';
+
+    this.node.addEventListener('peer:connect', this.onPeerConnect);
+    this.node.addEventListener('peer:disconnect', this.onPeerDisconnect);
+
+    this.timer = setInterval(() => this.tickIdle(), IDLE_POLL_MS);
+  }
+
+  async stop(): Promise<void> {
+    if (!this.started) return;
+    this.started = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.node.removeEventListener('peer:connect', this.onPeerConnect);
+    this.node.removeEventListener('peer:disconnect', this.onPeerDisconnect);
+    // Best-effort: announce going offline to any connected peer.
+    const targets = [...this.connected];
+    this.connected.clear();
+    await Promise.all(
+      targets.map((p) => this.sendProfileTo(p, 'offline').catch(() => undefined)),
+    );
+  }
+
+  getSelf(): SelfPresence {
+    return {
+      status: this.effective,
+      baseStatus: this.base,
+      awayMessage: this.awayMessage,
+    };
+  }
+
+  // Re-broadcast the current effective status — used after the user edits their
+  // profile so peers immediately see the new about text / colors / avatar.
+  async rebroadcast(): Promise<void> {
+    if (!this.started) return;
+    await this.broadcastToConnected();
+  }
+
+  async setStatus(status: SelectableStatus, awayMessage?: string): Promise<SelfPresence> {
+    const prevBase = this.base;
+    const prevEff = this.effective;
+    const prevAway = this.awayMessage;
+
+    this.base = status;
+    if (status === 'away') {
+      this.awayMessage = awayMessage ?? (this.prefs.getAwayMessage() || undefined);
+      this.effective = 'away';
+    } else if (status === 'invisible') {
+      this.awayMessage = undefined;
+      this.effective = 'invisible';
+    } else {
+      // 'online' — preserve the away message in prefs but don't broadcast it.
+      this.awayMessage = undefined;
+      this.effective = 'online';
+    }
+
+    // Persist only the user-selectable persistent states.
+    if (status === 'online' || status === 'invisible') {
+      this.prefs.setLastStatus(status);
+    }
+
+    // No-op if nothing actually changed.
+    if (prevBase === this.base && prevEff === this.effective && prevAway === this.awayMessage) {
+      return this.getSelf();
+    }
+
+    await this.broadcastToConnected();
+    return this.getSelf();
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────
+
+  private readonly onPeerConnect = (evt: Event): void => {
+    const peerId = peerIdFromEvent(evt);
+    if (!peerId) return;
+    this.connected.add(peerId);
+    // Send our profile after connect (lazy: don't fail the event loop).
+    void this.sendProfileTo(peerId, this.wireStatus()).catch(() => undefined);
+  };
+
+  private readonly onPeerDisconnect = (evt: Event): void => {
+    const peerId = peerIdFromEvent(evt);
+    if (!peerId) return;
+    this.connected.delete(peerId);
+    // Inform UI that this peer is now offline (they may flip status flags).
+    this.broadcastToRenderer(peerId, 'offline');
+  };
+
+  private async tickIdle(): Promise<void> {
+    if (!this.started) return;
+    if (this.base !== 'online') return; // idle only applies in 'online' base
+    const idleSec = powerMonitor.getSystemIdleTime();
+    const threshold = Math.max(1, this.prefs.getIdleMinutes()) * 60;
+    const wantIdle = idleSec >= threshold;
+    const next: Status = wantIdle ? 'idle' : 'online';
+    if (next !== this.effective) {
+      this.effective = next;
+      await this.broadcastToConnected();
+    }
+  }
+
+  private wireStatus(): Status {
+    // What we advertise on the wire. Invisible == offline to peers.
+    return this.effective === 'invisible' ? 'offline' : this.effective;
+  }
+
+  private async broadcastToConnected(): Promise<void> {
+    const wire = this.wireStatus();
+    await Promise.all(
+      [...this.connected].map((p) => this.sendProfileTo(p, wire).catch(() => undefined)),
+    );
+  }
+
+  private async sendProfileTo(peerId: string, status: Status): Promise<void> {
+    if (this.base === 'invisible' && status !== 'offline') return; // suppress
+    const prof = this.prefs.getProfile();
+    await this.im.send(peerId, {
+      type: 'profile',
+      screenName: this.screenName(),
+      status,
+      awayMessage: status === 'away' ? this.awayMessage : undefined,
+      aboutText: prof.aboutText || undefined,
+      textColor: prof.textColor || undefined,
+      bgColor: prof.bgColor || undefined,
+      fontFamily: prof.fontFamily || undefined,
+      avatar: prof.avatarDataUrl || undefined,
+      bgImage: prof.bgImageDataUrl || undefined,
+    });
+  }
+}
+
+function peerIdFromEvent(evt: Event): string | null {
+  // libp2p's peer:connect / peer:disconnect events are CustomEvents whose
+  // detail is a PeerId.
+  const detail = (evt as CustomEvent).detail as { toString(): string } | undefined;
+  if (!detail) return null;
+  try {
+    const s = detail.toString();
+    return typeof s === 'string' && s.length > 0 ? s : null;
+  } catch {
+    return null;
+  }
+}

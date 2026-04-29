@@ -1,0 +1,84 @@
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { IPC } from '@shared/ipc.js';
+import type { AppApi } from '@shared/types.js';
+
+function on<T>(channel: string, cb: (e: T) => void): () => void {
+  const listener = (_e: IpcRendererEvent, payload: T) => cb(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.off(channel, listener);
+}
+
+const api: AppApi = {
+  hasIdentity: () => ipcRenderer.invoke(IPC.AuthHasIdentity),
+  createIdentity: (req) => ipcRenderer.invoke(IPC.AuthCreate, req),
+  unlock: (req) => ipcRenderer.invoke(IPC.AuthUnlock, req),
+  lock: () => ipcRenderer.invoke(IPC.AuthLock),
+  getPlatform: () => ipcRenderer.invoke(IPC.AuthGetPlatform),
+  getMyId: () => ipcRenderer.invoke(IPC.AuthGetMyId),
+
+  listBuddies: () => ipcRenderer.invoke(IPC.BuddiesList),
+  addBuddy: (req) => ipcRenderer.invoke(IPC.BuddiesAdd, req),
+  removeBuddy: (peerId) => ipcRenderer.invoke(IPC.BuddiesRemove, peerId),
+  renameBuddy: (peerId, alias) => ipcRenderer.invoke(IPC.BuddiesRename, { peerId, alias }),
+  blockBuddy: (peerId, blocked) => ipcRenderer.invoke(IPC.BuddiesBlock, { peerId, blocked }),
+  warnBuddy: (peerId, delta = 10) => ipcRenderer.invoke(IPC.BuddiesWarn, { peerId, delta }),
+
+  sendIm: (req) => ipcRenderer.invoke(IPC.ImSend, req),
+  history: (req) => ipcRenderer.invoke(IPC.ImHistory, req),
+
+  getPrefs: () => ipcRenderer.invoke(IPC.PrefsGet),
+  setPrefs: (req) => ipcRenderer.invoke(IPC.PrefsSet, req),
+
+  getNetworkConfig: () => ipcRenderer.invoke(IPC.NetworkGet),
+  setNetworkConfig: (cfg) => ipcRenderer.invoke(IPC.NetworkSet, cfg),
+
+  setStatus: (req) => ipcRenderer.invoke(IPC.PresenceSetStatus, req),
+  getSelfPresence: () => ipcRenderer.invoke(IPC.PresenceGetSelf),
+
+  getMyProfile: () => ipcRenderer.invoke(IPC.ProfileGetMy),
+  setMyProfile: (patch) => ipcRenderer.invoke(IPC.ProfileSetMy, patch),
+  getPeerProfile: (peerId) => ipcRenderer.invoke(IPC.ProfileGetPeer, peerId),
+
+  xferOffer: (toPeerId) => ipcRenderer.invoke(IPC.XferOffer, { toPeerId }),
+  xferRespond: (id, accept) => ipcRenderer.invoke(IPC.XferRespond, { id, accept }),
+
+  listRooms: () => ipcRenderer.invoke(IPC.RoomsList),
+  createRoom: (req) => ipcRenderer.invoke(IPC.RoomsCreate, req),
+  inviteToRoom: (req) => ipcRenderer.invoke(IPC.RoomsInvite, req),
+  leaveRoom: (req) => ipcRenderer.invoke(IPC.RoomsLeave, req),
+  sendRoomMessage: (req) => ipcRenderer.invoke(IPC.RoomsSend, req),
+  roomHistory: (req) => ipcRenderer.invoke(IPC.RoomsHistory, req),
+
+  mailboxStats: () => ipcRenderer.invoke(IPC.MailboxStats),
+  mailboxAddRelay: (req) => ipcRenderer.invoke(IPC.MailboxAddRelay, req),
+  mailboxRemoveRelay: (req) => ipcRenderer.invoke(IPC.MailboxRemoveRelay, req),
+  mailboxPoll: () => ipcRenderer.invoke(IPC.MailboxPoll),
+
+  onBuddyStatus: (cb) => on(IPC.EvtBuddyStatus, cb),
+  onImReceived: (cb) => on(IPC.EvtImReceived, cb),
+  onImAck: (cb) => on(IPC.EvtImAck, cb),
+  onTyping: (cb) => on(IPC.EvtTyping, cb),
+  onPeerProfile: (cb) => on(IPC.EvtPeerProfile, cb),
+  onXferOffered: (cb) => on(IPC.EvtXferOffered, cb),
+  onXferProgress: (cb) => on(IPC.EvtXferProgress, cb),
+  onXferDone: (cb) => on(IPC.EvtXferDone, cb),
+  onRoomMessage: (cb) => on(IPC.EvtRoomMessage, cb),
+  onRoomInvited: (cb) => on(IPC.EvtRoomInvited, cb),
+  onRoomMembers: (cb) => on(IPC.EvtRoomMembers, cb),
+  onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
+};
+
+// Window-management helpers that aren't part of the AppApi but are used by
+// the buddy list to open IM windows.
+const windows = {
+  openIm: (peerId: string) => ipcRenderer.invoke('windows:openIm', peerId),
+  openBuddyList: () => ipcRenderer.invoke('windows:openBuddyList'),
+  openChat: (roomId: string) => ipcRenderer.invoke('windows:openChat', roomId),
+  minimize: () => ipcRenderer.invoke('window:minimize'),
+  toggleMax: () => ipcRenderer.invoke('window:toggleMax'),
+  close: () => ipcRenderer.invoke('window:close'),
+  isMaximizable: () => ipcRenderer.invoke('window:isMaximizable') as Promise<boolean>,
+};
+
+contextBridge.exposeInMainWorld('buzz', api);
+contextBridge.exposeInMainWorld('buzzWindows', windows);
