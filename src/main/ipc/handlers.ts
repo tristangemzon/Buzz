@@ -6,6 +6,7 @@ import { z, type ZodTypeAny } from 'zod';
 import { IPC } from '@shared/ipc.js';
 import {
   AddBuddyReq,
+  BuddyRequestSendReq,
   CreateIdentityReq,
   HistoryReq,
   ImMessage,
@@ -27,6 +28,7 @@ import {
   SendImReq,
   SetPrefsReq,
   UnlockReq,
+  Uuid,
   XferOfferReq,
   XferRespondReq,
 } from '@shared/schemas.js';
@@ -76,18 +78,31 @@ export function registerIpc(session: Session): void {
 
   // ── buddies ───────────────────────────────────────────────────────────────
   handle(IPC.BuddiesList, null, () => repos.listBuddies(requireDb(session)));
-  handle(IPC.BuddiesAdd, AddBuddyReq, ({ buddyCode, alias, group }) => {
-    repos.addBuddy(requireDb(session), buddyCode, alias, group);
-    // Once a peer is a buddy, they should disappear from the "Nearby" list.
-    session.forgetDiscovered(buddyCode);
-    return {
-      peerId: buddyCode,
-      alias,
-      group,
-      blocked: false,
-      warnLevel: 0,
-      status: 'offline' as const,
-    };
+  // Adding a buddy now sends a request and stores a local outbound pending
+  // entry. The buddy row is only created once the remote side approves.
+  handle(IPC.BuddiesAdd, AddBuddyReq, async ({ buddyCode, alias, group }) => {
+    const db = requireDb(session);
+    // If they're already a buddy, treat this as a no-op success.
+    if (db.prepare('SELECT 1 FROM buddies WHERE peer_id=?').get(buddyCode)) {
+      return repos
+        .listBuddies(db)
+        .find((b) => b.peerId === buddyCode) ?? null;
+    }
+    await session.sendBuddyRequest(buddyCode, alias, group);
+    return null;
+  });
+  handle(IPC.BuddiesSendRequest, BuddyRequestSendReq, async ({ buddyCode, alias, group }) => {
+    await session.sendBuddyRequest(buddyCode, alias, group);
+  });
+  handle(IPC.BuddiesListRequests, null, () => repos.listBuddyRequests(requireDb(session)));
+  handle(IPC.BuddiesApproveRequest, PeerIdStr, async (peerId) =>
+    session.approveBuddyRequest(peerId),
+  );
+  handle(IPC.BuddiesDenyRequest, PeerIdStr, async (peerId) =>
+    session.denyBuddyRequest(peerId),
+  );
+  handle(IPC.BuddiesCancelRequest, PeerIdStr, (peerId) => {
+    repos.deleteBuddyRequest(requireDb(session), peerId);
   });
   handle(IPC.BuddiesRemove, PeerIdStr, (peerId) => repos.removeBuddy(requireDb(session), peerId));
   handle(
@@ -151,6 +166,12 @@ export function registerIpc(session: Session): void {
   handle(IPC.ImHistory, HistoryReq, ({ peerId, limit, before }) =>
     repos.history(requireDb(session), peerId, limit, before),
   );
+  handle(IPC.ImMarkRead, PeerIdStr, (peerId) => {
+    const db = requireDb(session);
+    const changed = repos.markImRead(db, peerId);
+    if (changed > 0) session.broadcastUnread();
+  });
+  handle(IPC.UnreadGet, null, () => session.unreadSnapshot());
 
   // ── prefs ────────────────────────────────────────────────────────────────────────────────────────────
   // Pre-unlock callers (e.g. the SignOn window applying platform theme)
@@ -384,6 +405,10 @@ export function registerIpc(session: Session): void {
     repos.deleteRoomChannel(db, channelId);
     await rooms.broadcastChannelDel(roomId, channelId);
     return { ok: true as const };
+  });
+  handle(IPC.RoomsMarkRead, z.object({ roomId: Uuid }), ({ roomId }) => {
+    repos.markRoomRead(requireDb(session), roomId);
+    session.broadcastUnread();
   });
 
   // ── offline mailbox relay ────────────────────────────────────────────────

@@ -459,3 +459,98 @@ export function mailboxCount(db: Db): number {
   const r = db.prepare('SELECT COUNT(*) as n FROM mailbox').get() as { n: number };
   return r.n;
 }
+
+// ── buddy requests ──────────────────────────────────────────────────────────
+
+export type BuddyRequestRow = {
+  peerId: string;
+  direction: 'in' | 'out';
+  screenName: string;
+  ts: number;
+};
+
+export function listBuddyRequests(db: Db): BuddyRequestRow[] {
+  return db
+    .prepare(
+      `SELECT peer_id as peerId, direction, screen_name as screenName, ts
+         FROM buddy_requests ORDER BY ts DESC`,
+    )
+    .all() as BuddyRequestRow[];
+}
+
+export function getBuddyRequest(db: Db, peerId: string): BuddyRequestRow | null {
+  const r = db
+    .prepare(
+      `SELECT peer_id as peerId, direction, screen_name as screenName, ts
+         FROM buddy_requests WHERE peer_id=?`,
+    )
+    .get(peerId) as BuddyRequestRow | undefined;
+  return r ?? null;
+}
+
+export function upsertBuddyRequest(db: Db, r: BuddyRequestRow): void {
+  db.prepare(
+    `INSERT INTO buddy_requests(peer_id, direction, screen_name, ts)
+     VALUES (?,?,?,?)
+     ON CONFLICT(peer_id) DO UPDATE SET
+       direction=excluded.direction,
+       screen_name=excluded.screen_name,
+       ts=excluded.ts`,
+  ).run(r.peerId, r.direction, r.screenName, r.ts);
+}
+
+export function deleteBuddyRequest(db: Db, peerId: string): void {
+  db.prepare('DELETE FROM buddy_requests WHERE peer_id=?').run(peerId);
+}
+
+// ── unread tracking ─────────────────────────────────────────────────────────
+
+// 1:1 IM: an "unread" inbound message is direction='in' AND status='delivered'
+// (i.e. arrived but not yet shown in an open IM window). Opening the window
+// marks them as 'read'.
+export function unreadImCounts(db: Db): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT peer_id as peerId, COUNT(*) as n
+         FROM messages WHERE direction='in' AND status='delivered'
+         GROUP BY peer_id`,
+    )
+    .all() as Array<{ peerId: string; n: number }>;
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.peerId] = r.n;
+  return out;
+}
+
+export function markImRead(db: Db, peerId: string): number {
+  const res = db
+    .prepare(
+      `UPDATE messages SET status='read'
+         WHERE peer_id=? AND direction='in' AND status='delivered'`,
+    )
+    .run(peerId);
+  return res.changes;
+}
+
+// Rooms: a per-room "last seen" watermark. Anything strictly newer that wasn't
+// sent by us is unread.
+export function unreadRoomCounts(db: Db, myPeerId: string): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT rm.room_id as roomId, COUNT(*) as n
+         FROM room_messages rm
+         LEFT JOIN room_reads rr ON rr.room_id = rm.room_id
+         WHERE rm.from_peer_id != ? AND rm.ts > COALESCE(rr.last_seen_ts, 0)
+         GROUP BY rm.room_id`,
+    )
+    .all(myPeerId) as Array<{ roomId: string; n: number }>;
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.roomId] = r.n;
+  return out;
+}
+
+export function markRoomRead(db: Db, roomId: string, ts = Date.now()): void {
+  db.prepare(
+    `INSERT INTO room_reads(room_id, last_seen_ts) VALUES (?, ?)
+     ON CONFLICT(room_id) DO UPDATE SET last_seen_ts = MAX(last_seen_ts, excluded.last_seen_ts)`,
+  ).run(roomId, ts);
+}

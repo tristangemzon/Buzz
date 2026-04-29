@@ -88,6 +88,8 @@ function App(): JSX.Element {
     });
 
     playSound('door-open');
+    // Mark room as read on open.
+    void window.buzz.markRoomRead(roomId).catch(() => undefined);
 
     const offMsg = window.buzz.onRoomMessage((m) => {
       if (m.roomId !== roomId) return;
@@ -95,6 +97,8 @@ function App(): JSX.Element {
       // Only append to the visible log if it's for the active channel.
       if (m.channelId !== activeChannelIdRef.current) return;
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+      // Window is open — flush this room from the unread tally.
+      void window.buzz.markRoomRead(roomId).catch(() => undefined);
     });
     const offMembers = window.buzz.onRoomMembers((e) => {
       if (e.roomId !== roomId) return;

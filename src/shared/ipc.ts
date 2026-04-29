@@ -18,9 +18,17 @@ export const IPC = {
   BuddiesBlock: 'buddies:block',
   BuddiesWarn: 'buddies:warn',
 
+  // buddy requests (approve/deny flow)
+  BuddiesListRequests: 'buddies:listRequests',
+  BuddiesSendRequest: 'buddies:sendRequest',
+  BuddiesApproveRequest: 'buddies:approveRequest',
+  BuddiesDenyRequest: 'buddies:denyRequest',
+  BuddiesCancelRequest: 'buddies:cancelRequest',
+
   // im
   ImSend: 'im:send',
   ImHistory: 'im:history',
+  ImMarkRead: 'im:markRead',
 
   // prefs
   PrefsGet: 'prefs:get',
@@ -53,6 +61,10 @@ export const IPC = {
   RoomsListChannels: 'rooms:listChannels',
   RoomsCreateChannel: 'rooms:createChannel',
   RoomsDeleteChannel: 'rooms:deleteChannel',
+  RoomsMarkRead: 'rooms:markRead',
+
+  // unread counters
+  UnreadGet: 'unread:get',
 
   // offline mailbox relay
   MailboxStats: 'mailbox:stats',
@@ -79,6 +91,9 @@ export const IPC = {
   EvtRoomChannel: 'evt:roomChannel',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
   EvtDiscovered: 'evt:discovered',
+  EvtBuddyRequest: 'evt:buddyRequest',
+  EvtBuddyRequestResolved: 'evt:buddyRequestResolved',
+  EvtUnread: 'evt:unread',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

@@ -29,6 +29,11 @@ export function openDb(file: string, key: Uint8Array): Db {
   // landed), and back-fill a default "general" channel for every existing room.
   migrateChannels(db);
 
+  // Migration: ensure newer tables (buddy_requests, room_reads) exist on
+  // legacy DBs. The schema apply above already creates them via IF NOT EXISTS,
+  // but some old installs were opened before those statements were added.
+  migrateBuddyRequestsAndReads(db);
+
   return db;
 }
 
@@ -74,4 +79,22 @@ function migrateChannels(db: Db): void {
     }
   });
   tx();
+}
+
+function migrateBuddyRequestsAndReads(db: Db): void {
+  // The schema is applied with IF NOT EXISTS so this is mostly a no-op, but
+  // keep an explicit hook so we can layer further per-install fixups here.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS buddy_requests (
+      peer_id     TEXT PRIMARY KEY,
+      direction   TEXT NOT NULL CHECK (direction IN ('in','out')),
+      screen_name TEXT NOT NULL DEFAULT '',
+      ts          INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_buddy_requests_dir ON buddy_requests(direction);
+    CREATE TABLE IF NOT EXISTS room_reads (
+      room_id       TEXT PRIMARY KEY,
+      last_seen_ts  INTEGER NOT NULL DEFAULT 0
+    );
+  `);
 }

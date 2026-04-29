@@ -1,6 +1,10 @@
 import type {
   AddBuddyReq,
   Buddy,
+  BuddyRequest,
+  BuddyRequestEvent,
+  BuddyRequestResolvedEvent,
+  BuddyRequestSendReq,
   BuddyStatusEvent,
   CreateIdentityReq,
   DiscoveredEvent,
@@ -38,6 +42,7 @@ import type {
   SendImReq,
   SetPrefsReq,
   UnlockReq,
+  UnreadCounts,
   XferDoneEvent,
   XferOfferEvent,
   XferProgressEvent,
@@ -58,15 +63,27 @@ export type AppApi = {
 
   // buddies
   listBuddies(): Promise<Buddy[]>;
-  addBuddy(req: AddBuddyReq): Promise<Buddy>;
+  addBuddy(req: AddBuddyReq): Promise<Buddy | null>;
   removeBuddy(peerId: string): Promise<void>;
   renameBuddy(peerId: string, alias: string): Promise<void>;
   blockBuddy(peerId: string, blocked: boolean): Promise<void>;
   warnBuddy(peerId: string, delta?: number): Promise<number>;
 
+  // buddy add requests (approve/deny flow)
+  sendBuddyRequest(req: BuddyRequestSendReq): Promise<void>;
+  listBuddyRequests(): Promise<BuddyRequest[]>;
+  approveBuddyRequest(peerId: string): Promise<void>;
+  denyBuddyRequest(peerId: string): Promise<void>;
+  cancelBuddyRequest(peerId: string): Promise<void>;
+
   // im
   sendIm(req: SendImReq): Promise<ImMessage>;
   history(req: HistoryReq): Promise<ImMessage[]>;
+  markImRead(peerId: string): Promise<void>;
+
+  // unread
+  getUnread(): Promise<UnreadCounts>;
+  markRoomRead(roomId: string): Promise<void>;
 
   // prefs
   getPrefs(): Promise<Prefs>;
@@ -127,6 +144,9 @@ export type AppApi = {
   onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
   onDiscovered(cb: (e: DiscoveredEvent) => void): () => void;
+  onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;
+  onBuddyRequestResolved(cb: (e: BuddyRequestResolvedEvent) => void): () => void;
+  onUnread(cb: (e: UnreadCounts) => void): () => void;
 };
 
 declare global {

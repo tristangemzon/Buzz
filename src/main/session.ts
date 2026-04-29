@@ -23,6 +23,9 @@ import type {
   ImAckEvent,
   ImReceivedEvent,
   BuddyStatusEvent,
+  BuddyRequest,
+  BuddyRequestEvent,
+  BuddyRequestResolvedEvent,
   DiscoveredEvent,
   DiscoveredPeer,
   PeerProfile,
@@ -31,6 +34,7 @@ import type {
   RoomInvitedEvent,
   RoomMembersEvent,
   RoomMessage,
+  UnreadCounts,
   XferDoneEvent,
   XferOfferEvent,
   XferProgressEvent,
@@ -286,6 +290,8 @@ export class Session {
         onRoomMeta: (peer, p) => this.rooms?.handleMeta(peer, p),
         onRoomChannelAdd: (peer, p) => this.rooms?.handleChannelAdd(peer, p),
         onRoomChannelDel: (peer, p) => this.rooms?.handleChannelDel(peer, p),
+        onBuddyReq: (peer, p) => this.handleBuddyReq(peer, p),
+        onBuddyResp: (peer, p) => this.handleBuddyResp(peer, p),
       },
       (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
     );
@@ -503,6 +509,7 @@ export class Session {
           };
           repos.insertRoomMessage(this.db, stored);
           this.broadcast(IPC.EvtRoomMessage, stored);
+          this.broadcastUnread();
         },
         onMembers: (roomId, members, name) => {
           if (!this.db) return;
@@ -616,6 +623,7 @@ export class Session {
     repos.insertMessage(this.db, msg);
     this.broadcast(IPC.EvtImReceived, msg);
     this.broadcast(IPC.EvtMailboxDelivered, { peerId: m.fromPeerId, count: 1 });
+    this.broadcastUnread();
     return true;
   }
 
@@ -656,6 +664,67 @@ export class Session {
     } satisfies DiscoveredEvent);
   }
 
+  // Buddy add request operations (initiator side) ──────────────────────────
+  async sendBuddyRequest(
+    peerId: string,
+    alias: string,
+    _group: string,
+  ): Promise<void> {
+    if (!this.db || !this.im) throw new Error('Locked');
+    if (this.db.prepare('SELECT 1 FROM buddies WHERE peer_id=?').get(peerId)) {
+      return; // already a buddy
+    }
+    const ts = Date.now();
+    repos.upsertBuddyRequest(this.db, {
+      peerId,
+      direction: 'out',
+      screenName: alias,
+      ts,
+    });
+    // Best-effort send; if the peer is offline we'll retry next time the
+    // user clicks "Add" (the local pending row is the source of truth).
+    try {
+      await this.im.send(peerId, {
+        type: 'buddy-req',
+        screenName: this.screenName,
+        ts,
+      });
+    } catch {
+      // swallow — peer may be offline
+    }
+  }
+
+  approveBuddyRequest(peerId: string): void {
+    if (!this.db) throw new Error('Locked');
+    const req = repos.getBuddyRequest(this.db, peerId);
+    if (!req || req.direction !== 'in') return;
+    const alias = req.screenName?.trim() || `${peerId.slice(0, 8)}…`;
+    repos.addBuddy(this.db, peerId, alias, 'Buddies');
+    repos.deleteBuddyRequest(this.db, peerId);
+    this.forgetDiscovered(peerId);
+    void this.im
+      ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
+      .catch(() => {});
+    this.broadcast(IPC.EvtBuddyRequestResolved, {
+      peerId,
+      accepted: true,
+    } satisfies BuddyRequestResolvedEvent);
+  }
+
+  denyBuddyRequest(peerId: string): void {
+    if (!this.db) throw new Error('Locked');
+    const req = repos.getBuddyRequest(this.db, peerId);
+    if (!req || req.direction !== 'in') return;
+    repos.deleteBuddyRequest(this.db, peerId);
+    void this.im
+      ?.send(peerId, { type: 'buddy-resp', accepted: false })
+      .catch(() => {});
+    this.broadcast(IPC.EvtBuddyRequestResolved, {
+      peerId,
+      accepted: false,
+    } satisfies BuddyRequestResolvedEvent);
+  }
+
   private handleIncoming(peerId: string, m: { id: string; ts: number; body: string }): void {
     if (!this.db || !this.im) return;
     if (repos.isBlocked(this.db, peerId)) return;
@@ -670,6 +739,7 @@ export class Session {
     };
     repos.insertMessage(this.db, msg);
     this.broadcast(IPC.EvtImReceived, msg);
+    this.broadcastUnread();
 
     void this.im.send(peerId, { type: 'ack', id: m.id, status: 'delivered' }).catch(() => {});
   }
@@ -679,6 +749,70 @@ export class Session {
     repos.setMessageStatus(this.db, id, status);
     const ev: ImAckEvent = { id, status };
     this.broadcast(IPC.EvtImAck, ev);
+  }
+
+  // Buddy add request flow ─────────────────────────────────────────────────
+  private handleBuddyReq(
+    peerId: string,
+    p: { screenName: string; ts: number },
+  ): void {
+    if (!this.db) return;
+    if (repos.isBlocked(this.db, peerId)) return;
+    // If we're already buddies, treat the request as an instant approval so
+    // the remote side flips out of pending.
+    const alreadyBuddy = !!this.db
+      .prepare('SELECT 1 FROM buddies WHERE peer_id=?')
+      .get(peerId);
+    if (alreadyBuddy) {
+      void this.im
+        ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
+        .catch(() => {});
+      return;
+    }
+    const req: BuddyRequest = {
+      peerId,
+      direction: 'in',
+      screenName: p.screenName ?? '',
+      ts: p.ts ?? Date.now(),
+    };
+    repos.upsertBuddyRequest(this.db, req);
+    this.broadcast(IPC.EvtBuddyRequest, {
+      kind: 'incoming',
+      request: req,
+    } satisfies BuddyRequestEvent);
+  }
+
+  private handleBuddyResp(
+    peerId: string,
+    p: { accepted: boolean; screenName?: string },
+  ): void {
+    if (!this.db) return;
+    const req = repos.getBuddyRequest(this.db, peerId);
+    // Only outbound (we sent) requests should ever resolve via a response.
+    if (req && req.direction !== 'out') return;
+    repos.deleteBuddyRequest(this.db, peerId);
+    if (p.accepted) {
+      // Promote our pending entry to a real buddy. We don't have an alias
+      // here unless the original request stashed one; use the screenName the
+      // remote announced as a sensible default.
+      const alias = p.screenName?.trim() || `${peerId.slice(0, 8)}…`;
+      repos.addBuddy(this.db, peerId, alias, 'Buddies');
+    }
+    const ev: BuddyRequestResolvedEvent = { peerId, accepted: p.accepted };
+    this.broadcast(IPC.EvtBuddyRequestResolved, ev);
+  }
+
+  // Unread broadcast ───────────────────────────────────────────────────────
+  unreadSnapshot(): UnreadCounts {
+    if (!this.db) return { peers: {}, rooms: {} };
+    return {
+      peers: repos.unreadImCounts(this.db),
+      rooms: repos.unreadRoomCounts(this.db, this.peerIdStr()),
+    };
+  }
+
+  broadcastUnread(): void {
+    this.broadcast(IPC.EvtUnread, this.unreadSnapshot());
   }
 
   private broadcast(channel: string, payload: unknown): void {

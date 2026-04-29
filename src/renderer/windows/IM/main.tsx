@@ -99,6 +99,9 @@ function App(): JSX.Element {
         }
       });
     void window.buzz.history({ peerId, limit: 100 }).then(setMessages);
+    // Mark all delivered messages from this peer as read since the IM
+    // window is now open and visible.
+    void window.buzz.markImRead(peerId).catch(() => undefined);
 
     // Door open on conversation focus; close on unmount.
     playSound('door-open');
@@ -107,6 +110,8 @@ function App(): JSX.Element {
       if (m.peerId !== peerId) return;
       setMessages((prev) => [...prev, m]);
       playSound('im-receive');
+      // Window is open — flush this message from the unread tally.
+      void window.buzz.markImRead(peerId).catch(() => undefined);
     });
     const offAck = window.buzz.onImAck(({ id, status }) => {
       setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));

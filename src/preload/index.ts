@@ -25,8 +25,18 @@ const api: AppApi = {
   blockBuddy: (peerId, blocked) => ipcRenderer.invoke(IPC.BuddiesBlock, { peerId, blocked }),
   warnBuddy: (peerId, delta = 10) => ipcRenderer.invoke(IPC.BuddiesWarn, { peerId, delta }),
 
+  sendBuddyRequest: (req) => ipcRenderer.invoke(IPC.BuddiesSendRequest, req),
+  listBuddyRequests: () => ipcRenderer.invoke(IPC.BuddiesListRequests),
+  approveBuddyRequest: (peerId) => ipcRenderer.invoke(IPC.BuddiesApproveRequest, peerId),
+  denyBuddyRequest: (peerId) => ipcRenderer.invoke(IPC.BuddiesDenyRequest, peerId),
+  cancelBuddyRequest: (peerId) => ipcRenderer.invoke(IPC.BuddiesCancelRequest, peerId),
+
   sendIm: (req) => ipcRenderer.invoke(IPC.ImSend, req),
   history: (req) => ipcRenderer.invoke(IPC.ImHistory, req),
+  markImRead: (peerId) => ipcRenderer.invoke(IPC.ImMarkRead, peerId),
+
+  getUnread: () => ipcRenderer.invoke(IPC.UnreadGet),
+  markRoomRead: (roomId) => ipcRenderer.invoke(IPC.RoomsMarkRead, { roomId }),
 
   getPrefs: () => ipcRenderer.invoke(IPC.PrefsGet),
   setPrefs: (req) => ipcRenderer.invoke(IPC.PrefsSet, req),
@@ -75,6 +85,9 @@ const api: AppApi = {
   onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
   onDiscovered: (cb) => on(IPC.EvtDiscovered, cb),
+  onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),
+  onBuddyRequestResolved: (cb) => on(IPC.EvtBuddyRequestResolved, cb),
+  onUnread: (cb) => on(IPC.EvtUnread, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

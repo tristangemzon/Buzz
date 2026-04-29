@@ -73,7 +73,10 @@ export type Frame =
       name: string;
       ts: number;
     }
-  | { type: 'room-channel-del'; roomId: string; channelId: string };
+  | { type: 'room-channel-del'; roomId: string; channelId: string }
+  // Buddy add request flow.
+  | { type: 'buddy-req'; screenName: string; ts: number }
+  | { type: 'buddy-resp'; accepted: boolean; screenName?: string };
 
 export type RoomInvitePayload = {
   roomId: string;
@@ -112,6 +115,8 @@ export type ImEvents = {
   onRoomMeta?(peerId: string, p: RoomMetaPayload): void;
   onRoomChannelAdd?(peerId: string, p: RoomChannelAddPayload): void;
   onRoomChannelDel?(peerId: string, p: RoomChannelDelPayload): void;
+  onBuddyReq?(peerId: string, p: { screenName: string; ts: number }): void;
+  onBuddyResp?(peerId: string, p: { accepted: boolean; screenName?: string }): void;
 };
 
 type ConnState = {
@@ -368,6 +373,22 @@ export class ImService {
           this.events.onRoomChannelDel(peerIdStr, {
             roomId: f.roomId,
             channelId: f.channelId,
+          });
+        }
+        break;
+      case 'buddy-req':
+        if (this.events.onBuddyReq && typeof f.screenName === 'string') {
+          this.events.onBuddyReq(peerIdStr, {
+            screenName: f.screenName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'buddy-resp':
+        if (this.events.onBuddyResp && typeof f.accepted === 'boolean') {
+          this.events.onBuddyResp(peerIdStr, {
+            accepted: f.accepted,
+            screenName: typeof f.screenName === 'string' ? f.screenName : undefined,
           });
         }
         break;

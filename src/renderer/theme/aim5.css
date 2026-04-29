@@ -325,6 +325,47 @@ button:disabled {
   background: #e8f0ff;
 }
 
+/* Inbound buddy add requests get a more prominent treatment. */
+.request-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.request-approve {
+  background: #d8f0d0;
+  border-color: #4f9e3a;
+}
+.request-approve:hover {
+  background: #b9e6a8;
+}
+.request-deny {
+  background: #f5d8d8;
+  border-color: #b03a3a;
+}
+.request-deny:hover {
+  background: #efb9b9;
+}
+.pending-row {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* Unread message badge shown next to a buddy or room name. */
+.unread-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  background: #d33a3a;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 14px;
+  vertical-align: middle;
+}
+
 /* Lightweight popup menu for right-click on a buddy row. */
 .ctx-menu {
   position: fixed;

@@ -112,5 +112,18 @@ CREATE TABLE IF NOT EXISTS mailbox (
 );
 CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_ts ON mailbox(recipient, ts ASC);
 
+CREATE TABLE IF NOT EXISTS buddy_requests (
+  peer_id     TEXT PRIMARY KEY,
+  direction   TEXT NOT NULL CHECK (direction IN ('in','out')),
+  screen_name TEXT NOT NULL DEFAULT '',
+  ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_buddy_requests_dir ON buddy_requests(direction);
+
+CREATE TABLE IF NOT EXISTS room_reads (
+  room_id       TEXT PRIMARY KEY,
+  last_seen_ts  INTEGER NOT NULL DEFAULT 0
+);
+
 INSERT OR IGNORE INTO schema_version(version) VALUES (1);
 `;

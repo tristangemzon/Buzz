@@ -430,3 +430,43 @@ export const DiscoveredEvent = z.object({
   peer: DiscoveredPeer,
 });
 export type DiscoveredEvent = z.infer<typeof DiscoveredEvent>;
+
+// ── Buddy add requests (approve/deny) ────────────────────────────────────────
+
+export const BuddyRequest = z.object({
+  peerId: PeerIdStr,
+  direction: z.enum(['in', 'out']),
+  screenName: z.string().max(64).default(''),
+  ts: z.number().int().nonnegative(),
+});
+export type BuddyRequest = z.infer<typeof BuddyRequest>;
+
+export const BuddyRequestSendReq = z.object({
+  buddyCode: BuddyCode,
+  alias: z.string().min(1).max(64),
+  group: z.string().min(1).max(32).default('Buddies'),
+});
+export type BuddyRequestSendReq = z.infer<typeof BuddyRequestSendReq>;
+
+export const BuddyRequestEvent = z.object({
+  kind: z.enum(['incoming', 'cancelled']),
+  request: BuddyRequest,
+});
+export type BuddyRequestEvent = z.infer<typeof BuddyRequestEvent>;
+
+// Sent to the requester after the recipient approves or (soft-)denies.
+export const BuddyRequestResolvedEvent = z.object({
+  peerId: PeerIdStr,
+  accepted: z.boolean(),
+});
+export type BuddyRequestResolvedEvent = z.infer<typeof BuddyRequestResolvedEvent>;
+
+// ── Unread counts ────────────────────────────────────────────────────────────
+
+export const UnreadCounts = z.object({
+  // Per-peer 1:1 IM unread (delivered but not yet shown in an open IM window).
+  peers: z.record(PeerIdStr, z.number().int().nonnegative()),
+  // Per-room unread (any message strictly newer than our last_seen watermark).
+  rooms: z.record(Uuid, z.number().int().nonnegative()),
+});
+export type UnreadCounts = z.infer<typeof UnreadCounts>;

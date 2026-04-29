@@ -7,6 +7,9 @@ import { ThemeSettings } from '../../components/ThemeSettings';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type {
   Buddy,
+  BuddyRequest,
+  BuddyRequestEvent,
+  BuddyRequestResolvedEvent,
   Room,
   Status,
   BuddyStatusEvent,
@@ -15,6 +18,7 @@ import type {
   MailboxStats,
   SelectableStatus,
   SelfPresence,
+  UnreadCounts,
 } from '@shared/schemas';
 
 function App(): JSX.Element {
@@ -47,6 +51,10 @@ function App(): JSX.Element {
   const [ctx, setCtx] = useState<{ peerId: string; x: number; y: number } | null>(null);
   // Auto-discovered LAN peers that aren't in the buddy list yet.
   const [nearby, setNearby] = useState<DiscoveredPeer[]>([]);
+  // Pending buddy add requests (both directions).
+  const [requests, setRequests] = useState<BuddyRequest[]>([]);
+  // Unread message counters per peer / per room.
+  const [unread, setUnread] = useState<UnreadCounts>({ peers: {}, rooms: {} });
   // Track last seen status per peer so we can play buddy-in / buddy-out
   // only on actual transitions (not on every duplicate broadcast).
   const prevStatusRef = useRef<Record<string, Status>>({});
@@ -75,6 +83,23 @@ function App(): JSX.Element {
     });
     void window.buzz.listRooms().then(setRooms);
     void window.buzz.listDiscovered().then(setNearby).catch(() => undefined);
+    void window.buzz.listBuddyRequests().then(setRequests).catch(() => undefined);
+    void window.buzz.getUnread().then(setUnread).catch(() => undefined);
+    const offBuddyReq = window.buzz.onBuddyRequest((e: BuddyRequestEvent) => {
+      setRequests((prev) => {
+        const others = prev.filter((r) => r.peerId !== e.request.peerId);
+        return e.kind === 'incoming' ? [e.request, ...others] : others;
+      });
+      if (e.kind === 'incoming') playSound('im-receive');
+    });
+    const offBuddyResolved = window.buzz.onBuddyRequestResolved(
+      (e: BuddyRequestResolvedEvent) => {
+        setRequests((prev) => prev.filter((r) => r.peerId !== e.peerId));
+        // Refresh buddies if the remote accepted us.
+        if (e.accepted) void window.buzz.listBuddies().then(setBuddies);
+      },
+    );
+    const offUnread = window.buzz.onUnread((c: UnreadCounts) => setUnread(c));
     const offDiscovered = window.buzz.onDiscovered((e: DiscoveredEvent) => {
       setNearby((prev) => {
         if (e.kind === 'removed') return prev.filter((p) => p.peerId !== e.peer.peerId);
@@ -96,6 +121,9 @@ function App(): JSX.Element {
       offInvited();
       offRoomMembers();
       offDiscovered();
+      offBuddyReq();
+      offBuddyResolved();
+      offUnread();
     };
   }, []);
 
@@ -112,12 +140,14 @@ function App(): JSX.Element {
     setErr('');
     if (!code.trim() || !alias.trim()) return setErr('Code and alias are required.');
     try {
-      const b = await window.buzz.addBuddy({
+      await window.buzz.sendBuddyRequest({
         buddyCode: code.trim(),
         alias: alias.trim(),
         group: group.trim() || 'Buddies',
       });
-      setBuddies((prev) => [...prev.filter((x) => x.peerId !== b.peerId), b]);
+      // Reflect the outbound pending request locally for visual feedback.
+      const reqs = await window.buzz.listBuddyRequests();
+      setRequests(reqs);
       setShowAdd(false);
       setCode('');
       setAlias('');
@@ -131,16 +161,32 @@ function App(): JSX.Element {
   async function addNearby(peer: DiscoveredPeer): Promise<void> {
     const fallbackAlias = peer.screenName || `${peer.peerId.slice(0, 8)}…`;
     try {
-      const b = await window.buzz.addBuddy({
+      await window.buzz.sendBuddyRequest({
         buddyCode: peer.peerId,
         alias: fallbackAlias,
         group: 'Buddies',
       });
-      setBuddies((prev) => [...prev.filter((x) => x.peerId !== b.peerId), b]);
-      setNearby((prev) => prev.filter((p) => p.peerId !== peer.peerId));
+      const reqs = await window.buzz.listBuddyRequests();
+      setRequests(reqs);
     } catch {
       /* ignore — error surfaces via the Add Buddy modal flow if user retries */
     }
+  }
+
+  async function approveRequest(peerId: string): Promise<void> {
+    await window.buzz.approveBuddyRequest(peerId);
+    setRequests((prev) => prev.filter((r) => r.peerId !== peerId));
+    await refreshBuddies();
+  }
+
+  async function denyRequest(peerId: string): Promise<void> {
+    await window.buzz.denyBuddyRequest(peerId);
+    setRequests((prev) => prev.filter((r) => r.peerId !== peerId));
+  }
+
+  async function cancelRequest(peerId: string): Promise<void> {
+    await window.buzz.cancelBuddyRequest(peerId);
+    setRequests((prev) => prev.filter((r) => r.peerId !== peerId));
   }
 
   async function openIm(peerId: string): Promise<void> {
@@ -272,28 +318,84 @@ function App(): JSX.Element {
 
       <div className="buddylist-split">
         <div className="bevel-in list buddylist-buddies">
-          {nearby.length > 0 && (
+          {requests.filter((r) => r.direction === 'in').length > 0 && (
             <div>
-              <div className="group">Nearby ({nearby.length})</div>
-              {nearby.map((p) => (
-                <div
-                  className="row nearby-row"
-                  key={p.peerId}
-                  title={p.peerId}
-                >
-                  <span className="status online" />
-                  <span className="nearby-label">
-                    {p.screenName || `${p.peerId.slice(0, 12)}…`}
-                  </span>
-                  <button
-                    className="nearby-add"
-                    title="Add to buddy list"
-                    onClick={() => void addNearby(p)}
-                  >
-                    + Add
-                  </button>
-                </div>
-              ))}
+              <div className="group">
+                Buddy Requests ({requests.filter((r) => r.direction === 'in').length})
+              </div>
+              {requests
+                .filter((r) => r.direction === 'in')
+                .map((r) => (
+                  <div className="row request-row" key={`in-${r.peerId}`} title={r.peerId}>
+                    <span className="status online" />
+                    <span className="nearby-label">
+                      {r.screenName || `${r.peerId.slice(0, 12)}…`}
+                    </span>
+                    <button
+                      className="nearby-add request-approve"
+                      title="Approve"
+                      onClick={() => void approveRequest(r.peerId)}
+                    >
+                      ✓ Approve
+                    </button>
+                    <button
+                      className="nearby-add request-deny"
+                      title="Deny"
+                      onClick={() => void denyRequest(r.peerId)}
+                    >
+                      ✕ Deny
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+          {nearby.filter((p) => !requests.some((r) => r.peerId === p.peerId)).length > 0 && (
+            <div>
+              <div className="group">
+                Nearby (
+                {nearby.filter((p) => !requests.some((r) => r.peerId === p.peerId)).length})
+              </div>
+              {nearby
+                .filter((p) => !requests.some((r) => r.peerId === p.peerId))
+                .map((p) => (
+                  <div className="row nearby-row" key={p.peerId} title={p.peerId}>
+                    <span className="status online" />
+                    <span className="nearby-label">
+                      {p.screenName || `${p.peerId.slice(0, 12)}…`}
+                    </span>
+                    <button
+                      className="nearby-add"
+                      title="Send buddy request"
+                      onClick={() => void addNearby(p)}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+          {requests.filter((r) => r.direction === 'out').length > 0 && (
+            <div>
+              <div className="group">
+                Pending ({requests.filter((r) => r.direction === 'out').length})
+              </div>
+              {requests
+                .filter((r) => r.direction === 'out')
+                .map((r) => (
+                  <div className="row pending-row" key={`out-${r.peerId}`} title={r.peerId}>
+                    <span className="status offline" />
+                    <span className="nearby-label">
+                      {r.screenName || `${r.peerId.slice(0, 12)}…`}
+                    </span>
+                    <button
+                      className="nearby-add request-deny"
+                      title="Cancel request"
+                      onClick={() => void cancelRequest(r.peerId)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ))}
             </div>
           )}
           {Object.keys(grouped).length === 0 ? (
@@ -320,6 +422,11 @@ function App(): JSX.Element {
                   >
                     <span className={`status ${b.status}`} />
                     {b.alias}
+                    {unread.peers[b.peerId] ? (
+                      <span className="unread-badge" title="Unread messages">
+                        {unread.peers[b.peerId]}
+                      </span>
+                    ) : null}
                     {b.warnLevel > 0 && (
                       <span className="warn-badge" title={`Warned ${b.warnLevel}%`}>
                         {b.warnLevel}%
@@ -365,6 +472,11 @@ function App(): JSX.Element {
                   <span className="muted" style={{ marginLeft: 6, fontSize: 11 }}>
                     ({r.members.length})
                   </span>
+                  {unread.rooms[r.id] ? (
+                    <span className="unread-badge" title="Unread messages">
+                      {unread.rooms[r.id]}
+                    </span>
+                  ) : null}
                 </div>
               ))
             )}
