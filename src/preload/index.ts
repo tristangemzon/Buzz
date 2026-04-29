@@ -49,6 +49,9 @@ const api: AppApi = {
   leaveRoom: (req) => ipcRenderer.invoke(IPC.RoomsLeave, req),
   sendRoomMessage: (req) => ipcRenderer.invoke(IPC.RoomsSend, req),
   roomHistory: (req) => ipcRenderer.invoke(IPC.RoomsHistory, req),
+  listRoomChannels: (req) => ipcRenderer.invoke(IPC.RoomsListChannels, req),
+  createRoomChannel: (req) => ipcRenderer.invoke(IPC.RoomsCreateChannel, req),
+  deleteRoomChannel: (req) => ipcRenderer.invoke(IPC.RoomsDeleteChannel, req),
 
   mailboxStats: () => ipcRenderer.invoke(IPC.MailboxStats),
   mailboxAddRelay: (req) => ipcRenderer.invoke(IPC.MailboxAddRelay, req),
@@ -66,6 +69,7 @@ const api: AppApi = {
   onRoomMessage: (cb) => on(IPC.EvtRoomMessage, cb),
   onRoomInvited: (cb) => on(IPC.EvtRoomInvited, cb),
   onRoomMembers: (cb) => on(IPC.EvtRoomMembers, cb),
+  onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
 };
 

@@ -296,9 +296,43 @@ export const Room = z.object({
 });
 export type Room = z.infer<typeof Room>;
 
+// Discord-style text channels within a room. Members all see every channel;
+// channels share the room's symmetric key (the channel id is just metadata).
+const ChannelName = z.string().min(1).max(64).regex(/^[A-Za-z0-9 _-]+$/);
+export const RoomChannel = z.object({
+  id: Uuid,
+  roomId: RoomId,
+  name: ChannelName,
+  isDefault: z.boolean().default(false),
+  createdAt: z.number().int().nonnegative(),
+});
+export type RoomChannel = z.infer<typeof RoomChannel>;
+
+export const RoomChannelCreateReq = z.object({
+  roomId: RoomId,
+  name: ChannelName,
+});
+export type RoomChannelCreateReq = z.infer<typeof RoomChannelCreateReq>;
+
+export const RoomChannelDeleteReq = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+});
+export type RoomChannelDeleteReq = z.infer<typeof RoomChannelDeleteReq>;
+
+export const RoomChannelsListReq = z.object({ roomId: RoomId });
+export type RoomChannelsListReq = z.infer<typeof RoomChannelsListReq>;
+
+export const RoomChannelEvent = z.object({
+  kind: z.enum(['added', 'removed']),
+  channel: RoomChannel,
+});
+export type RoomChannelEvent = z.infer<typeof RoomChannelEvent>;
+
 export const RoomMessage = z.object({
   id: Uuid,
   roomId: RoomId,
+  channelId: Uuid,
   fromPeerId: PeerIdStr,
   fromName: z.string().max(64).default(''),
   ts: z.number().int().nonnegative(),
@@ -325,12 +359,14 @@ export type RoomLeaveReq = z.infer<typeof RoomLeaveReq>;
 
 export const RoomSendReq = z.object({
   roomId: RoomId,
+  channelId: Uuid,
   body: z.string().min(1).max(64 * 1024),
 });
 export type RoomSendReq = z.infer<typeof RoomSendReq>;
 
 export const RoomHistoryReq = z.object({
   roomId: RoomId,
+  channelId: Uuid.optional(),
   limit: z.number().int().positive().max(500).default(200),
   before: z.number().int().nonnegative().optional(),
 });

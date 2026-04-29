@@ -18,6 +18,9 @@ import {
   RoomInviteReq,
   RoomLeaveReq,
   RoomSendReq,
+  RoomChannelsListReq,
+  RoomChannelCreateReq,
+  RoomChannelDeleteReq,
   MailboxAddRelayReq,
   MailboxRemoveRelayReq,
   NetworkConfig,
@@ -276,6 +279,15 @@ export function registerIpc(session: Session): void {
     const { roomId, keyB64, createdAt, members: full } = await rooms.createRoom({ name, members });
     repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
     repos.setRoomMembers(db, roomId, full);
+    // Auto-create the default "general" channel locally. We don't broadcast
+    // it: every member's session will create its own default on invite.
+    repos.upsertRoomChannel(db, {
+      id: randomUUID(),
+      roomId,
+      name: 'general',
+      isDefault: true,
+      createdAt,
+    });
     const s = await sodium();
     session.cacheRoomKey(roomId, s.from_base64(keyB64, s.base64_variants.ORIGINAL));
     session.cacheRoomMembers(roomId, full);
@@ -301,14 +313,18 @@ export function registerIpc(session: Session): void {
     session.forgetRoom(roomId);
     return { ok: true as const };
   });
-  handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, body }) => {
+  handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, channelId, body }) => {
     const db = requireDb(session);
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
-    const { id, ts } = await rooms.sendMessage(roomId, body);
+    // Validate the channel belongs to this room.
+    const ch = repos.getRoomChannel(db, channelId);
+    if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
+    const { id, ts } = await rooms.sendMessage(roomId, channelId, body);
     const stored = {
       id,
       roomId,
+      channelId,
       fromPeerId: session.peerIdStr(),
       fromName: session.screenName,
       direction: 'out' as const,
@@ -318,9 +334,40 @@ export function registerIpc(session: Session): void {
     repos.insertRoomMessage(db, stored);
     return stored;
   });
-  handle(IPC.RoomsHistory, RoomHistoryReq, ({ roomId, limit, before }) =>
-    repos.roomHistory(requireDb(session), roomId, limit, before),
+  handle(IPC.RoomsHistory, RoomHistoryReq, ({ roomId, channelId, limit, before }) =>
+    repos.roomHistory(requireDb(session), roomId, limit, before, channelId),
   );
+
+  handle(IPC.RoomsListChannels, RoomChannelsListReq, ({ roomId }) =>
+    repos.listRoomChannels(requireDb(session), roomId),
+  );
+  handle(IPC.RoomsCreateChannel, RoomChannelCreateReq, async ({ roomId, name }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    if (!repos.getRoom(db, roomId)) throw new Error('Unknown room');
+    const ch = {
+      id: randomUUID(),
+      roomId,
+      name,
+      isDefault: false,
+      createdAt: Date.now(),
+    };
+    repos.upsertRoomChannel(db, ch);
+    await rooms.broadcastChannelAdd(roomId, ch.id, ch.name);
+    return ch;
+  });
+  handle(IPC.RoomsDeleteChannel, RoomChannelDeleteReq, async ({ roomId, channelId }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    if (!rooms) throw new Error('Locked');
+    const ch = repos.getRoomChannel(db, channelId);
+    if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
+    if (ch.isDefault) throw new Error('Cannot delete the default channel');
+    repos.deleteRoomChannel(db, channelId);
+    await rooms.broadcastChannelDel(roomId, channelId);
+    return { ok: true as const };
+  });
 
   // ── offline mailbox relay ────────────────────────────────────────────────
   handle(IPC.MailboxStats, null, () => {

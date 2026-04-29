@@ -13,6 +13,11 @@ import type {
   Profile,
   ProfileSummary,
   Room,
+  RoomChannel,
+  RoomChannelCreateReq,
+  RoomChannelDeleteReq,
+  RoomChannelEvent,
+  RoomChannelsListReq,
   RoomCreateReq,
   RoomHistoryReq,
   RoomInvitedEvent,
@@ -91,6 +96,9 @@ export type AppApi = {
   leaveRoom(req: RoomLeaveReq): Promise<{ ok: true }>;
   sendRoomMessage(req: RoomSendReq): Promise<RoomMessage>;
   roomHistory(req: RoomHistoryReq): Promise<RoomMessage[]>;
+  listRoomChannels(req: RoomChannelsListReq): Promise<RoomChannel[]>;
+  createRoomChannel(req: RoomChannelCreateReq): Promise<RoomChannel>;
+  deleteRoomChannel(req: RoomChannelDeleteReq): Promise<{ ok: true }>;
 
   // offline mailbox relay
   mailboxStats(): Promise<MailboxStats>;
@@ -110,6 +118,7 @@ export type AppApi = {
   onRoomMessage(cb: (e: RoomMessageEvent) => void): () => void;
   onRoomInvited(cb: (e: RoomInvitedEvent) => void): () => void;
   onRoomMembers(cb: (e: RoomMembersEvent) => void): () => void;
+  onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
 };
 

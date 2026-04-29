@@ -1,5 +1,5 @@
 import type { Db } from './open.js';
-import type { Buddy, ImMessage, PeerProfile, Prefs, Room, RoomMessage } from '@shared/schemas.js';
+import type { Buddy, ImMessage, PeerProfile, Prefs, Room, RoomChannel, RoomMessage } from '@shared/schemas.js';
 import { Prefs as PrefsSchema } from '@shared/schemas.js';
 
 // ── identity ─────────────────────────────────────────────────────────────────
@@ -272,6 +272,7 @@ export function upsertRoom(db: Db, r: { id: string; name: string; keyB64: string
 
 export function deleteRoom(db: Db, id: string): void {
   db.prepare('DELETE FROM room_messages WHERE room_id=?').run(id);
+  db.prepare('DELETE FROM room_channels WHERE room_id=?').run(id);
   db.prepare('DELETE FROM room_members WHERE room_id=?').run(id);
   db.prepare('DELETE FROM rooms WHERE id=?').run(id);
 }
@@ -302,28 +303,102 @@ export function removeRoomMember(db: Db, roomId: string, peerId: string): void {
 
 export function insertRoomMessage(db: Db, m: RoomMessage): void {
   db.prepare(
-    `INSERT OR REPLACE INTO room_messages(id, room_id, from_peer_id, from_name, direction, ts, body)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).run(m.id, m.roomId, m.fromPeerId, m.fromName, m.direction, m.ts, m.body);
+    `INSERT OR REPLACE INTO room_messages(id, room_id, channel_id, from_peer_id, from_name, direction, ts, body)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run(m.id, m.roomId, m.channelId, m.fromPeerId, m.fromName, m.direction, m.ts, m.body);
 }
 
-export function roomHistory(db: Db, roomId: string, limit: number, before?: number): RoomMessage[] {
-  const rows = before
-    ? (db
-        .prepare(
-          `SELECT id, room_id as roomId, from_peer_id as fromPeerId, from_name as fromName,
-                  direction, ts, body
-             FROM room_messages WHERE room_id=? AND ts<? ORDER BY ts DESC LIMIT ?`,
-        )
-        .all(roomId, before, limit) as RoomMessage[])
-    : (db
-        .prepare(
-          `SELECT id, room_id as roomId, from_peer_id as fromPeerId, from_name as fromName,
-                  direction, ts, body
-             FROM room_messages WHERE room_id=? ORDER BY ts DESC LIMIT ?`,
-        )
-        .all(roomId, limit) as RoomMessage[]);
+export function roomHistory(
+  db: Db,
+  roomId: string,
+  limit: number,
+  before?: number,
+  channelId?: string,
+): RoomMessage[] {
+  const params: unknown[] = [roomId];
+  let where = 'room_id=?';
+  if (channelId) {
+    where += ' AND channel_id=?';
+    params.push(channelId);
+  }
+  if (before) {
+    where += ' AND ts<?';
+    params.push(before);
+  }
+  params.push(limit);
+  const rows = db
+    .prepare(
+      `SELECT id, room_id as roomId, channel_id as channelId, from_peer_id as fromPeerId,
+              from_name as fromName, direction, ts, body
+         FROM room_messages WHERE ${where} ORDER BY ts DESC LIMIT ?`,
+    )
+    .all(...params) as RoomMessage[];
   return rows.reverse();
+}
+
+// ── channels (Discord-style sub-threads within a room) ─────────────────────
+
+export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
+  const rows = db
+    .prepare(
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt
+         FROM room_channels WHERE room_id=? ORDER BY is_default DESC, created_at ASC`,
+    )
+    .all(roomId) as Array<{
+      id: string;
+      roomId: string;
+      name: string;
+      isDefault: number;
+      createdAt: number;
+    }>;
+  return rows.map((r) => ({
+    id: r.id,
+    roomId: r.roomId,
+    name: r.name,
+    isDefault: r.isDefault === 1,
+    createdAt: r.createdAt,
+  }));
+}
+
+export function getRoomChannel(db: Db, channelId: string): RoomChannel | null {
+  const r = db
+    .prepare(
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt
+         FROM room_channels WHERE id=?`,
+    )
+    .get(channelId) as
+    | { id: string; roomId: string; name: string; isDefault: number; createdAt: number }
+    | undefined;
+  if (!r) return null;
+  return {
+    id: r.id,
+    roomId: r.roomId,
+    name: r.name,
+    isDefault: r.isDefault === 1,
+    createdAt: r.createdAt,
+  };
+}
+
+export function getDefaultChannelId(db: Db, roomId: string): string | null {
+  const r = db
+    .prepare(
+      `SELECT id FROM room_channels WHERE room_id=? AND is_default=1 LIMIT 1`,
+    )
+    .get(roomId) as { id: string } | undefined;
+  return r ? r.id : null;
+}
+
+export function upsertRoomChannel(db: Db, c: RoomChannel): void {
+  db.prepare(
+    `INSERT INTO room_channels(id, room_id, name, is_default, created_at)
+     VALUES (?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
+  ).run(c.id, c.roomId, c.name, c.isDefault ? 1 : 0, c.createdAt);
+}
+
+export function deleteRoomChannel(db: Db, channelId: string): void {
+  db.prepare('DELETE FROM room_messages WHERE channel_id=?').run(channelId);
+  db.prepare('DELETE FROM room_channels WHERE id=?').run(channelId);
 }
 
 // ── mailbox (relay-side storage of sealed envelopes) ─────────────────────────

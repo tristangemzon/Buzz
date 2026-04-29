@@ -692,3 +692,77 @@ html[data-chat-theme='compact'] .chat-log {
 html[data-chat-theme='compact'] .chat-log > div {
   padding: 1px 0;
 }
+
+/* Chat window: channel sidebar (Discord-style). */
+.im-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.chat-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.chat-channels {
+  width: 160px;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  background: #ece9d8;
+  border-right: 1px solid #999;
+  font-size: 12px;
+}
+.chat-channels-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  font-weight: bold;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #555;
+  border-bottom: 1px solid #c8c4b0;
+}
+.chat-channels-add {
+  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 1;
+  font-weight: bold;
+  cursor: pointer;
+}
+.chat-channels-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+.chat-channel-row {
+  padding: 3px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+.chat-channel-row:hover {
+  background: #e0dcc8;
+}
+.chat-channel-row.active {
+  background: #316ac5;
+  color: #fff;
+}
+.chat-channel-hash {
+  opacity: 0.6;
+  font-weight: bold;
+}
+.chat-channel-row.active .chat-channel-hash {
+  opacity: 1;
+}
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}

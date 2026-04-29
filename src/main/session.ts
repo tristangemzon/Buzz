@@ -3,6 +3,7 @@
 
 import path from 'node:path';
 import * as fsp from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { app, BrowserWindow } from 'electron';
 import type { Libp2p } from 'libp2p';
 
@@ -23,6 +24,8 @@ import type {
   ImReceivedEvent,
   BuddyStatusEvent,
   PeerProfile,
+  RoomChannel,
+  RoomChannelEvent,
   RoomInvitedEvent,
   RoomMembersEvent,
   RoomMessage,
@@ -246,6 +249,8 @@ export class Session {
         onRoomMsg: (peer, p) => this.rooms?.handleMsg(peer, p),
         onRoomLeave: (peer, roomId) => this.rooms?.handleLeave(peer, roomId),
         onRoomMeta: (peer, p) => this.rooms?.handleMeta(peer, p),
+        onRoomChannelAdd: (peer, p) => this.rooms?.handleChannelAdd(peer, p),
+        onRoomChannelDel: (peer, p) => this.rooms?.handleChannelDel(peer, p),
       },
       (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
     );
@@ -351,6 +356,17 @@ export class Session {
             return;
           }
           this.roomMembers.set(p.roomId, [...p.members]);
+          // Ensure the room has a default "general" channel locally.
+          if (!repos.getDefaultChannelId(this.db, p.roomId)) {
+            const ch: RoomChannel = {
+              id: randomUUID(),
+              roomId: p.roomId,
+              name: 'general',
+              isDefault: true,
+              createdAt: p.ts,
+            };
+            repos.upsertRoomChannel(this.db, ch);
+          }
           const ev: RoomInvitedEvent = {
             roomId: p.roomId,
             name: p.name,
@@ -361,9 +377,34 @@ export class Session {
         },
         onMessage: (fromPeerId, m) => {
           if (!this.db) return;
+          // Ensure the channel exists locally; if a peer references a channel
+          // we don't know about yet, auto-create a placeholder so the message
+          // is preserved.
+          let channelId = m.channelId;
+          if (channelId) {
+            const existing = repos.getRoomChannel(this.db, channelId);
+            if (!existing) {
+              const placeholder: RoomChannel = {
+                id: channelId,
+                roomId: m.roomId,
+                name: 'channel',
+                isDefault: false,
+                createdAt: m.ts,
+              };
+              repos.upsertRoomChannel(this.db, placeholder);
+              this.broadcast(IPC.EvtRoomChannel, {
+                kind: 'added',
+                channel: placeholder,
+              } satisfies RoomChannelEvent);
+            }
+          } else {
+            // Legacy peer (pre-channels): route to default channel.
+            channelId = repos.getDefaultChannelId(this.db, m.roomId) ?? '';
+          }
           const stored: RoomMessage = {
             id: m.id,
             roomId: m.roomId,
+            channelId,
             fromPeerId,
             fromName: m.fromName,
             direction: 'in',
@@ -398,6 +439,36 @@ export class Session {
           this.roomMembers.set(roomId, members);
           const ev: RoomMembersEvent = { roomId, members };
           this.broadcast(IPC.EvtRoomMembers, ev);
+        },
+        onChannelAdd: (_fromPeerId, p) => {
+          if (!this.db) return;
+          // Only honor channel ops for rooms we know about.
+          if (!repos.getRoom(this.db, p.roomId)) return;
+          const existing = repos.getRoomChannel(this.db, p.channelId);
+          const ch: RoomChannel = {
+            id: p.channelId,
+            roomId: p.roomId,
+            name: p.name,
+            isDefault: existing?.isDefault ?? false,
+            createdAt: existing?.createdAt ?? p.ts,
+          };
+          repos.upsertRoomChannel(this.db, ch);
+          this.broadcast(IPC.EvtRoomChannel, {
+            kind: 'added',
+            channel: ch,
+          } satisfies RoomChannelEvent);
+        },
+        onChannelDel: (_fromPeerId, p) => {
+          if (!this.db) return;
+          const existing = repos.getRoomChannel(this.db, p.channelId);
+          if (!existing) return;
+          // Refuse to delete the default channel.
+          if (existing.isDefault) return;
+          repos.deleteRoomChannel(this.db, p.channelId);
+          this.broadcast(IPC.EvtRoomChannel, {
+            kind: 'removed',
+            channel: existing,
+          } satisfies RoomChannelEvent);
         },
       },
       {

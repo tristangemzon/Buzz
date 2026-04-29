@@ -53,6 +53,7 @@ export type Frame =
   | {
       type: 'room-msg';
       roomId: string;
+      channelId: string;
       id: string;
       ts: number;
       ctB64: string; // secretbox ciphertext
@@ -60,7 +61,15 @@ export type Frame =
       fromName?: string;
     }
   | { type: 'room-leave'; roomId: string }
-  | { type: 'room-meta'; roomId: string; name?: string; members?: string[] };
+  | { type: 'room-meta'; roomId: string; name?: string; members?: string[] }
+  | {
+      type: 'room-channel-add';
+      roomId: string;
+      channelId: string;
+      name: string;
+      ts: number;
+    }
+  | { type: 'room-channel-del'; roomId: string; channelId: string };
 
 export type RoomInvitePayload = {
   roomId: string;
@@ -71,6 +80,7 @@ export type RoomInvitePayload = {
 };
 export type RoomMsgPayload = {
   roomId: string;
+  channelId: string;
   id: string;
   ts: number;
   ctB64: string;
@@ -78,6 +88,13 @@ export type RoomMsgPayload = {
   fromName?: string;
 };
 export type RoomMetaPayload = { roomId: string; name?: string; members?: string[] };
+export type RoomChannelAddPayload = {
+  roomId: string;
+  channelId: string;
+  name: string;
+  ts: number;
+};
+export type RoomChannelDelPayload = { roomId: string; channelId: string };
 
 export type ImEvents = {
   onMessage(peerId: string, msg: { id: string; ts: number; body: string }): void;
@@ -88,6 +105,8 @@ export type ImEvents = {
   onRoomMsg?(peerId: string, p: RoomMsgPayload): void;
   onRoomLeave?(peerId: string, roomId: string): void;
   onRoomMeta?(peerId: string, p: RoomMetaPayload): void;
+  onRoomChannelAdd?(peerId: string, p: RoomChannelAddPayload): void;
+  onRoomChannelDel?(peerId: string, p: RoomChannelDelPayload): void;
 };
 
 type ConnState = {
@@ -289,12 +308,14 @@ export class ImService {
         if (
           this.events.onRoomMsg &&
           typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
           typeof f.id === 'string' &&
           typeof f.ctB64 === 'string' &&
           typeof f.nonceB64 === 'string'
         ) {
           this.events.onRoomMsg(peerIdStr, {
             roomId: f.roomId,
+            channelId: f.channelId,
             id: f.id,
             ts: f.ts,
             ctB64: f.ctB64,
@@ -314,6 +335,33 @@ export class ImService {
             roomId: f.roomId,
             name: f.name,
             members: f.members,
+          });
+        }
+        break;
+      case 'room-channel-add':
+        if (
+          this.events.onRoomChannelAdd &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.name === 'string'
+        ) {
+          this.events.onRoomChannelAdd(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            name: f.name,
+            ts: f.ts,
+          });
+        }
+        break;
+      case 'room-channel-del':
+        if (
+          this.events.onRoomChannelDel &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string'
+        ) {
+          this.events.onRoomChannelDel(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
           });
         }
         break;

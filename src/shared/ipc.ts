@@ -49,6 +49,9 @@ export const IPC = {
   RoomsLeave: 'rooms:leave',
   RoomsSend: 'rooms:send',
   RoomsHistory: 'rooms:history',
+  RoomsListChannels: 'rooms:listChannels',
+  RoomsCreateChannel: 'rooms:createChannel',
+  RoomsDeleteChannel: 'rooms:deleteChannel',
 
   // offline mailbox relay
   MailboxStats: 'mailbox:stats',
@@ -69,6 +72,7 @@ export const IPC = {
   EvtRoomMessage: 'evt:roomMessage',
   EvtRoomInvited: 'evt:roomInvited',
   EvtRoomMembers: 'evt:roomMembers',
+  EvtRoomChannel: 'evt:roomChannel',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
 } as const;
 
