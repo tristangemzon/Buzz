@@ -1234,27 +1234,22 @@ html[data-chat-theme='compact'] .chat-log > div {
   color: #062459;
 }
 .vc-waves {
-  position: absolute;
-  left: 8px;
-  right: 136px; /* leave room for the self-PiP tile */
-  bottom: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  z-index: 4;
-  pointer-events: none;
+  gap: 3px;
+  padding: 0 4px;
 }
 .vc-wave-pair {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #000;
+  border: 1px solid #062459;
   padding: 2px 4px;
 }
 .vc-wave-pair canvas {
   flex: 1;
-  height: 22px;
+  height: 20px;
   display: block;
 }
 .vc-wave-label {

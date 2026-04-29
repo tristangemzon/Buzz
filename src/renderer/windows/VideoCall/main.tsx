@@ -60,28 +60,28 @@ function App(): JSX.Element {
               <CallVideoLocal getStream={talk.getLocalVideoStream} />
             </div>
           )}
-          {active && (
-            <div className="vc-waves">
-              <div className="vc-wave-pair">
-                <span className="vc-wave-label">You</span>
-                <WaveformCanvas
-                  getAnalyser={talk.getMicAnalyser}
-                  color={talk.muted ? '#5a5a5a' : '#33ff66'}
-                  bg="rgba(0,26,5,0.6)"
-                  active={!talk.muted}
-                />
-              </div>
-              <div className="vc-wave-pair">
-                <span className="vc-wave-label">Them</span>
-                <WaveformCanvas
-                  getAnalyser={talk.getRemoteAnalyser}
-                  color="#ff3399"
-                  bg="rgba(26,0,16,0.6)"
-                />
-              </div>
-            </div>
-          )}
         </div>
+        {active && (
+          <div className="vc-waves">
+            <div className="vc-wave-pair">
+              <span className="vc-wave-label">You</span>
+              <WaveformCanvas
+                getAnalyser={talk.getMicAnalyser}
+                color={talk.muted ? '#5a5a5a' : '#33ff66'}
+                bg="#001a05"
+                active={!talk.muted}
+              />
+            </div>
+            <div className="vc-wave-pair">
+              <span className="vc-wave-label">Them</span>
+              <WaveformCanvas
+                getAnalyser={talk.getRemoteAnalyser}
+                color="#ff3399"
+                bg="#1a0010"
+              />
+            </div>
+          </div>
+        )}
         <div className="vc-controls">
           {ringing && (
             <>
