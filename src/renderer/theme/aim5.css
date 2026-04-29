@@ -117,9 +117,10 @@ button:disabled {
   user-select: none;
   flex: 0 0 auto;
 }
-/* Only the OUTER titlebar (direct child of .window) is the OS drag handle.
-   Modal titlebars must remain non-draggable. */
-.window > .titlebar {
+/* Only the OUTER titlebar (direct child of a top-level window root) is the
+   OS drag handle. Modal titlebars must remain non-draggable. */
+.window > .titlebar,
+.im-window > .titlebar {
   -webkit-app-region: drag;
 }
 .titlebar .runner {
