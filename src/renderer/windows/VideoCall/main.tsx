@@ -2,7 +2,7 @@
 // useTalk hook in 'video' mode, which auto-enables the camera once
 // the call goes active. Supports incoming and outgoing.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
@@ -35,6 +35,24 @@ function App(): JSX.Element {
     }
     return undefined;
   }, [talk.call]);
+
+  // If the user closes/reloads the window mid-call, hang up so the peer is
+  // notified instead of being left listening to a dead stream.
+  const callIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    callIdRef.current = talk.call ? talk.call.callId : null;
+  }, [talk.call]);
+  useEffect(() => {
+    const onUnload = (): void => {
+      const id = callIdRef.current;
+      if (id) {
+        // Fire-and-forget; the IPC message is queued before the renderer dies.
+        void window.buzz.talkEnd(id).catch(() => undefined);
+      }
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []);
 
   const ringing = talk.call?.state === 'ringing' && talk.call.role === 'callee';
   const inviting = talk.call?.state === 'inviting';
