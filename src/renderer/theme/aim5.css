@@ -1162,8 +1162,8 @@ html[data-chat-theme='compact'] .chat-log > div {
 }
 .vc-stage {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   background: #000;
   border: 1px solid #062459;
   overflow: hidden;
@@ -1174,7 +1174,7 @@ html[data-chat-theme='compact'] .chat-log > div {
   height: 100%;
 }
 .vc-stage > .call-video-host video {
-  object-fit: contain;
+  object-fit: cover;
   image-rendering: pixelated;
   filter: contrast(1.05) saturate(1.05);
 }
