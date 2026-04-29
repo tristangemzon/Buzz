@@ -10,6 +10,8 @@ import type {
   Room,
   Status,
   BuddyStatusEvent,
+  DiscoveredEvent,
+  DiscoveredPeer,
   MailboxStats,
   SelectableStatus,
   SelfPresence,
@@ -43,6 +45,8 @@ function App(): JSX.Element {
   const [relayInput, setRelayInput] = useState('');
   const [viewProfile, setViewProfile] = useState<{ peerId: string; alias: string } | null>(null);
   const [ctx, setCtx] = useState<{ peerId: string; x: number; y: number } | null>(null);
+  // Auto-discovered LAN peers that aren't in the buddy list yet.
+  const [nearby, setNearby] = useState<DiscoveredPeer[]>([]);
   // Track last seen status per peer so we can play buddy-in / buddy-out
   // only on actual transitions (not on every duplicate broadcast).
   const prevStatusRef = useRef<Record<string, Status>>({});
@@ -70,6 +74,14 @@ function App(): JSX.Element {
       prevStatusRef.current[e.peerId] = e.status;
     });
     void window.buzz.listRooms().then(setRooms);
+    void window.buzz.listDiscovered().then(setNearby).catch(() => undefined);
+    const offDiscovered = window.buzz.onDiscovered((e: DiscoveredEvent) => {
+      setNearby((prev) => {
+        if (e.kind === 'removed') return prev.filter((p) => p.peerId !== e.peer.peerId);
+        const others = prev.filter((p) => p.peerId !== e.peer.peerId);
+        return [e.peer, ...others];
+      });
+    });
     const offInvited = window.buzz.onRoomInvited((e) => {
       void window.buzz.listRooms().then(setRooms);
       // Auto-open the new chat window so the user sees the invite immediately.
@@ -83,6 +95,7 @@ function App(): JSX.Element {
       off();
       offInvited();
       offRoomMembers();
+      offDiscovered();
     };
   }, []);
 
@@ -110,6 +123,23 @@ function App(): JSX.Element {
       setAlias('');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed.');
+    }
+  }
+
+  // Quick-add a discovered LAN peer using their advertised screen name (or a
+  // truncated peer id if none was announced yet).
+  async function addNearby(peer: DiscoveredPeer): Promise<void> {
+    const fallbackAlias = peer.screenName || `${peer.peerId.slice(0, 8)}…`;
+    try {
+      const b = await window.buzz.addBuddy({
+        buddyCode: peer.peerId,
+        alias: fallbackAlias,
+        group: 'Buddies',
+      });
+      setBuddies((prev) => [...prev.filter((x) => x.peerId !== b.peerId), b]);
+      setNearby((prev) => prev.filter((p) => p.peerId !== peer.peerId));
+    } catch {
+      /* ignore — error surfaces via the Add Buddy modal flow if user retries */
     }
   }
 
@@ -242,6 +272,30 @@ function App(): JSX.Element {
 
       <div className="buddylist-split">
         <div className="bevel-in list buddylist-buddies">
+          {nearby.length > 0 && (
+            <div>
+              <div className="group">Nearby ({nearby.length})</div>
+              {nearby.map((p) => (
+                <div
+                  className="row nearby-row"
+                  key={p.peerId}
+                  title={p.peerId}
+                >
+                  <span className="status online" />
+                  <span className="nearby-label">
+                    {p.screenName || `${p.peerId.slice(0, 12)}…`}
+                  </span>
+                  <button
+                    className="nearby-add"
+                    title="Add to buddy list"
+                    onClick={() => void addNearby(p)}
+                  >
+                    + Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {Object.keys(grouped).length === 0 ? (
             <div className="row muted" style={{ padding: 10 }}>
               No buddies yet. Click <b>Add Buddy</b> and paste a buddy code.

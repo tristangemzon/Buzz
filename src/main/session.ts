@@ -11,7 +11,7 @@ import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
 import { openDb, type Db } from './db/open.js';
 import * as repos from './db/repos.js';
 import * as profiles from './profiles.js';
-import { ImService } from './p2p/im.js';
+import { ImService, IM_PROTOCOL } from './p2p/im.js';
 import { MailboxService } from './p2p/mailbox.js';
 import { PresenceManager } from './p2p/presence.js';
 import { RoomService } from './p2p/rooms.js';
@@ -23,6 +23,8 @@ import type {
   ImAckEvent,
   ImReceivedEvent,
   BuddyStatusEvent,
+  DiscoveredEvent,
+  DiscoveredPeer,
   PeerProfile,
   RoomChannel,
   RoomChannelEvent,
@@ -52,6 +54,10 @@ export class Session {
   private roomKeys = new Map<string, Uint8Array>();
   // In-memory cache of members per known room (mirror of room_members table).
   private roomMembers = new Map<string, string[]>();
+  // Auto-discovered peers (LAN via mDNS) that speak the Buzz IM protocol and
+  // aren't already in our buddy list. Cleared on lock.
+  private discovered = new Map<string, DiscoveredPeer>();
+  private onPeerIdentify: ((evt: Event) => void) | null = null;
   screenName = '';
   // Active profile id (set on create/unlock, cleared on lock).
   profileId: string | null = null;
@@ -129,6 +135,10 @@ export class Session {
     }
     if (this.node) {
       try {
+        if (this.onPeerIdentify) {
+          this.node.removeEventListener('peer:identify', this.onPeerIdentify);
+          this.onPeerIdentify = null;
+        }
         await this.node.stop();
       } catch {
         /* ignore */
@@ -146,6 +156,7 @@ export class Session {
     this.mailbox = null;
     this.roomKeys.clear();
     this.roomMembers.clear();
+    this.discovered.clear();
     this.profileId = null;
     this.state = 'locked';
   }
@@ -244,6 +255,19 @@ export class Session {
               this.broadcast(IPC.EvtPeerProfile, cached);
             }
           }
+          // If this peer is currently in our auto-discovered list, enrich it
+          // with the screen name they just announced.
+          if (p.screenName) {
+            const d = this.discovered.get(peer);
+            if (d && d.screenName !== p.screenName) {
+              const updated: DiscoveredPeer = { ...d, screenName: p.screenName, lastSeen: Date.now() };
+              this.discovered.set(peer, updated);
+              this.broadcast(IPC.EvtDiscovered, {
+                kind: 'added',
+                peer: updated,
+              } satisfies DiscoveredEvent);
+            }
+          }
         },
         onRoomInvite: (peer, p) => this.rooms?.handleInvite(peer, p),
         onRoomMsg: (peer, p) => this.rooms?.handleMsg(peer, p),
@@ -303,6 +327,43 @@ export class Session {
     await this.xfer.start();
 
     await node.start();
+
+    // Auto-discovery: when a peer identifies and advertises our IM protocol,
+    // surface them in the BuddyList "Nearby" section (provided they aren't
+    // already a buddy and aren't us). LAN peers come in via mDNS; bootstrap
+    // peers won't speak our protocol so they're filtered out automatically.
+    this.onPeerIdentify = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ peerId: { toString(): string }; protocols: string[] }>)
+        .detail;
+      try {
+        if (!detail || !Array.isArray(detail.protocols)) return;
+        if (!detail.protocols.includes(IM_PROTOCOL)) return;
+        const pid = detail.peerId.toString();
+        if (pid === node.peerId.toString()) return;
+        if (!this.db) return;
+        const isBuddy = !!this.db
+          .prepare('SELECT 1 FROM buddies WHERE peer_id=?')
+          .get(pid);
+        if (isBuddy) return;
+        const prev = this.discovered.get(pid);
+        const peer: DiscoveredPeer = {
+          peerId: pid,
+          screenName: prev?.screenName,
+          source: 'mdns',
+          lastSeen: Date.now(),
+        };
+        this.discovered.set(pid, peer);
+        if (!prev) {
+          this.broadcast(IPC.EvtDiscovered, {
+            kind: 'added',
+            peer,
+          } satisfies DiscoveredEvent);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    node.addEventListener('peer:identify', this.onPeerIdentify);
 
     // Presence after node is up so peer:connect events flow.
     const db = this.db;
@@ -558,6 +619,30 @@ export class Session {
   forgetRoom(roomId: string): void {
     this.roomKeys.delete(roomId);
     this.roomMembers.delete(roomId);
+  }
+
+  // Auto-discovered peers (LAN). Filtered for non-buddy on insert; we also
+  // filter again here in case a buddy was added between events.
+  listDiscovered(): DiscoveredPeer[] {
+    if (!this.db) return [];
+    const out: DiscoveredPeer[] = [];
+    for (const peer of this.discovered.values()) {
+      const isBuddy = !!this.db
+        .prepare('SELECT 1 FROM buddies WHERE peer_id=?')
+        .get(peer.peerId);
+      if (!isBuddy) out.push(peer);
+    }
+    return out.sort((a, b) => b.lastSeen - a.lastSeen);
+  }
+
+  forgetDiscovered(peerId: string): void {
+    const peer = this.discovered.get(peerId);
+    if (!peer) return;
+    this.discovered.delete(peerId);
+    this.broadcast(IPC.EvtDiscovered, {
+      kind: 'removed',
+      peer,
+    } satisfies DiscoveredEvent);
   }
 
   private handleIncoming(peerId: string, m: { id: string; ts: number; body: string }): void {

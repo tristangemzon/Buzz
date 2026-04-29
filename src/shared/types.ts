@@ -3,6 +3,8 @@ import type {
   Buddy,
   BuddyStatusEvent,
   CreateIdentityReq,
+  DiscoveredEvent,
+  DiscoveredPeer,
   HistoryReq,
   ImAckEvent,
   ImMessage,
@@ -106,6 +108,9 @@ export type AppApi = {
   mailboxRemoveRelay(req: MailboxRemoveRelayReq): Promise<MailboxStats>;
   mailboxPoll(): Promise<{ relay: string; delivered: number }[]>;
 
+  // automatic peer discovery (mDNS in p2p mode)
+  listDiscovered(): Promise<DiscoveredPeer[]>;
+
   // events
   onBuddyStatus(cb: (e: BuddyStatusEvent) => void): () => void;
   onImReceived(cb: (e: ImReceivedEvent) => void): () => void;
@@ -120,6 +125,7 @@ export type AppApi = {
   onRoomMembers(cb: (e: RoomMembersEvent) => void): () => void;
   onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
+  onDiscovered(cb: (e: DiscoveredEvent) => void): () => void;
 };
 
 declare global {

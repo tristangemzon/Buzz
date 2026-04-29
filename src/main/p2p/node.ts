@@ -13,6 +13,7 @@ import { yamux } from '@chainsafe/libp2p-yamux';
 import { identify } from '@libp2p/identify';
 import { kadDHT } from '@libp2p/kad-dht';
 import { bootstrap } from '@libp2p/bootstrap';
+import { mdns } from '@libp2p/mdns';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
 import { generateKeyPairFromSeed } from '@libp2p/crypto/keys';
 import type { PeerId } from '@libp2p/interface';
@@ -49,6 +50,17 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
       ? [opts.network.serverAddr]
       : DEFAULT_BOOTSTRAP);
 
+  // Local-network discovery via mDNS. Only enabled in pure p2p mode — in
+  // server mode the configured server is the rendezvous point and we don't
+  // want to leak presence on the LAN. The default broadcast interval keeps
+  // chatter low.
+  const peerDiscovery: Array<ReturnType<typeof bootstrap> | ReturnType<typeof mdns>> = [
+    bootstrap({ list: bootstrapList }),
+  ];
+  if (opts.network?.mode !== 'server') {
+    peerDiscovery.push(mdns({ interval: 20_000 }));
+  }
+
   const node = await createLibp2p({
     peerId,
     addresses: {
@@ -57,7 +69,7 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
     transports: [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })],
     connectionEncryption: [noise()],
     streamMuxers: [yamux()],
-    peerDiscovery: [bootstrap({ list: bootstrapList })],
+    peerDiscovery,
     services: {
       identify: identify(),
       dht: kadDHT({ clientMode: true }),

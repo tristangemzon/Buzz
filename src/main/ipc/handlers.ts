@@ -77,6 +77,8 @@ export function registerIpc(session: Session): void {
   handle(IPC.BuddiesList, null, () => repos.listBuddies(requireDb(session)));
   handle(IPC.BuddiesAdd, AddBuddyReq, ({ buddyCode, alias, group }) => {
     repos.addBuddy(requireDb(session), buddyCode, alias, group);
+    // Once a peer is a buddy, they should disappear from the "Nearby" list.
+    session.forgetDiscovered(buddyCode);
     return {
       peerId: buddyCode,
       alias,
@@ -97,11 +99,13 @@ export function registerIpc(session: Session): void {
     z.object({ peerId: PeerIdStr, blocked: z.boolean() }),
     ({ peerId, blocked }) => repos.blockBuddy(requireDb(session), peerId, blocked),
   );
-  handle(
-    IPC.BuddiesWarn,
+  handle(IPC.BuddiesWarn,
     z.object({ peerId: PeerIdStr, delta: z.number().int().min(-100).max(100).default(10) }),
     ({ peerId, delta }) => repos.warnBuddy(requireDb(session), peerId, delta),
   );
+
+  // ── auto-discovery ────────────────────────────────────────────────────────
+  handle(IPC.DiscoveryList, null, () => session.listDiscovered());
 
   // ── im ────────────────────────────────────────────────────────────────────
   handle(IPC.ImSend, SendImReq, async ({ toPeerId, body }) => {

@@ -59,6 +59,9 @@ export const IPC = {
   MailboxRemoveRelay: 'mailbox:removeRelay',
   MailboxPoll: 'mailbox:poll',
 
+  // automatic peer discovery (mDNS in p2p mode)
+  DiscoveryList: 'discovery:list',
+
   // events (main -> renderer)
   EvtBuddyStatus: 'evt:buddyStatus',
   EvtImReceived: 'evt:imReceived',
@@ -74,6 +77,7 @@ export const IPC = {
   EvtRoomMembers: 'evt:roomMembers',
   EvtRoomChannel: 'evt:roomChannel',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
+  EvtDiscovered: 'evt:discovered',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

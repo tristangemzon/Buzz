@@ -58,6 +58,8 @@ const api: AppApi = {
   mailboxRemoveRelay: (req) => ipcRenderer.invoke(IPC.MailboxRemoveRelay, req),
   mailboxPoll: () => ipcRenderer.invoke(IPC.MailboxPoll),
 
+  listDiscovered: () => ipcRenderer.invoke(IPC.DiscoveryList),
+
   onBuddyStatus: (cb) => on(IPC.EvtBuddyStatus, cb),
   onImReceived: (cb) => on(IPC.EvtImReceived, cb),
   onImAck: (cb) => on(IPC.EvtImAck, cb),
@@ -71,6 +73,7 @@ const api: AppApi = {
   onRoomMembers: (cb) => on(IPC.EvtRoomMembers, cb),
   onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
+  onDiscovered: (cb) => on(IPC.EvtDiscovered, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

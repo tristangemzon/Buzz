@@ -413,3 +413,20 @@ export const MailboxDeliveredEvent = z.object({
   count: z.number().int().nonnegative(),
 });
 export type MailboxDeliveredEvent = z.infer<typeof MailboxDeliveredEvent>;
+
+// ── Discovery ────────────────────────────────────────────────────────────────
+
+// A peer auto-discovered on the LAN (mDNS) that speaks the Buzz IM protocol.
+export const DiscoveredPeer = z.object({
+  peerId: PeerIdStr,
+  screenName: z.string().max(64).optional(),
+  source: z.enum(['mdns']),
+  lastSeen: z.number().int().nonnegative(),
+});
+export type DiscoveredPeer = z.infer<typeof DiscoveredPeer>;
+
+export const DiscoveredEvent = z.object({
+  kind: z.enum(['added', 'removed']),
+  peer: DiscoveredPeer,
+});
+export type DiscoveredEvent = z.infer<typeof DiscoveredEvent>;
