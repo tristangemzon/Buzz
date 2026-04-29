@@ -105,14 +105,20 @@ export class ImService {
   ) {}
 
   async start(): Promise<void> {
-    await this.node.handle(IM_PROTOCOL, ({ stream, connection }) => {
-      const peer = connection.remotePeer.toString();
-      if (this.isBlocked(peer)) {
-        void stream.close();
-        return;
-      }
-      this.attach(peer, stream);
-    });
+    await this.node.handle(
+      IM_PROTOCOL,
+      ({ stream, connection }) => {
+        const peer = connection.remotePeer.toString();
+        if (this.isBlocked(peer)) {
+          void stream.close();
+          return;
+        }
+        this.attach(peer, stream);
+      },
+      // Allow inbound IM streams over relayed (transient) connections so that
+      // peers behind NAT can still reach us before/without DCUtR hole-punching.
+      { runOnTransientConnection: true },
+    );
   }
 
   async stop(): Promise<void> {
@@ -130,7 +136,12 @@ export class ImService {
     const existing = this.conns.get(peerIdStr);
     if (existing) return existing;
     const peerId = peerIdFromString(peerIdStr);
-    const stream = await this.node.dialProtocol(peerId, IM_PROTOCOL);
+    const stream = await this.node.dialProtocol(peerId, IM_PROTOCOL, {
+      // Allow opening the stream when the only available connection is a
+      // circuit-relay (transient) one. The IM protocol is low-bandwidth so
+      // running over a relay is acceptable as a fallback.
+      runOnTransientConnection: true,
+    });
     return this.attach(peerIdStr, stream);
   }
 
