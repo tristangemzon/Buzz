@@ -23,6 +23,7 @@ function installCsp(): void {
         "img-src 'self' data: " + devOrigin,
         "font-src 'self' data: " + devOrigin,
         "connect-src 'self' " + devOrigin + ' ' + devWs,
+        "media-src 'self' blob: " + devOrigin,
       ].join('; ')
     : [
         "default-src 'self'",
@@ -31,6 +32,7 @@ function installCsp(): void {
         "img-src 'self' data:",
         "font-src 'self' data:",
         "connect-src 'self'",
+        "media-src 'self' blob:",
       ].join('; ');
 
   electronSession.defaultSession.webRequest.onHeadersReceived((details, cb) => {
