@@ -12,8 +12,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "pack:win": "npm run build && electron-builder --win --x64 --arm64",
-    "pack:mac": "npm run build && electron-builder --mac --x64 --arm64",
+    "pack:win": "npm run build && electron-builder --win --x64",
+    "pack:mac": "npm run build && electron-builder --mac --arm64",
     "pack:linux": "npm run build && electron-builder --linux --x64",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --ext .ts,.tsx",
@@ -79,6 +79,12 @@
       "resources/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3-multiple-ciphers/**",
+      "**/node_modules/argon2/**",
+      "**/node_modules/keytar/**",
+      "**/*.node"
+    ],
     "extraResources": [
       {
         "from": "resources",
@@ -87,10 +93,24 @@
     ],
     "mac": {
       "icon": "resources/icon.png",
-      "category": "public.app-category.social-networking"
+      "category": "public.app-category.social-networking",
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
+      ]
     },
     "win": {
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Buzz"
     },
     "linux": {
       "icon": "resources/icon.png",
