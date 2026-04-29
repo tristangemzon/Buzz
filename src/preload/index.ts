@@ -46,6 +46,7 @@ const api: AppApi = {
 
   setStatus: (req) => ipcRenderer.invoke(IPC.PresenceSetStatus, req),
   getSelfPresence: () => ipcRenderer.invoke(IPC.PresenceGetSelf),
+  getPeerStatus: (peerId) => ipcRenderer.invoke(IPC.PresenceGetPeer, peerId),
 
   getMyProfile: () => ipcRenderer.invoke(IPC.ProfileGetMy),
   setMyProfile: (patch) => ipcRenderer.invoke(IPC.ProfileSetMy, patch),

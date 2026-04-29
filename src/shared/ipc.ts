@@ -41,6 +41,7 @@ export const IPC = {
   // presence
   PresenceSetStatus: 'presence:setStatus',
   PresenceGetSelf: 'presence:getSelf',
+  PresenceGetPeer: 'presence:getPeer',
 
   // profile
   ProfileGetMy: 'profile:getMy',
@@ -65,7 +66,6 @@ export const IPC = {
 
   // unread counters
   UnreadGet: 'unread:get',
-
   // offline mailbox relay
   MailboxStats: 'mailbox:stats',
   MailboxAddRelay: 'mailbox:addRelay',

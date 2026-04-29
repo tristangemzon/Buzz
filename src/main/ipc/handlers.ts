@@ -202,6 +202,7 @@ export function registerIpc(session: Session): void {
     if (!p) throw new Error('Locked');
     return p.getSelf();
   });
+  handle(IPC.PresenceGetPeer, PeerIdStr, (peerId) => session.getPeerStatus(peerId));
 
   // ── profile ──────────────────────────────────────────────────────────────
   handle(IPC.ProfileGetMy, null, () => {

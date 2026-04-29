@@ -61,6 +61,9 @@ export class Session {
   // Auto-discovered peers (LAN via mDNS) that speak the Buzz IM protocol and
   // aren't already in our buddy list. Cleared on lock.
   private discovered = new Map<string, DiscoveredPeer>();
+  // Last broadcast status per peer so windows that open after the event can
+  // catch up. Cleared on lock.
+  private peerStatuses = new Map<string, BuddyStatusEvent>();
   private onPeerIdentify: ((evt: Event) => void) | null = null;
   screenName = '';
   // Active profile id (set on create/unlock, cleared on lock).
@@ -172,6 +175,7 @@ export class Session {
     this.roomKeys.clear();
     this.roomMembers.clear();
     this.discovered.clear();
+    this.peerStatuses.clear();
     this.profileId = null;
     this.state = 'locked';
   }
@@ -241,6 +245,7 @@ export class Session {
             status: (p.status as BuddyStatusEvent['status']) ?? 'online',
             awayMessage: p.awayMessage,
           };
+          this.peerStatuses.set(peer, ev);
           this.broadcast(IPC.EvtBuddyStatus, ev);
           // Cache the custom profile fields when present so the IM window
           // can show a 'View Profile' pane styled to the buddy's choices.
@@ -399,6 +404,7 @@ export class Session {
       },
       (peerId, status, awayMessage) => {
         const ev: BuddyStatusEvent = { peerId, status, awayMessage };
+        this.peerStatuses.set(peerId, ev);
         this.broadcast(IPC.EvtBuddyStatus, ev);
       },
     );
@@ -662,6 +668,10 @@ export class Session {
       kind: 'removed',
       peer,
     } satisfies DiscoveredEvent);
+  }
+
+  getPeerStatus(peerId: string): BuddyStatusEvent | null {
+    return this.peerStatuses.get(peerId) ?? null;
   }
 
   // Buddy add request operations (initiator side) ──────────────────────────

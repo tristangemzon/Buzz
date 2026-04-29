@@ -102,6 +102,16 @@ function App(): JSX.Element {
     // Mark all delivered messages from this peer as read since the IM
     // window is now open and visible.
     void window.buzz.markImRead(peerId).catch(() => undefined);
+    // Seed the header status from the session's last-known snapshot in case
+    // the buddy went online before this window was opened.
+    void window.buzz
+      .getPeerStatus(peerId)
+      .then((s) => {
+        if (!s) return;
+        setStatus(s.status === 'invisible' ? 'offline' : (s.status as typeof status));
+        setAwayMessage(s.awayMessage);
+      })
+      .catch(() => undefined);
 
     // Door open on conversation focus; close on unmount.
     playSound('door-open');

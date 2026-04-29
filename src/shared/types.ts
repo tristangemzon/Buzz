@@ -96,6 +96,7 @@ export type AppApi = {
   // presence
   setStatus(req: PresenceSetStatusReq): Promise<SelfPresence>;
   getSelfPresence(): Promise<SelfPresence>;
+  getPeerStatus(peerId: string): Promise<BuddyStatusEvent | null>;
 
   // profile
   getMyProfile(): Promise<Profile>;
