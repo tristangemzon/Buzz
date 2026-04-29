@@ -999,3 +999,60 @@ html[data-chat-theme='compact'] .chat-log > div {
   background: #fff59d;
   padding: 0 1px;
 }
+
+/* ── Voice talk UI ─────────────────────────────────────────────────────── */
+.call-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 6px 6px;
+  padding: 4px 8px;
+  background: #0a3d8f;
+  color: #fff;
+  border: 1px solid #062459;
+  font-size: 11px;
+}
+.call-bar .spacer { flex: 1; }
+.call-bar button {
+  font-size: 11px;
+  padding: 1px 6px;
+}
+.call-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4caf50;
+  box-shadow: 0 0 4px #4caf50;
+  animation: callPulse 1s infinite ease-in-out alternate;
+}
+@keyframes callPulse {
+  from { opacity: 0.4; }
+  to   { opacity: 1; }
+}
+
+.call-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.call-modal {
+  background: #ece9d8;
+  padding: 12px 14px;
+  min-width: 240px;
+  max-width: 340px;
+}
+.call-modal-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.call-modal-body {
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.call-modal-actions {
+  text-align: right;
+}

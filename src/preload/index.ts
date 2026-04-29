@@ -55,6 +55,13 @@ const api: AppApi = {
   xferOffer: (toPeerId) => ipcRenderer.invoke(IPC.XferOffer, { toPeerId }),
   xferRespond: (id, accept) => ipcRenderer.invoke(IPC.XferRespond, { id, accept }),
 
+  talkInvite: (peerId) => ipcRenderer.invoke(IPC.TalkInvite, { peerId }),
+  talkAccept: (callId) => ipcRenderer.invoke(IPC.TalkAccept, { callId }),
+  talkReject: (callId, reason) => ipcRenderer.invoke(IPC.TalkReject, { callId, reason }),
+  talkEnd: (callId) => ipcRenderer.invoke(IPC.TalkEnd, { callId }),
+  talkSendAudio: (callId, data) => ipcRenderer.invoke(IPC.TalkAudio, { callId, data }),
+  talkGetActive: (peerId) => ipcRenderer.invoke(IPC.TalkGetActive, { peerId }),
+
   listRooms: () => ipcRenderer.invoke(IPC.RoomsList),
   createRoom: (req) => ipcRenderer.invoke(IPC.RoomsCreate, req),
   inviteToRoom: (req) => ipcRenderer.invoke(IPC.RoomsInvite, req),
@@ -89,6 +96,10 @@ const api: AppApi = {
   onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),
   onBuddyRequestResolved: (cb) => on(IPC.EvtBuddyRequestResolved, cb),
   onUnread: (cb) => on(IPC.EvtUnread, cb),
+  onTalkInvite: (cb) => on(IPC.EvtTalkInvite, cb),
+  onTalkState: (cb) => on(IPC.EvtTalkState, cb),
+  onTalkEnded: (cb) => on(IPC.EvtTalkEnded, cb),
+  onTalkAudio: (cb) => on(IPC.EvtTalkAudio, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

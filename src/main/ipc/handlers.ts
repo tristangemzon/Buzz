@@ -294,6 +294,34 @@ export function registerIpc(session: Session): void {
     return { ok: true as const };
   });
 
+  // ── voice talk ───────────────────────────────────────────────────────────
+  handle(IPC.TalkInvite, z.object({ peerId: PeerIdStr }), async ({ peerId }) => {
+    return session.startCall(peerId);
+  });
+  handle(IPC.TalkAccept, z.object({ callId: Uuid }), async ({ callId }) => {
+    await session.acceptCall(callId);
+  });
+  handle(
+    IPC.TalkReject,
+    z.object({ callId: Uuid, reason: z.string().optional() }),
+    async ({ callId, reason }) => {
+      await session.rejectCall(callId, reason);
+    },
+  );
+  handle(IPC.TalkEnd, z.object({ callId: Uuid }), async ({ callId }) => {
+    await session.endCall(callId);
+  });
+  handle(
+    IPC.TalkAudio,
+    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
+    async ({ callId, data }) => {
+      await session.sendCallAudio(callId, data);
+    },
+  );
+  handle(IPC.TalkGetActive, z.object({ peerId: PeerIdStr }), ({ peerId }) =>
+    session.getActiveCall(peerId),
+  );
+
   // ── chat rooms ───────────────────────────────────────────────────────────
   handle(IPC.RoomsList, null, () => {
     const db = requireDb(session);

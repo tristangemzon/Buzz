@@ -4,6 +4,7 @@ import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatf
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileViewer } from '../../components/ProfilePanes';
 import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
+import { useTalk, fmtCallTime } from '../../components/useTalk';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
@@ -60,6 +61,7 @@ function App(): JSX.Element {
   const [theirAvatar, setTheirAvatar] = useState<string>('');
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const talk = useTalk(peerId);
 
   function upsertXfer(updater: (list: XferCard[]) => XferCard[]): void {
     setXfers(updater);
@@ -386,6 +388,13 @@ function App(): JSX.Element {
         <button onClick={() => void sendFile()} disabled={blocked} title="Send a file">
           Send File
         </button>
+        <button
+          onClick={() => void talk.startCall()}
+          disabled={blocked || (talk.call !== null && talk.call.state !== 'ended')}
+          title="Start a voice call"
+        >
+          Talk
+        </button>
         <button onClick={() => setShowProfile(true)} title="View profile">
           Profile
         </button>
@@ -405,6 +414,40 @@ function App(): JSX.Element {
       {showProfile && (
         <ProfileViewer peerId={peerId} alias={alias} onClose={() => setShowProfile(false)} />
       )}
+
+      {talk.call && talk.call.state === 'ringing' && talk.call.role === 'callee' && (
+        <div className="call-modal-backdrop">
+          <div className="call-modal bevel-out">
+            <div className="call-modal-title">Incoming call</div>
+            <div className="call-modal-body">
+              <b>{talk.call.screenName || alias}</b> wants to talk.
+            </div>
+            <div className="call-modal-actions">
+              <button onClick={() => void talk.acceptIncoming()}>Accept</button>{' '}
+              <button onClick={() => void talk.rejectIncoming()}>Decline</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {talk.call && talk.call.state !== 'ringing' && (
+        <div className="call-bar">
+          <span className="call-dot" />
+          {talk.call.state === 'inviting' ? (
+            <span>Calling {alias}…</span>
+          ) : (
+            <span>On a call with {alias} · {fmtCallTime(talk.elapsedSec)}</span>
+          )}
+          <span className="spacer" />
+          {talk.call.state === 'active' && (
+            <button onClick={() => talk.toggleMute()} title={talk.muted ? 'Unmute' : 'Mute'}>
+              {talk.muted ? 'Unmute' : 'Mute'}
+            </button>
+          )}
+          <button onClick={() => void talk.endCall()}>End</button>
+        </div>
+      )}
+      {talk.error && <div className="error" style={{ margin: '0 6px 6px' }}>{talk.error}</div>}
     </div>
   );
 }

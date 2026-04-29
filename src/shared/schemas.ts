@@ -470,3 +470,49 @@ export const UnreadCounts = z.object({
   rooms: z.record(Uuid, z.number().int().nonnegative()),
 });
 export type UnreadCounts = z.infer<typeof UnreadCounts>;
+
+// ── Voice talk ───────────────────────────────────────────────────────────────
+
+export const TalkInviteReq = z.object({ peerId: PeerIdStr });
+export type TalkInviteReq = z.infer<typeof TalkInviteReq>;
+
+export const TalkCallIdReq = z.object({ callId: Uuid });
+export type TalkCallIdReq = z.infer<typeof TalkCallIdReq>;
+
+export const TalkAudioReq = z.object({
+  callId: Uuid,
+  data: z.instanceof(Uint8Array),
+});
+export type TalkAudioReq = z.infer<typeof TalkAudioReq>;
+
+// State the renderer cares about for a single active call.
+export const TalkCallState = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  role: z.enum(['caller', 'callee']),
+  state: z.enum(['inviting', 'ringing', 'active', 'ended']),
+  screenName: z.string().optional(),
+  startedAt: z.number().int().nonnegative().optional(),
+});
+export type TalkCallState = z.infer<typeof TalkCallState>;
+
+export const TalkInviteEvent = TalkCallState;
+export type TalkInviteEvent = z.infer<typeof TalkInviteEvent>;
+
+export const TalkStateEvent = TalkCallState;
+export type TalkStateEvent = z.infer<typeof TalkStateEvent>;
+
+export const TalkEndedEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  reason: z.string().optional(),
+});
+export type TalkEndedEvent = z.infer<typeof TalkEndedEvent>;
+
+export const TalkAudioEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  seq: z.number().int().nonnegative(),
+  data: z.instanceof(Uint8Array),
+});
+export type TalkAudioEvent = z.infer<typeof TalkAudioEvent>;

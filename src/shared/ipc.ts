@@ -52,6 +52,14 @@ export const IPC = {
   XferOffer: 'xfer:offer',
   XferRespond: 'xfer:respond',
 
+  // voice talk
+  TalkInvite: 'talk:invite',
+  TalkAccept: 'talk:accept',
+  TalkReject: 'talk:reject',
+  TalkEnd: 'talk:end',
+  TalkAudio: 'talk:audio',
+  TalkGetActive: 'talk:getActive',
+
   // chat rooms
   RoomsList: 'rooms:list',
   RoomsCreate: 'rooms:create',
@@ -94,6 +102,10 @@ export const IPC = {
   EvtBuddyRequest: 'evt:buddyRequest',
   EvtBuddyRequestResolved: 'evt:buddyRequestResolved',
   EvtUnread: 'evt:unread',
+  EvtTalkInvite: 'evt:talkInvite',
+  EvtTalkState: 'evt:talkState',
+  EvtTalkEnded: 'evt:talkEnded',
+  EvtTalkAudio: 'evt:talkAudio',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

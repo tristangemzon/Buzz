@@ -10,6 +10,7 @@ export type Cue =
   | 'buddy-out'
   | 'im-receive'
   | 'mail'
+  | 'ring'
   | 'error';
 
 let ctx: AudioContext | null = null;
@@ -117,6 +118,13 @@ export function playSound(cue: Cue): void {
       beep(c, 784, t, 0.18, 'sine');
       beep(c, 988, t + 0.16, 0.18, 'sine');
       beep(c, 1175, t + 0.32, 0.30, 'sine');
+      break;
+    case 'ring':
+      // Classic two‑tone phone ring: a pair of beeps repeated.
+      beep(c, 480, t, 0.4, 'sine', 0.18);
+      beep(c, 620, t, 0.4, 'sine', 0.18);
+      beep(c, 480, t + 0.5, 0.4, 'sine', 0.18);
+      beep(c, 620, t + 0.5, 0.4, 'sine', 0.18);
       break;
     case 'error':
       glide(c, 440, 220, t, 0.18, 'sawtooth', 0.14);

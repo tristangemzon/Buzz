@@ -116,6 +116,11 @@ function App(): JSX.Element {
     const offRoomMembers = window.buzz.onRoomMembers(() => {
       void window.buzz.listRooms().then(setRooms);
     });
+    // Open (or focus) the IM window on incoming voice-call invite so the
+    // recipient sees the ring/accept UI even if they had no chat open.
+    const offTalkInvite = window.buzz.onTalkInvite((e) => {
+      void window.buzzWindows.openIm(e.peerId);
+    });
     return () => {
       off();
       offInvited();
@@ -124,6 +129,7 @@ function App(): JSX.Element {
       offBuddyReq();
       offBuddyResolved();
       offUnread();
+      offTalkInvite();
     };
   }, []);
 

@@ -16,6 +16,7 @@ import { MailboxService } from './p2p/mailbox.js';
 import { PresenceManager } from './p2p/presence.js';
 import { RoomService } from './p2p/rooms.js';
 import { XferService } from './p2p/xfer.js';
+import { TalkService } from './p2p/talk.js';
 import { buddyCodeFor, createNode } from './p2p/node.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { IPC } from '@shared/ipc.js';
@@ -38,6 +39,9 @@ import type {
   XferDoneEvent,
   XferOfferEvent,
   XferProgressEvent,
+  TalkCallState,
+  TalkEndedEvent,
+  TalkAudioEvent,
 } from '@shared/schemas.js';
 import { sodium } from './crypto/keystore.js';
 
@@ -53,6 +57,9 @@ export class Session {
   xfer: XferService | null = null;
   rooms: RoomService | null = null;
   mailbox: MailboxService | null = null;
+  talk: TalkService | null = null;
+  // Single active voice call. MVP: at most one call at a time across the app.
+  private currentCall: TalkCallState | null = null;
   // Decoded room keys keyed by roomId. Populated on bringUp from DB and on
   // accepted invites.
   private roomKeys = new Map<string, Uint8Array>();
@@ -144,6 +151,19 @@ export class Session {
         /* ignore */
       }
     }
+    if (this.talk) {
+      try {
+        // Best-effort bye to peer for any active call.
+        if (this.currentCall) {
+          await this.talk
+            .send(this.currentCall.peerId, { type: 'bye', callId: this.currentCall.callId })
+            .catch(() => undefined);
+        }
+        await this.talk.stop();
+      } catch {
+        /* ignore */
+      }
+    }
     if (this.im) {
       try {
         await this.im.stop();
@@ -172,6 +192,8 @@ export class Session {
     this.rooms = null;
     if (this.mailbox) await this.mailbox.stop().catch(() => undefined);
     this.mailbox = null;
+    this.talk = null;
+    this.currentCall = null;
     this.roomKeys.clear();
     this.roomMembers.clear();
     this.discovered.clear();
@@ -347,6 +369,22 @@ export class Session {
       fsp,
     );
     await this.xfer.start();
+
+    // Voice talk service. Frames flow through dedicated /buzz/talk/1.0.0
+    // streams; we keep call state on the session so window-mount queries
+    // (`getActiveCall`) can return current call info.
+    this.talk = new TalkService(
+      node,
+      {
+        onInvite: (peerId, callId, screenName, ts) => this.handleTalkInvite(peerId, callId, screenName, ts),
+        onAccept: (peerId, callId) => this.handleTalkAccept(peerId, callId),
+        onReject: (peerId, callId, reason) => this.handleTalkReject(peerId, callId, reason),
+        onBye: (peerId, callId) => this.handleTalkBye(peerId, callId),
+        onAudio: (peerId, callId, seq, data) => this.handleTalkAudio(peerId, callId, seq, data),
+      },
+      (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
+    );
+    await this.talk.start();
 
     await node.start();
 
@@ -827,6 +865,140 @@ export class Session {
 
   broadcastUnread(): void {
     this.broadcast(IPC.EvtUnread, this.unreadSnapshot());
+  }
+
+  // ── Voice talk ────────────────────────────────────────────────────────────
+
+  getActiveCall(peerId: string): TalkCallState | null {
+    if (!this.currentCall) return null;
+    if (this.currentCall.peerId !== peerId) return null;
+    if (this.currentCall.state === 'ended') return null;
+    return this.currentCall;
+  }
+
+  async startCall(peerId: string): Promise<TalkCallState> {
+    if (!this.talk) throw new Error('Locked');
+    if (this.currentCall && this.currentCall.state !== 'ended') {
+      throw new Error('Another call is already active');
+    }
+    const callId = randomUUID();
+    const ts = Date.now();
+    const state: TalkCallState = {
+      callId,
+      peerId,
+      role: 'caller',
+      state: 'inviting',
+      screenName: this.screenName,
+      startedAt: ts,
+    };
+    this.currentCall = state;
+    this.broadcast(IPC.EvtTalkState, state);
+    try {
+      await this.talk.send(peerId, { type: 'invite', callId, screenName: this.screenName, ts });
+    } catch (err) {
+      this.endCallLocal(callId, 'unreachable');
+      throw err;
+    }
+    return state;
+  }
+
+  async acceptCall(callId: string): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.role !== 'callee') return;
+    const peerId = this.currentCall.peerId;
+    await this.talk.send(peerId, { type: 'accept', callId }).catch(() => undefined);
+    this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
+    this.broadcast(IPC.EvtTalkState, this.currentCall);
+  }
+
+  async rejectCall(callId: string, reason?: string): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    const peerId = this.currentCall.peerId;
+    await this.talk.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
+    this.endCallLocal(callId, reason ?? 'rejected');
+  }
+
+  async endCall(callId: string): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    const peerId = this.currentCall.peerId;
+    await this.talk.send(peerId, { type: 'bye', callId }).catch(() => undefined);
+    this.endCallLocal(callId, 'ended');
+  }
+
+  async sendCallAudio(callId: string, data: Uint8Array): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.state !== 'active') return;
+    const peerId = this.currentCall.peerId;
+    // We don't bother numbering on the main side; renderer-side seq is fine.
+    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch(() => undefined);
+  }
+
+  private endCallLocal(callId: string, reason?: string): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    const peerId = this.currentCall.peerId;
+    this.currentCall = { ...this.currentCall, state: 'ended' };
+    this.broadcast(IPC.EvtTalkState, this.currentCall);
+    const ev: TalkEndedEvent = { callId, peerId, reason };
+    this.broadcast(IPC.EvtTalkEnded, ev);
+    // Clear cached call after a tick so renderers can settle.
+    setTimeout(() => {
+      if (this.currentCall && this.currentCall.callId === callId) this.currentCall = null;
+    }, 50);
+  }
+
+  private handleTalkInvite(peerId: string, callId: string, screenName: string, _ts: number): void {
+    if (!this.talk) return;
+    // Reject if already in another call.
+    if (this.currentCall && this.currentCall.state !== 'ended') {
+      void this.talk.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
+      return;
+    }
+    const state: TalkCallState = {
+      callId,
+      peerId,
+      role: 'callee',
+      state: 'ringing',
+      screenName,
+      startedAt: Date.now(),
+    };
+    this.currentCall = state;
+    this.broadcast(IPC.EvtTalkInvite, state);
+    this.broadcast(IPC.EvtTalkState, state);
+  }
+
+  private handleTalkAccept(peerId: string, callId: string): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
+    this.broadcast(IPC.EvtTalkState, this.currentCall);
+  }
+
+  private handleTalkReject(peerId: string, callId: string, reason?: string): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    this.endCallLocal(callId, reason ?? 'rejected');
+  }
+
+  private handleTalkBye(peerId: string, callId: string): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    this.endCallLocal(callId, 'remote-ended');
+  }
+
+  private handleTalkAudio(peerId: string, callId: string, seq: number, data: Uint8Array): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    if (this.currentCall.state !== 'active') return;
+    // Copy into a fresh ArrayBuffer-backed Uint8Array so it satisfies the
+    // TalkAudioEvent schema (and to detach from the libp2p stream buffer).
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    const ev: TalkAudioEvent = { callId, peerId, seq, data: copy };
+    this.broadcast(IPC.EvtTalkAudio, ev);
   }
 
   private broadcast(channel: string, payload: unknown): void {

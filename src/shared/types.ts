@@ -46,6 +46,11 @@ import type {
   XferDoneEvent,
   XferOfferEvent,
   XferProgressEvent,
+  TalkCallState,
+  TalkInviteEvent,
+  TalkStateEvent,
+  TalkEndedEvent,
+  TalkAudioEvent,
 } from './schemas.js';
 
 export type Platform = 'mac' | 'windows' | 'linux';
@@ -110,6 +115,14 @@ export type AppApi = {
   >;
   xferRespond(id: string, accept: boolean): Promise<{ ok: true }>;
 
+  // voice talk
+  talkInvite(peerId: string): Promise<TalkCallState>;
+  talkAccept(callId: string): Promise<void>;
+  talkReject(callId: string, reason?: string): Promise<void>;
+  talkEnd(callId: string): Promise<void>;
+  talkSendAudio(callId: string, data: Uint8Array): Promise<void>;
+  talkGetActive(peerId: string): Promise<TalkCallState | null>;
+
   // chat rooms
   listRooms(): Promise<Room[]>;
   createRoom(req: RoomCreateReq): Promise<Room>;
@@ -148,6 +161,10 @@ export type AppApi = {
   onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;
   onBuddyRequestResolved(cb: (e: BuddyRequestResolvedEvent) => void): () => void;
   onUnread(cb: (e: UnreadCounts) => void): () => void;
+  onTalkInvite(cb: (e: TalkInviteEvent) => void): () => void;
+  onTalkState(cb: (e: TalkStateEvent) => void): () => void;
+  onTalkEnded(cb: (e: TalkEndedEvent) => void): () => void;
+  onTalkAudio(cb: (e: TalkAudioEvent) => void): () => void;
 };
 
 declare global {
