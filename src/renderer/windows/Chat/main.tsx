@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
+import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
 
@@ -38,6 +39,7 @@ function App(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
   // (registered once on mount) always reads the latest value.
   const activeChannelIdRef = useRef<string>('');
@@ -345,7 +347,7 @@ function App(): JSX.Element {
                     }}
                   >
                     {compact && <strong style={{ marginRight: 4 }}>{m.fromName || nameFor(m.fromPeerId)}:</strong>}
-                    {m.body}
+                    <RichText body={m.body} />
                   </div>
                 </div>
               );
@@ -354,26 +356,36 @@ function App(): JSX.Element {
 
           {err && <div style={{ color: '#a00', padding: '4px 8px', fontSize: 11 }}>{err}</div>}
 
-          <div className="im-composer" style={{ display: 'flex', padding: 8, gap: 6 }}>
-            <textarea
+          <div className="im-composer" style={{ display: 'flex', flexDirection: 'column', padding: 8, gap: 6 }}>
+            <FormatToolbar
+              textareaRef={inputRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              rows={2}
-              style={{ flex: 1, resize: 'none' }}
-              placeholder={
-                activeChannel ? `Message #${activeChannel.name}\u2026` : 'Select a channel\u2026'
-              }
+              onChange={setDraft}
               disabled={!activeChannelId}
             />
-            <button onClick={() => void send()} disabled={busy || !draft.trim() || !activeChannelId}>
-              Send
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <textarea
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (handleFormatShortcut(e, inputRef, draft, setDraft)) return;
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                rows={2}
+                style={{ flex: 1, resize: 'none' }}
+                placeholder={
+                  activeChannel ? `Message #${activeChannel.name}\u2026` : 'Select a channel\u2026'
+                }
+                disabled={!activeChannelId}
+              />
+              <button onClick={() => void send()} disabled={busy || !draft.trim() || !activeChannelId}>
+                Send
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileViewer } from '../../components/ProfilePanes';
+import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
@@ -58,6 +59,7 @@ function App(): JSX.Element {
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
   const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   function upsertXfer(updater: (list: XferCard[]) => XferCard[]): void {
     setXfers(updater);
@@ -273,6 +275,7 @@ function App(): JSX.Element {
   }
 
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (handleFormatShortcut(e, inputRef, draft, setDraft)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -321,7 +324,7 @@ function App(): JSX.Element {
                   {m.direction === 'out' ? myName : alias}
                 </div>
                 <div className="bubble">
-                  {m.body}
+                  <RichText body={m.body} />
                   {(theme.showTimestamps || (m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered')) && (
                     <div className="meta">
                       {theme.showTimestamps && new Date(m.ts).toLocaleTimeString()}
@@ -343,7 +346,7 @@ function App(): JSX.Element {
               <span className={m.direction === 'out' ? 'me' : 'them'}>
                 {m.direction === 'out' ? myName : alias}:
               </span>{' '}
-              <span>{m.body}</span>
+              <RichText body={m.body} />
               {m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered' ? (
                 <span className="muted"> [{m.status}]</span>
               ) : null}
@@ -361,7 +364,14 @@ function App(): JSX.Element {
       </div>
 
       <div className="bevel-in" style={{ margin: 6 }}>
+        <FormatToolbar
+          textareaRef={inputRef}
+          value={draft}
+          onChange={setDraft}
+          disabled={busy || blocked}
+        />
         <textarea
+          ref={inputRef}
           className="chat-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
