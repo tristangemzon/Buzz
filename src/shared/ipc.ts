@@ -73,6 +73,9 @@ export const IPC = {
   RoomsCreateChannel: 'rooms:createChannel',
   RoomsDeleteChannel: 'rooms:deleteChannel',
   RoomsMarkRead: 'rooms:markRead',
+  RoomsVoiceJoin: 'rooms:voiceJoin',
+  RoomsVoiceLeave: 'rooms:voiceLeave',
+  RoomsVoiceSendAudio: 'rooms:voiceSendAudio',
 
   // unread counters
   UnreadGet: 'unread:get',
@@ -99,6 +102,8 @@ export const IPC = {
   EvtRoomInvited: 'evt:roomInvited',
   EvtRoomMembers: 'evt:roomMembers',
   EvtRoomChannel: 'evt:roomChannel',
+  EvtRoomVoicePresence: 'evt:roomVoicePresence',
+  EvtRoomVoiceAudio: 'evt:roomVoiceAudio',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
   EvtDiscovered: 'evt:discovered',
   EvtBuddyRequest: 'evt:buddyRequest',

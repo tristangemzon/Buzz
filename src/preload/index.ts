@@ -73,6 +73,11 @@ const api: AppApi = {
   listRoomChannels: (req) => ipcRenderer.invoke(IPC.RoomsListChannels, req),
   createRoomChannel: (req) => ipcRenderer.invoke(IPC.RoomsCreateChannel, req),
   deleteRoomChannel: (req) => ipcRenderer.invoke(IPC.RoomsDeleteChannel, req),
+  roomVoiceJoin: (req) => ipcRenderer.invoke(IPC.RoomsVoiceJoin, req),
+  roomVoiceLeave: (req) => ipcRenderer.invoke(IPC.RoomsVoiceLeave, req),
+  roomVoiceSendAudio: async (req, data) => {
+    ipcRenderer.send(IPC.RoomsVoiceSendAudio, req, data);
+  },
 
   mailboxStats: () => ipcRenderer.invoke(IPC.MailboxStats),
   mailboxAddRelay: (req) => ipcRenderer.invoke(IPC.MailboxAddRelay, req),
@@ -93,6 +98,8 @@ const api: AppApi = {
   onRoomInvited: (cb) => on(IPC.EvtRoomInvited, cb),
   onRoomMembers: (cb) => on(IPC.EvtRoomMembers, cb),
   onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
+  onRoomVoicePresence: (cb) => on(IPC.EvtRoomVoicePresence, cb),
+  onRoomVoiceAudio: (cb) => on(IPC.EvtRoomVoiceAudio, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
   onDiscovered: (cb) => on(IPC.EvtDiscovered, cb),
   onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),

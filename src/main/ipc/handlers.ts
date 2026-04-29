@@ -22,6 +22,8 @@ import {
   RoomChannelsListReq,
   RoomChannelCreateReq,
   RoomChannelDeleteReq,
+  RoomVoiceJoinReq,
+  RoomVoiceLeaveReq,
   MailboxAddRelayReq,
   MailboxRemoveRelayReq,
   NetworkConfig,
@@ -355,6 +357,7 @@ export function registerIpc(session: Session): void {
     const defaultChannel = {
       id: randomUUID(),
       name: 'general',
+      kind: 'text' as const,
       isDefault: true,
       createdAt,
     };
@@ -426,7 +429,7 @@ export function registerIpc(session: Session): void {
   handle(IPC.RoomsListChannels, RoomChannelsListReq, ({ roomId }) =>
     repos.listRoomChannels(requireDb(session), roomId),
   );
-  handle(IPC.RoomsCreateChannel, RoomChannelCreateReq, async ({ roomId, name }) => {
+  handle(IPC.RoomsCreateChannel, RoomChannelCreateReq, async ({ roomId, name, kind }) => {
     const db = requireDb(session);
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
@@ -435,11 +438,12 @@ export function registerIpc(session: Session): void {
       id: randomUUID(),
       roomId,
       name,
+      kind: kind ?? 'text',
       isDefault: false,
       createdAt: Date.now(),
-    };
+    } as const;
     repos.upsertRoomChannel(db, ch);
-    await rooms.broadcastChannelAdd(roomId, ch.id, ch.name);
+    await rooms.broadcastChannelAdd(roomId, ch.id, ch.name, ch.kind);
     return ch;
   });
   handle(IPC.RoomsDeleteChannel, RoomChannelDeleteReq, async ({ roomId, channelId }) => {
@@ -457,6 +461,21 @@ export function registerIpc(session: Session): void {
     repos.markRoomRead(requireDb(session), roomId);
     session.broadcastUnread();
   });
+  handle(IPC.RoomsVoiceJoin, RoomVoiceJoinReq, async ({ roomId, channelId }) => {
+    await session.roomVoiceJoin(roomId, channelId);
+    return { ok: true as const };
+  });
+  handle(IPC.RoomsVoiceLeave, RoomVoiceLeaveReq, async ({ roomId, channelId }) => {
+    await session.roomVoiceLeave(roomId, channelId);
+    return { ok: true as const };
+  });
+  // Audio chunks come over a separate ipcMain.on (no return value, raw bytes).
+  ipcMain.on(
+    IPC.RoomsVoiceSendAudio,
+    (_e, payload: { roomId: string; channelId: string }, data: Uint8Array) => {
+      void session.roomVoiceSendAudio(payload.roomId, payload.channelId, data);
+    },
+  );
 
   // ── offline mailbox relay ────────────────────────────────────────────────
   handle(IPC.MailboxStats, null, () => {

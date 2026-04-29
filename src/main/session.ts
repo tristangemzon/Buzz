@@ -35,6 +35,8 @@ import type {
   RoomInvitedEvent,
   RoomMembersEvent,
   RoomMessage,
+  RoomVoicePresenceEvent,
+  RoomVoiceAudioEvent,
   UnreadCounts,
   XferDoneEvent,
   XferOfferEvent,
@@ -67,6 +69,11 @@ export class Session {
   private roomKeys = new Map<string, Uint8Array>();
   // In-memory cache of members per known room (mirror of room_members table).
   private roomMembers = new Map<string, string[]>();
+  // Per-voice-channel set of remote peers known to be joined right now.
+  // Key is `${roomId}|${channelId}`.
+  private roomVoiceMembers = new Map<string, Set<string>>();
+  // Voice channels we are currently joined to (same key shape as above).
+  private localVoiceJoined = new Set<string>();
   // Auto-discovered peers (LAN via mDNS) that speak the Buzz IM protocol and
   // aren't already in our buddy list. Cleared on lock.
   private discovered = new Map<string, DiscoveredPeer>();
@@ -319,6 +326,8 @@ export class Session {
         onRoomMeta: (peer, p) => this.rooms?.handleMeta(peer, p),
         onRoomChannelAdd: (peer, p) => this.rooms?.handleChannelAdd(peer, p),
         onRoomChannelDel: (peer, p) => this.rooms?.handleChannelDel(peer, p),
+        onRoomVoiceState: (peer, p) => this.rooms?.handleVoiceState(peer, p),
+        onRoomVoiceAudio: (peer, p) => this.rooms?.handleVoiceAudio(peer, p),
         onBuddyReq: (peer, p) => this.handleBuddyReq(peer, p),
         onBuddyResp: (peer, p) => this.handleBuddyResp(peer, p),
       },
@@ -492,6 +501,7 @@ export class Session {
                 id: ch.id,
                 roomId: p.roomId,
                 name: ch.name,
+                kind: ch.kind === 'voice' ? 'voice' : 'text',
                 isDefault: ch.isDefault,
                 createdAt: ch.createdAt,
               });
@@ -523,6 +533,7 @@ export class Session {
               id: randomUUID(),
               roomId: p.roomId,
               name: 'general',
+              kind: 'text',
               isDefault: true,
               createdAt: p.ts,
             };
@@ -595,6 +606,7 @@ export class Session {
             id: p.channelId,
             roomId: p.roomId,
             name: p.name,
+            kind: existing?.kind ?? (p.kind === 'voice' ? 'voice' : 'text'),
             isDefault: existing?.isDefault ?? false,
             createdAt: existing?.createdAt ?? p.ts,
           };
@@ -615,6 +627,47 @@ export class Session {
             kind: 'removed',
             channel: existing,
           } satisfies RoomChannelEvent);
+        },
+        onVoiceState: (fromPeerId, p) => {
+          // Track the remote presence so newly-joining clients see the room.
+          const key = `${p.roomId}|${p.channelId}`;
+          const set = this.roomVoiceMembers.get(key) ?? new Set<string>();
+          if (p.joined) set.add(fromPeerId);
+          else set.delete(fromPeerId);
+          this.roomVoiceMembers.set(key, set);
+          this.broadcast(IPC.EvtRoomVoicePresence, {
+            roomId: p.roomId,
+            channelId: p.channelId,
+            peerId: fromPeerId,
+            screenName: p.fromName ?? '',
+            joined: p.joined,
+          } satisfies RoomVoicePresenceEvent);
+          // If we're locally joined to this voice channel, re-announce so the
+          // peer learns we're here too. Cheap: a single small frame.
+          if (p.joined && this.localVoiceJoined.has(key)) {
+            this.rooms?.broadcastVoiceState(p.roomId, p.channelId, true).catch(() => undefined);
+          }
+        },
+        onVoiceAudio: (fromPeerId, p) => {
+          // Only deliver decrypted audio to renderers if WE are joined to this
+          // voice channel — otherwise we'd be wasting cycles decoding audio
+          // we won't play.
+          const key = `${p.roomId}|${p.channelId}`;
+          if (!this.localVoiceJoined.has(key)) return;
+          void (async () => {
+            const plain = await this.rooms?.decryptVoiceAudio(p.roomId, p.ctB64, p.nonceB64);
+            if (!plain) return;
+            const copy = new Uint8Array(plain.byteLength);
+            copy.set(plain);
+            const ev: RoomVoiceAudioEvent = {
+              roomId: p.roomId,
+              channelId: p.channelId,
+              peerId: fromPeerId,
+              screenName: p.fromName ?? '',
+              data: copy,
+            };
+            this.broadcast(IPC.EvtRoomVoiceAudio, ev);
+          })();
         },
       },
       {
@@ -1062,6 +1115,36 @@ export class Session {
     if (this.currentCall.state !== 'active') return;
     const ev: TalkVideoStateEvent = { callId, peerId, on };
     this.broadcast(IPC.EvtTalkVideoState, ev);
+  }
+
+  // ── voice channels ────────────────────────────────────────────────────
+  async roomVoiceJoin(roomId: string, channelId: string): Promise<void> {
+    if (!this.rooms) throw new Error('locked');
+    const key = `${roomId}|${channelId}`;
+    if (this.localVoiceJoined.has(key)) return;
+    this.localVoiceJoined.add(key);
+    await this.rooms.broadcastVoiceState(roomId, channelId, true);
+  }
+
+  async roomVoiceLeave(roomId: string, channelId: string): Promise<void> {
+    if (!this.rooms) return;
+    const key = `${roomId}|${channelId}`;
+    if (!this.localVoiceJoined.has(key)) return;
+    this.localVoiceJoined.delete(key);
+    await this.rooms.broadcastVoiceState(roomId, channelId, false);
+  }
+
+  async roomVoiceSendAudio(roomId: string, channelId: string, data: Uint8Array): Promise<void> {
+    if (!this.rooms) return;
+    const key = `${roomId}|${channelId}`;
+    if (!this.localVoiceJoined.has(key)) return;
+    await this.rooms.broadcastVoiceAudio(roomId, channelId, data);
+  }
+
+  // List remote peers currently joined to a voice channel (excludes us).
+  roomVoicePresence(roomId: string, channelId: string): string[] {
+    const key = `${roomId}|${channelId}`;
+    return Array.from(this.roomVoiceMembers.get(key) ?? new Set<string>());
   }
 
   private broadcast(channel: string, payload: unknown): void {

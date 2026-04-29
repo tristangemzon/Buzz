@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
+import { useRoomVoice } from '../../components/useRoomVoice';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
 
@@ -36,6 +37,7 @@ function App(): JSX.Element {
   const [showInvite, setShowInvite] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelKind, setNewChannelKind] = useState<'text' | 'voice'>('text');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
@@ -212,7 +214,7 @@ function App(): JSX.Element {
     setBusy(true);
     setErr('');
     try {
-      const ch = await window.buzz.createRoomChannel({ roomId, name });
+      const ch = await window.buzz.createRoomChannel({ roomId, name, kind: newChannelKind });
       setChannels((prev) =>
         prev.some((c) => c.id === ch.id) ? prev : [...prev, ch],
       );
@@ -282,7 +284,7 @@ function App(): JSX.Element {
                 }}
                 title={c.isDefault ? 'Default channel' : 'Right-click to delete'}
               >
-                <span className="chat-channel-hash">#</span>
+                <span className="chat-channel-hash">{c.kind === 'voice' ? '🔊' : '#'}</span>
                 {c.name}
               </div>
             ))}
@@ -309,6 +311,15 @@ function App(): JSX.Element {
             ))}
           </div>
 
+          {activeChannel?.kind === 'voice' ? (
+            <VoiceChannelPane
+              roomId={roomId}
+              channelId={activeChannelId}
+              channelName={activeChannel.name}
+              nameFor={nameFor}
+            />
+          ) : (
+            <>
           <div
             ref={logRef}
             className="im-log"
@@ -387,6 +398,8 @@ function App(): JSX.Element {
               </button>
             </div>
           </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -409,6 +422,26 @@ function App(): JSX.Element {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ margin: '0 0 8px' }}>New channel</h3>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, fontSize: 11 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="radio"
+                  name="channel-kind"
+                  checked={newChannelKind === 'text'}
+                  onChange={() => setNewChannelKind('text')}
+                />
+                Text
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="radio"
+                  name="channel-kind"
+                  checked={newChannelKind === 'voice'}
+                  onChange={() => setNewChannelKind('voice')}
+                />
+                Voice
+              </label>
+            </div>
             <input
               type="text"
               autoFocus
@@ -486,3 +519,86 @@ function App(): JSX.Element {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+function VoiceChannelPane(props: {
+  roomId: string;
+  channelId: string;
+  channelName: string;
+  nameFor: (peerId: string) => string;
+}): JSX.Element {
+  const { roomId, channelId, channelName, nameFor } = props;
+  const voice = useRoomVoice(roomId, channelId);
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        padding: 16,
+        gap: 12,
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 600 }}>🔊 {channelName}</div>
+      <div style={{ fontSize: 11, opacity: 0.75 }}>
+        {voice.joined
+          ? voice.participants.length === 0
+            ? 'You\u2019re the only one here.'
+            : `Talking with ${voice.participants.length} ${voice.participants.length === 1 ? 'person' : 'people'}.`
+          : 'Voice channel — press Join to talk.'}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        {!voice.joined ? (
+          <button onClick={() => void voice.join()}>Join</button>
+        ) : (
+          <>
+            <button onClick={() => voice.toggleMute()}>{voice.muted ? 'Unmute' : 'Mute'}</button>
+            <button onClick={() => void voice.leave()}>Leave</button>
+          </>
+        )}
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          width: '100%',
+          maxWidth: 360,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          fontSize: 12,
+        }}
+      >
+        {voice.joined && (
+          <div
+            style={{
+              padding: '4px 8px',
+              borderRadius: 4,
+              background: 'rgba(0,128,255,0.08)',
+            }}
+          >
+            • You {voice.muted ? '(muted)' : ''}
+          </div>
+        )}
+        {voice.participants.map((p) => (
+          <div
+            key={p.peerId}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 4,
+              background: 'rgba(0,0,0,0.04)',
+            }}
+          >
+            • {p.screenName || nameFor(p.peerId)}
+          </div>
+        ))}
+      </div>
+
+      {voice.error && (
+        <div style={{ color: '#a00', fontSize: 11 }}>{voice.error}</div>
+      )}
+    </div>
+  );
+}

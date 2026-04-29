@@ -52,7 +52,7 @@ export type Frame =
       // Channel list at the time of invite, so the invitee creates the same
       // channel ids the inviter is using (avoids divergent default-channel
       // UUIDs that would otherwise produce ghost "channel" placeholders).
-      channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
+      channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>;
     }
   | {
       type: 'room-msg';
@@ -72,8 +72,29 @@ export type Frame =
       channelId: string;
       name: string;
       ts: number;
+      kind?: 'text' | 'voice';
     }
   | { type: 'room-channel-del'; roomId: string; channelId: string }
+  // Voice channels: presence beacons + opus/webm audio chunks fanned out to
+  // every room member. Audio is *additionally* secret-boxed with the room key
+  // (analogous to room-msg) so non-members never see plaintext.
+  | {
+      type: 'room-voice-state';
+      roomId: string;
+      channelId: string;
+      joined: boolean;
+      fromName?: string;
+      ts: number;
+    }
+  | {
+      type: 'room-voice-audio';
+      roomId: string;
+      channelId: string;
+      ctB64: string;
+      nonceB64: string;
+      fromName?: string;
+      ts: number;
+    }
   // Buddy add request flow.
   | { type: 'buddy-req'; screenName: string; ts: number }
   | { type: 'buddy-resp'; accepted: boolean; screenName?: string };
@@ -84,7 +105,7 @@ export type RoomInvitePayload = {
   members: string[];
   keyB64: string;
   ts: number;
-  channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
+  channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>;
 };
 export type RoomMsgPayload = {
   roomId: string;
@@ -101,8 +122,24 @@ export type RoomChannelAddPayload = {
   channelId: string;
   name: string;
   ts: number;
+  kind?: 'text' | 'voice';
 };
 export type RoomChannelDelPayload = { roomId: string; channelId: string };
+export type RoomVoiceStatePayload = {
+  roomId: string;
+  channelId: string;
+  joined: boolean;
+  fromName?: string;
+  ts: number;
+};
+export type RoomVoiceAudioPayload = {
+  roomId: string;
+  channelId: string;
+  ctB64: string;
+  nonceB64: string;
+  fromName?: string;
+  ts: number;
+};
 
 export type ImEvents = {
   onMessage(peerId: string, msg: { id: string; ts: number; body: string }): void;
@@ -115,6 +152,8 @@ export type ImEvents = {
   onRoomMeta?(peerId: string, p: RoomMetaPayload): void;
   onRoomChannelAdd?(peerId: string, p: RoomChannelAddPayload): void;
   onRoomChannelDel?(peerId: string, p: RoomChannelDelPayload): void;
+  onRoomVoiceState?(peerId: string, p: RoomVoiceStatePayload): void;
+  onRoomVoiceAudio?(peerId: string, p: RoomVoiceAudioPayload): void;
   onBuddyReq?(peerId: string, p: { screenName: string; ts: number }): void;
   onBuddyResp?(peerId: string, p: { accepted: boolean; screenName?: string }): void;
 };
@@ -361,6 +400,7 @@ export class ImService {
             channelId: f.channelId,
             name: f.name,
             ts: f.ts,
+            kind: f.kind === 'voice' ? 'voice' : f.kind === 'text' ? 'text' : undefined,
           });
         }
         break;
@@ -373,6 +413,40 @@ export class ImService {
           this.events.onRoomChannelDel(peerIdStr, {
             roomId: f.roomId,
             channelId: f.channelId,
+          });
+        }
+        break;
+      case 'room-voice-state':
+        if (
+          this.events.onRoomVoiceState &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.joined === 'boolean'
+        ) {
+          this.events.onRoomVoiceState(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            joined: f.joined,
+            fromName: f.fromName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-voice-audio':
+        if (
+          this.events.onRoomVoiceAudio &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.ctB64 === 'string' &&
+          typeof f.nonceB64 === 'string'
+        ) {
+          this.events.onRoomVoiceAudio(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            ctB64: f.ctB64,
+            nonceB64: f.nonceB64,
+            fromName: f.fromName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
           });
         }
         break;

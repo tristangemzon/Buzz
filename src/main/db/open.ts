@@ -48,6 +48,14 @@ function migrateChannels(db: Db): void {
     );
   }
 
+  // Voice-channel feature added the `kind` column on room_channels.
+  const ccols = db.prepare('PRAGMA table_info(room_channels)').all() as Array<{
+    name: string;
+  }>;
+  if (!ccols.some((c) => c.name === 'kind')) {
+    db.exec(`ALTER TABLE room_channels ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`);
+  }
+
   // For each room without any channel rows, create a default "general" channel
   // and attribute existing messages to it.
   const rooms = db.prepare('SELECT id FROM rooms').all() as Array<{ id: string }>;

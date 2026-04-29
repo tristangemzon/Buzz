@@ -296,13 +296,18 @@ export const Room = z.object({
 });
 export type Room = z.infer<typeof Room>;
 
-// Discord-style text channels within a room. Members all see every channel;
+// Discord-style channels within a room. Members all see every channel;
 // channels share the room's symmetric key (the channel id is just metadata).
+// 'text' channels carry chat messages; 'voice' channels are persistent audio
+// rooms that any subset of members can join at any time.
 const ChannelName = z.string().min(1).max(64).regex(/^[A-Za-z0-9 _-]+$/);
+export const ChannelKind = z.enum(['text', 'voice']);
+export type ChannelKind = z.infer<typeof ChannelKind>;
 export const RoomChannel = z.object({
   id: Uuid,
   roomId: RoomId,
   name: ChannelName,
+  kind: ChannelKind.default('text'),
   isDefault: z.boolean().default(false),
   createdAt: z.number().int().nonnegative(),
 });
@@ -311,6 +316,7 @@ export type RoomChannel = z.infer<typeof RoomChannel>;
 export const RoomChannelCreateReq = z.object({
   roomId: RoomId,
   name: ChannelName,
+  kind: ChannelKind.default('text'),
 });
 export type RoomChannelCreateReq = z.infer<typeof RoomChannelCreateReq>;
 
@@ -328,6 +334,36 @@ export const RoomChannelEvent = z.object({
   channel: RoomChannel,
 });
 export type RoomChannelEvent = z.infer<typeof RoomChannelEvent>;
+
+// ── Voice channels ───────────────────────────────────────────────────────────
+
+export const RoomVoiceJoinReq = z.object({ roomId: RoomId, channelId: Uuid });
+export type RoomVoiceJoinReq = z.infer<typeof RoomVoiceJoinReq>;
+export const RoomVoiceLeaveReq = z.object({ roomId: RoomId, channelId: Uuid });
+export type RoomVoiceLeaveReq = z.infer<typeof RoomVoiceLeaveReq>;
+// Audio chunks travel as raw bytes; we don't validate the byte length
+// strictly here (handler caps it).
+export const RoomVoiceAudioReq = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+});
+export type RoomVoiceAudioReq = z.infer<typeof RoomVoiceAudioReq>;
+export const RoomVoicePresenceEvent = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  peerId: PeerIdStr,
+  screenName: z.string().max(64).default(''),
+  joined: z.boolean(),
+});
+export type RoomVoicePresenceEvent = z.infer<typeof RoomVoicePresenceEvent>;
+export const RoomVoiceAudioEvent = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  peerId: PeerIdStr,
+  screenName: z.string().max(64).default(''),
+  data: z.instanceof(Uint8Array),
+});
+export type RoomVoiceAudioEvent = z.infer<typeof RoomVoiceAudioEvent>;
 
 export const RoomMessage = z.object({
   id: Uuid,

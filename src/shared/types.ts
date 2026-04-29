@@ -24,6 +24,10 @@ import type {
   RoomChannelDeleteReq,
   RoomChannelEvent,
   RoomChannelsListReq,
+  RoomVoiceJoinReq,
+  RoomVoiceLeaveReq,
+  RoomVoicePresenceEvent,
+  RoomVoiceAudioEvent,
   RoomCreateReq,
   RoomHistoryReq,
   RoomInvitedEvent,
@@ -138,6 +142,10 @@ export type AppApi = {
   createRoomChannel(req: RoomChannelCreateReq): Promise<RoomChannel>;
   deleteRoomChannel(req: RoomChannelDeleteReq): Promise<{ ok: true }>;
 
+  roomVoiceJoin(req: RoomVoiceJoinReq): Promise<{ ok: true }>;
+  roomVoiceLeave(req: RoomVoiceLeaveReq): Promise<{ ok: true }>;
+  roomVoiceSendAudio(req: RoomVoiceJoinReq, data: Uint8Array): Promise<void>;
+
   // offline mailbox relay
   mailboxStats(): Promise<MailboxStats>;
   mailboxAddRelay(req: MailboxAddRelayReq): Promise<MailboxStats>;
@@ -160,6 +168,8 @@ export type AppApi = {
   onRoomInvited(cb: (e: RoomInvitedEvent) => void): () => void;
   onRoomMembers(cb: (e: RoomMembersEvent) => void): () => void;
   onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
+  onRoomVoicePresence(cb: (e: RoomVoicePresenceEvent) => void): () => void;
+  onRoomVoiceAudio(cb: (e: RoomVoiceAudioEvent) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
   onDiscovered(cb: (e: DiscoveredEvent) => void): () => void;
   onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;

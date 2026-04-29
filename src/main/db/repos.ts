@@ -341,7 +341,7 @@ export function roomHistory(
 export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
   const rows = db
     .prepare(
-      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind
          FROM room_channels WHERE room_id=? ORDER BY is_default DESC, created_at ASC`,
     )
     .all(roomId) as Array<{
@@ -350,11 +350,13 @@ export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
       name: string;
       isDefault: number;
       createdAt: number;
+      kind: string;
     }>;
   return rows.map((r) => ({
     id: r.id,
     roomId: r.roomId,
     name: r.name,
+    kind: (r.kind === 'voice' ? 'voice' : 'text') as 'text' | 'voice',
     isDefault: r.isDefault === 1,
     createdAt: r.createdAt,
   }));
@@ -363,17 +365,18 @@ export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
 export function getRoomChannel(db: Db, channelId: string): RoomChannel | null {
   const r = db
     .prepare(
-      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind
          FROM room_channels WHERE id=?`,
     )
     .get(channelId) as
-    | { id: string; roomId: string; name: string; isDefault: number; createdAt: number }
+    | { id: string; roomId: string; name: string; isDefault: number; createdAt: number; kind: string }
     | undefined;
   if (!r) return null;
   return {
     id: r.id,
     roomId: r.roomId,
     name: r.name,
+    kind: (r.kind === 'voice' ? 'voice' : 'text') as 'text' | 'voice',
     isDefault: r.isDefault === 1,
     createdAt: r.createdAt,
   };
@@ -390,10 +393,10 @@ export function getDefaultChannelId(db: Db, roomId: string): string | null {
 
 export function upsertRoomChannel(db: Db, c: RoomChannel): void {
   db.prepare(
-    `INSERT INTO room_channels(id, room_id, name, is_default, created_at)
-     VALUES (?,?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
-  ).run(c.id, c.roomId, c.name, c.isDefault ? 1 : 0, c.createdAt);
+    `INSERT INTO room_channels(id, room_id, name, is_default, created_at, kind)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind`,
+  ).run(c.id, c.roomId, c.name, c.isDefault ? 1 : 0, c.createdAt, c.kind ?? 'text');
 }
 
 export function deleteRoomChannel(db: Db, channelId: string): void {

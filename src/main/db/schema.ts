@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS room_channels (
   room_id     TEXT NOT NULL,
   name        TEXT NOT NULL,
   is_default  INTEGER NOT NULL DEFAULT 0,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  kind        TEXT NOT NULL DEFAULT 'text'
 );
 CREATE INDEX IF NOT EXISTS idx_room_channels_room ON room_channels(room_id);
 

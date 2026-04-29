@@ -26,6 +26,8 @@ import type {
   RoomInvitePayload,
   RoomMsgPayload,
   RoomMetaPayload,
+  RoomVoiceStatePayload,
+  RoomVoiceAudioPayload,
 } from './im.js';
 
 export type RoomServiceEvents = {
@@ -38,6 +40,8 @@ export type RoomServiceEvents = {
   onLeave(fromPeerId: string, roomId: string): void;
   onChannelAdd(fromPeerId: string, p: RoomChannelAddPayload): void;
   onChannelDel(fromPeerId: string, p: RoomChannelDelPayload): void;
+  onVoiceState(fromPeerId: string, p: RoomVoiceStatePayload): void;
+  onVoiceAudio(fromPeerId: string, p: RoomVoiceAudioPayload): void;
 };
 
 export type RoomBridge = {
@@ -80,6 +84,12 @@ export class RoomService {
   readonly handleChannelDel = (fromPeerId: string, p: RoomChannelDelPayload): void => {
     this.events.onChannelDel(fromPeerId, p);
   };
+  readonly handleVoiceState = (fromPeerId: string, p: RoomVoiceStatePayload): void => {
+    this.events.onVoiceState(fromPeerId, p);
+  };
+  readonly handleVoiceAudio = (fromPeerId: string, p: RoomVoiceAudioPayload): void => {
+    this.events.onVoiceAudio(fromPeerId, p);
+  };
 
   private async decryptAndDispatch(fromPeerId: string, p: RoomMsgPayload): Promise<void> {
     const key = this.bridge.getRoomKey(p.roomId);
@@ -112,7 +122,7 @@ export class RoomService {
   async createRoom(opts: {
     name: string;
     members: string[];
-    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>;
+    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>;
   }): Promise<{ roomId: string; keyB64: string; createdAt: number; members: string[] }> {
     const s = await sodium();
     const roomId = randomUUID();
@@ -145,7 +155,7 @@ export class RoomService {
     roomId: string,
     peerId: string,
     name: string,
-    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number }>,
+    channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>,
   ): Promise<string[]> {
     const key = this.bridge.getRoomKey(roomId);
     if (!key) throw new Error('Unknown or non-member room');
@@ -194,17 +204,70 @@ export class RoomService {
     return { id, ts };
   }
 
-  async broadcastChannelAdd(roomId: string, channelId: string, name: string): Promise<void> {
+  async broadcastChannelAdd(roomId: string, channelId: string, name: string, kind: 'text' | 'voice' = 'text'): Promise<void> {
     const me = this.bridge.myPeerId();
     const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
     const ts = Date.now();
     await Promise.all(
       recipients.map((peer) =>
         this.im
-          .send(peer, { type: 'room-channel-add', roomId, channelId, name, ts })
+          .send(peer, { type: 'room-channel-add', roomId, channelId, name, ts, kind })
           .catch(() => undefined),
       ),
     );
+  }
+
+  async broadcastVoiceState(roomId: string, channelId: string, joined: boolean): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    const fromName = this.bridge.myScreenName();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im
+          .send(peer, { type: 'room-voice-state', roomId, channelId, joined, fromName, ts })
+          .catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastVoiceAudio(
+    roomId: string,
+    channelId: string,
+    data: Uint8Array,
+  ): Promise<void> {
+    const key = this.bridge.getRoomKey(roomId);
+    if (!key) return;
+    const s = await sodium();
+    const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
+    const ct = s.crypto_secretbox_easy(data, nonce, key);
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const frame = {
+      type: 'room-voice-audio' as const,
+      roomId,
+      channelId,
+      ctB64: s.to_base64(ct, s.base64_variants.ORIGINAL),
+      nonceB64: s.to_base64(nonce, s.base64_variants.ORIGINAL),
+      fromName: this.bridge.myScreenName(),
+      ts: Date.now(),
+    };
+    await Promise.all(
+      recipients.map((peer) => this.im.send(peer, frame).catch(() => undefined)),
+    );
+  }
+
+  async decryptVoiceAudio(roomId: string, ctB64: string, nonceB64: string): Promise<Uint8Array | null> {
+    const key = this.bridge.getRoomKey(roomId);
+    if (!key) return null;
+    try {
+      const s = await sodium();
+      const ct = s.from_base64(ctB64, s.base64_variants.ORIGINAL);
+      const nonce = s.from_base64(nonceB64, s.base64_variants.ORIGINAL);
+      return s.crypto_secretbox_open_easy(ct, nonce, key);
+    } catch {
+      return null;
+    }
   }
 
   async broadcastChannelDel(roomId: string, channelId: string): Promise<void> {
