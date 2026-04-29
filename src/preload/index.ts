@@ -10,6 +10,7 @@ function on<T>(channel: string, cb: (e: T) => void): () => void {
 
 const api: AppApi = {
   hasIdentity: () => ipcRenderer.invoke(IPC.AuthHasIdentity),
+  listProfiles: () => ipcRenderer.invoke(IPC.AuthListProfiles),
   createIdentity: (req) => ipcRenderer.invoke(IPC.AuthCreate, req),
   unlock: (req) => ipcRenderer.invoke(IPC.AuthUnlock, req),
   lock: () => ipcRenderer.invoke(IPC.AuthLock),

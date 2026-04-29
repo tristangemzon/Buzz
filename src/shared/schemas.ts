@@ -19,9 +19,17 @@ export const CreateIdentityReq = z.object({
 export type CreateIdentityReq = z.infer<typeof CreateIdentityReq>;
 
 export const UnlockReq = z.object({
+  profileId: Uuid,
   passphrase: Passphrase,
 });
 export type UnlockReq = z.infer<typeof UnlockReq>;
+
+export const ProfileSummary = z.object({
+  id: Uuid,
+  screenName: z.string().min(1).max(64),
+  createdAt: z.number().int().nonnegative(),
+});
+export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
 // ── Buddies ──────────────────────────────────────────────────────────────────
 

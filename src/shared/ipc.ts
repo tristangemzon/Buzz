@@ -2,6 +2,7 @@
 export const IPC = {
   // auth / identity
   AuthHasIdentity: 'auth:hasIdentity',
+  AuthListProfiles: 'auth:listProfiles',
   AuthCreate: 'auth:create',
   AuthUnlock: 'auth:unlock',
   AuthLock: 'auth:lock',

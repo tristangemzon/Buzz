@@ -3,10 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { NetworkSettings } from '../../components/NetworkSettings';
+import type { ProfileSummary } from '@shared/schemas';
+
+type Mode = 'signin' | 'create';
 
 function App(): JSX.Element {
-  const [hasIdentity, setHasIdentity] = useState<boolean | null>(null);
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
+  const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
+  const [mode, setMode] = useState<Mode>('signin');
+  const [selectedId, setSelectedId] = useState<string>('');
   const [screenName, setScreenName] = useState('');
   const [pass, setPass] = useState('');
   const [pass2, setPass2] = useState('');
@@ -16,9 +20,14 @@ function App(): JSX.Element {
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
-    window.buzz.hasIdentity().then((h) => {
-      setHasIdentity(h);
-      setMode(h ? 'signin' : 'create');
+    window.buzz.listProfiles().then((list) => {
+      setProfiles(list);
+      if (list.length === 0) {
+        setMode('create');
+      } else {
+        setMode('signin');
+        setSelectedId(list[0]!.id);
+      }
     });
   }, []);
 
@@ -28,13 +37,15 @@ function App(): JSX.Element {
     if (mode === 'create') {
       if (!screenName.trim()) return setErr('Choose a screen name.');
       if (pass !== pass2) return setErr('Passphrases do not match.');
+    } else {
+      if (!selectedId) return setErr('Pick an account.');
     }
     setBusy(true);
     try {
       if (mode === 'create') {
         await window.buzz.createIdentity({ screenName: screenName.trim(), passphrase: pass });
       } else {
-        await window.buzz.unlock({ passphrase: pass });
+        await window.buzz.unlock({ profileId: selectedId, passphrase: pass });
       }
       await window.buzzWindows.openBuddyList();
       window.close();
@@ -45,13 +56,15 @@ function App(): JSX.Element {
     }
   }
 
-  if (hasIdentity === null)
+  if (profiles === null)
     return (
       <div className="window">
         <WindowChrome title="Sign On" canMaximize={false} />
         <div className="signon">Loading…</div>
       </div>
     );
+
+  const hasProfiles = profiles.length > 0;
 
   return (
     <div className="window">
@@ -61,9 +74,29 @@ function App(): JSX.Element {
         <h1>Welcome</h1>
         <div className="muted">
           {mode === 'create'
-            ? 'Create a new screen name'
-            : 'Sign on to your existing screen name'}
+            ? hasProfiles
+              ? 'Create a new screen name'
+              : 'Create your screen name'
+            : 'Sign on to your screen name'}
         </div>
+
+        {mode === 'signin' && (
+          <div className="row">
+            <label className="label">Screen Name</label>
+            <select
+              className="bevel-in"
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              autoFocus
+            >
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.screenName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {mode === 'create' && (
           <div className="row">
@@ -85,7 +118,7 @@ function App(): JSX.Element {
             className="bevel-in"
             value={pass}
             onChange={(e) => setPass(e.target.value)}
-            autoFocus={mode !== 'create'}
+            autoFocus={mode === 'signin'}
           />
         </div>
 
@@ -107,14 +140,20 @@ function App(): JSX.Element {
           <button onClick={submit} disabled={busy}>
             {mode === 'create' ? 'Create' : 'Sign On'}
           </button>
-          {hasIdentity ? (
+          {hasProfiles && (
             <button
-              onClick={() => setMode((m) => (m === 'create' ? 'signin' : 'create'))}
+              onClick={() => {
+                setErr('');
+                setPass('');
+                setPass2('');
+                setScreenName('');
+                setMode((m) => (m === 'create' ? 'signin' : 'create'));
+              }}
               disabled={busy}
             >
               {mode === 'create' ? 'Sign On Instead' : 'New Screen Name'}
             </button>
-          ) : null}
+          )}
         </div>
         <button
           className="signon-cog"

@@ -9,6 +9,7 @@ import type { Libp2p } from 'libp2p';
 import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
 import { openDb, type Db } from './db/open.js';
 import * as repos from './db/repos.js';
+import * as profiles from './profiles.js';
 import { ImService } from './p2p/im.js';
 import { MailboxService } from './p2p/mailbox.js';
 import { PresenceManager } from './p2p/presence.js';
@@ -49,31 +50,56 @@ export class Session {
   // In-memory cache of members per known room (mirror of room_members table).
   private roomMembers = new Map<string, string[]>();
   screenName = '';
-
-  private readonly keystore: Keystore;
+  // Active profile id (set on create/unlock, cleared on lock).
+  profileId: string | null = null;
 
   constructor() {
-    this.keystore = Keystore.at(app.getPath('userData'));
+    /* no-op; keystore is opened per-profile in create()/unlock() */
   }
 
-  hasIdentity(): Promise<boolean> {
-    return this.keystore.exists();
+  listProfiles(): profiles.ProfileSummary[] {
+    return profiles.listProfiles();
   }
 
-  async create(screenName: string, passphrase: string): Promise<{ buddyCode: string }> {
-    if (await this.keystore.exists()) {
-      throw new Error('Identity already exists; unlock instead');
+  async create(
+    screenName: string,
+    passphrase: string,
+  ): Promise<{ profileId: string; buddyCode: string }> {
+    const profile = profiles.addProfile(screenName);
+    try {
+      const ks = new Keystore(path.join(profiles.profileDir(profile.id), 'keystore.bin'));
+      const id = await ks.create(passphrase);
+      await this.bringUp(id, profile.id, screenName);
+      return { profileId: profile.id, buddyCode: this.buddyCode() };
+    } catch (err) {
+      // Roll back the half-created profile so the user can retry.
+      profiles.removeProfile(profile.id);
+      throw err;
     }
-    const id = await this.keystore.create(passphrase);
-    await this.bringUp(id, screenName);
-    return { buddyCode: this.buddyCode() };
   }
 
-  async unlock(passphrase: string): Promise<{ buddyCode: string }> {
-    if (this.state === 'unlocked') return { buddyCode: this.buddyCode() };
-    const id = await this.keystore.unlock(passphrase);
-    await this.bringUp(id, '');
-    return { buddyCode: this.buddyCode() };
+  async unlock(
+    profileId: string,
+    passphrase: string,
+  ): Promise<{ profileId: string; buddyCode: string }> {
+    if (this.state === 'unlocked' && this.profileId === profileId) {
+      return { profileId, buddyCode: this.buddyCode() };
+    }
+    if (this.state === 'unlocked') {
+      // Switching profiles: tear down current session first.
+      await this.lock();
+    }
+    const profile = profiles.getProfile(profileId);
+    if (!profile) throw new Error('Profile not found');
+    const ks = new Keystore(path.join(profiles.profileDir(profileId), 'keystore.bin'));
+    const id = await ks.unlock(passphrase);
+    await this.bringUp(id, profileId, '');
+    // Sync the profile-index display name with the unlocked DB's identity
+    // (handles migrated legacy installs where the index started as a placeholder).
+    if (this.screenName && this.screenName !== profile.screenName) {
+      profiles.updateProfile(profileId, { screenName: this.screenName });
+    }
+    return { profileId, buddyCode: this.buddyCode() };
   }
 
   async lock(): Promise<void> {
@@ -117,6 +143,7 @@ export class Session {
     this.mailbox = null;
     this.roomKeys.clear();
     this.roomMembers.clear();
+    this.profileId = null;
     this.state = 'locked';
   }
 
@@ -130,9 +157,14 @@ export class Session {
     return this.node.peerId.toString();
   }
 
-  private async bringUp(id: IdentityMaterial, screenNameIfNew: string): Promise<void> {
+  private async bringUp(
+    id: IdentityMaterial,
+    profileId: string,
+    screenNameIfNew: string,
+  ): Promise<void> {
     this.identity = id;
-    const dbFile = path.join(app.getPath('userData'), 'buzz.sqlite');
+    this.profileId = profileId;
+    const dbFile = path.join(profiles.profileDir(profileId), 'buzz.sqlite');
     this.db = openDb(dbFile, id.dbKey);
 
     // Establish identity row in DB.

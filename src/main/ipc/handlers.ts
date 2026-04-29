@@ -53,13 +53,14 @@ function handle<S extends ZodTypeAny, R>(
 
 export function registerIpc(session: Session): void {
   // ── auth ──────────────────────────────────────────────────────────────────
-  handle(IPC.AuthHasIdentity, null, () => session.hasIdentity());
+  handle(IPC.AuthHasIdentity, null, () => session.listProfiles().length > 0);
+  handle(IPC.AuthListProfiles, null, () => session.listProfiles());
   handle(IPC.AuthCreate, CreateIdentityReq, async ({ screenName, passphrase }) => {
     return session.create(screenName, passphrase);
   });
-  handle(IPC.AuthUnlock, UnlockReq, async ({ passphrase }) => {
-    const r = await session.unlock(passphrase);
-    return { ok: true as const, buddyCode: r.buddyCode };
+  handle(IPC.AuthUnlock, UnlockReq, async ({ profileId, passphrase }) => {
+    const r = await session.unlock(profileId, passphrase);
+    return { ok: true as const, profileId: r.profileId, buddyCode: r.buddyCode };
   });
   handle(IPC.AuthLock, null, () => session.lock());
   handle(IPC.AuthGetPlatform, null, () => platform());

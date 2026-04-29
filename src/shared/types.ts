@@ -11,6 +11,7 @@ import type {
   Prefs,
   PresenceSetStatusReq,
   Profile,
+  ProfileSummary,
   Room,
   RoomCreateReq,
   RoomHistoryReq,
@@ -40,8 +41,9 @@ export type Platform = 'mac' | 'windows' | 'linux';
 export type AppApi = {
   // auth
   hasIdentity(): Promise<boolean>;
-  createIdentity(req: CreateIdentityReq): Promise<{ buddyCode: string }>;
-  unlock(req: UnlockReq): Promise<{ ok: true; buddyCode: string }>;
+  listProfiles(): Promise<ProfileSummary[]>;
+  createIdentity(req: CreateIdentityReq): Promise<{ profileId: string; buddyCode: string }>;
+  unlock(req: UnlockReq): Promise<{ ok: true; profileId: string; buddyCode: string }>;
   lock(): Promise<void>;
   getPlatform(): Promise<Platform>;
   getMyId(): Promise<{ peerId: string; buddyCode: string; screenName: string }>;

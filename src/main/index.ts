@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { registerIpc } from './ipc/handlers.js';
 import { Session } from './session.js';
+import { migrateLegacy } from './profiles.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -191,6 +192,9 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 app.whenReady().then(() => {
+  // Migrate any legacy single-profile install (userData/keystore.bin +
+  // buzz.sqlite) into a profile dir so existing users keep their identity.
+  migrateLegacy();
   installCsp();
   registerIpc(session);
   // Window-management helpers used by the buddy list to open IM windows.
