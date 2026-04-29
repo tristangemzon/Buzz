@@ -120,7 +120,9 @@ button:disabled {
 /* Only the OUTER titlebar (direct child of a top-level window root) is the
    OS drag handle. Modal titlebars must remain non-draggable. */
 .window > .titlebar,
-.im-window > .titlebar {
+.im-window > .titlebar,
+.aim-window > .titlebar,
+.vc-window > .titlebar {
   -webkit-app-region: drag;
 }
 .titlebar .runner {
