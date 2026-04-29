@@ -1056,3 +1056,28 @@ html[data-chat-theme='compact'] .chat-log > div {
 .call-modal-actions {
   text-align: right;
 }
+
+.call-waves {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+.call-wave-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #001428;
+  padding: 2px 4px;
+  border: 1px solid #062459;
+}
+.call-wave-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #9cf;
+  min-width: 26px;
+}
+.waveform {
+  image-rendering: pixelated;
+}

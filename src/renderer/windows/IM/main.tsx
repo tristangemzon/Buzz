@@ -5,6 +5,7 @@ import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileViewer } from '../../components/ProfilePanes';
 import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
+import { WaveformCanvas } from '../../components/WaveformCanvas';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
@@ -437,6 +438,25 @@ function App(): JSX.Element {
             <span>Calling {alias}…</span>
           ) : (
             <span>On a call with {alias} · {fmtCallTime(talk.elapsedSec)}</span>
+          )}
+          {talk.call.state === 'active' && (
+            <div className="call-waves">
+              <div className="call-wave-pair">
+                <span className="call-wave-label">You</span>
+                <WaveformCanvas
+                  getAnalyser={talk.getMicAnalyser}
+                  color={talk.muted ? '#888' : '#7cf'}
+                  active={!talk.muted}
+                />
+              </div>
+              <div className="call-wave-pair">
+                <span className="call-wave-label">Them</span>
+                <WaveformCanvas
+                  getAnalyser={talk.getRemoteAnalyser}
+                  color="#ff7eb6"
+                />
+              </div>
+            </div>
           )}
           <span className="spacer" />
           {talk.call.state === 'active' && (

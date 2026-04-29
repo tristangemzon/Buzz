@@ -1,6 +1,8 @@
 // Voice-call client: encapsulates microphone capture (MediaRecorder → opus
 // chunks) and playback (MediaSource SourceBuffer fed by inbound chunks),
-// plus tiny React hook to drive the IM window's call UI.
+// plus tiny React hook to drive the IM window's call UI. Capture and
+// playback each expose an AnalyserNode so the UI can draw a 00's-style
+// waveform of mic / remote audio.
 //
 // Wire format is opaque WebM/Opus chunks; the main process just relays them.
 
@@ -11,10 +13,25 @@ import { playSound } from '../sounds/synth';
 const MIME = 'audio/webm;codecs=opus';
 const TIMESLICE_MS = 80;
 
+function createAudioContext(): AudioContext | null {
+  try {
+    const Ctor: typeof AudioContext =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctor) return null;
+    return new Ctor();
+  } catch {
+    return null;
+  }
+}
+
 class CaptureSink {
   private stream: MediaStream | null = null;
   private rec: MediaRecorder | null = null;
   private muted = false;
+  private ctx: AudioContext | null = null;
+  private srcNode: MediaStreamAudioSourceNode | null = null;
+  analyser: AnalyserNode | null = null;
 
   async start(send: (data: Uint8Array) => void): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -37,6 +54,26 @@ class CaptureSink {
     };
     rec.start(TIMESLICE_MS);
     this.rec = rec;
+
+    // Also wire the same MediaStream into a WebAudio analyser so we can draw
+    // the outgoing waveform without re-decoding the recorder output.
+    const ctx = createAudioContext();
+    if (ctx) {
+      try {
+        if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+        const src = ctx.createMediaStreamSource(stream);
+        const an = ctx.createAnalyser();
+        an.fftSize = 1024;
+        an.smoothingTimeConstant = 0.6;
+        src.connect(an);
+        // Don't connect to destination — mic monitoring would feed back.
+        this.ctx = ctx;
+        this.srcNode = src;
+        this.analyser = an;
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   setMuted(m: boolean): void {
@@ -56,8 +93,21 @@ class CaptureSink {
     if (this.stream) {
       for (const t of this.stream.getTracks()) t.stop();
     }
+    if (this.srcNode) {
+      try {
+        this.srcNode.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.ctx) {
+      void this.ctx.close().catch(() => undefined);
+    }
     this.rec = null;
     this.stream = null;
+    this.srcNode = null;
+    this.analyser = null;
+    this.ctx = null;
   }
 }
 
@@ -68,6 +118,9 @@ class PlaybackSink {
   private queue: ArrayBuffer[] = [];
   private opened = false;
   private url: string | null = null;
+  private ctx: AudioContext | null = null;
+  private elNode: MediaElementAudioSourceNode | null = null;
+  analyser: AnalyserNode | null = null;
 
   start(): void {
     this.stop();
@@ -75,6 +128,10 @@ class PlaybackSink {
     if (!MediaSource.isTypeSupported(MIME)) return;
     const audio = document.createElement('audio');
     audio.autoplay = true;
+    audio.muted = false;
+    audio.volume = 1.0;
+    audio.controls = false;
+    audio.style.display = 'none';
     const ms = new MediaSource();
     const url = URL.createObjectURL(ms);
     audio.src = url;
@@ -85,7 +142,6 @@ class PlaybackSink {
         this.sourceBuffer = sb;
         this.opened = true;
         this.drain();
-        // Force playback (autoplay can be blocked even on Electron in rare cases).
         void audio.play().catch(() => undefined);
       } catch {
         /* ignore */
@@ -95,6 +151,28 @@ class PlaybackSink {
     this.audio = audio;
     this.mediaSource = ms;
     this.url = url;
+
+    // Route through WebAudio so an analyser can tap the signal. The element's
+    // own audio output is replaced by the AudioContext destination once we
+    // create a MediaElementAudioSourceNode — don't forget to .connect() to
+    // destination or you'll have silent playback.
+    const ctx = createAudioContext();
+    if (ctx) {
+      try {
+        if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+        const src = ctx.createMediaElementSource(audio);
+        const an = ctx.createAnalyser();
+        an.fftSize = 1024;
+        an.smoothingTimeConstant = 0.6;
+        src.connect(an);
+        an.connect(ctx.destination);
+        this.ctx = ctx;
+        this.elNode = src;
+        this.analyser = an;
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   push(data: Uint8Array): void {
@@ -120,6 +198,16 @@ class PlaybackSink {
   }
 
   stop(): void {
+    if (this.elNode) {
+      try {
+        this.elNode.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.ctx) {
+      void this.ctx.close().catch(() => undefined);
+    }
     if (this.audio) {
       try {
         this.audio.pause();
@@ -135,6 +223,9 @@ class PlaybackSink {
     this.queue = [];
     this.opened = false;
     this.url = null;
+    this.ctx = null;
+    this.elNode = null;
+    this.analyser = null;
   }
 }
 
@@ -143,6 +234,11 @@ export type CallUi = {
   muted: boolean;
   error: string;
   elapsedSec: number;
+  // Live AudioWorklet-style analysers — may be null when no call is active.
+  // Returned via getters so the WaveformCanvas can poll the latest reference
+  // each animation frame (sinks recreate them on start/stop).
+  getMicAnalyser: () => AnalyserNode | null;
+  getRemoteAnalyser: () => AnalyserNode | null;
   startCall: () => Promise<void>;
   acceptIncoming: () => Promise<void>;
   rejectIncoming: () => Promise<void>;
@@ -268,6 +364,8 @@ export function useTalk(peerId: string): CallUi {
     muted,
     error,
     elapsedSec,
+    getMicAnalyser: () => capture.analyser,
+    getRemoteAnalyser: () => playback.analyser,
     startCall: async () => {
       setError('');
       try {
