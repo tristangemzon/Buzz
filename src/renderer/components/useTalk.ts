@@ -142,7 +142,7 @@ class PlaybackSink {
     document.body.appendChild(audio);
     // Kick playback synchronously — we're still inside the user-gesture frame
     // (Accept / Talk click) so Chromium's autoplay policy lets us through.
-    void audio.play().catch(() => undefined);
+    void audio.play().catch((err) => console.warn('[talk] play() rejected (initial)', err));
     ms.addEventListener('sourceopen', () => {
       try {
         const sb = ms.addSourceBuffer(MIME);
@@ -150,7 +150,7 @@ class PlaybackSink {
         this.sourceBuffer = sb;
         this.opened = true;
         this.drain();
-        void audio.play().catch(() => undefined);
+        void audio.play().catch((err) => console.warn('[talk] play() rejected (sourceopen)', err));
       } catch (err) {
         console.error('[talk] addSourceBuffer failed', err);
       }
@@ -381,6 +381,13 @@ export function useTalk(peerId: string): CallUi {
     getRemoteAnalyser: () => playback.analyser,
     startCall: async () => {
       setError('');
+      // Prime the playback element NOW while we still have a user gesture,
+      // so Chromium's autoplay policy lets audio.play() through later.
+      try {
+        playback.start();
+      } catch {
+        /* ignore */
+      }
       try {
         await window.buzz.talkInvite(peerId);
       } catch (e) {
@@ -390,6 +397,12 @@ export function useTalk(peerId: string): CallUi {
     acceptIncoming: async () => {
       setError('');
       if (!call) return;
+      // Prime the playback element NOW while we still have a user gesture.
+      try {
+        playback.start();
+      } catch {
+        /* ignore */
+      }
       try {
         await window.buzz.talkAccept(call.callId);
       } catch (e) {
