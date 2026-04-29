@@ -2,8 +2,9 @@
 // but BuddyList is the primary host today. All persistence happens through
 // the typed IPC bridge — this component is a thin form.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Profile } from '@shared/schemas';
+import { FormatToolbar, RichText, handleFormatShortcut } from './RichText';
 
 const AVATAR_MAX_BYTES = 64 * 1024;
 const BG_MAX_BYTES = 128 * 1024;
@@ -42,6 +43,7 @@ export function ProfileEditor(props: { onClose: () => void }): JSX.Element {
   const [p, setP] = useState<Profile | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const aboutRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void window.buzz.getMyProfile().then(setP);
@@ -156,11 +158,22 @@ export function ProfileEditor(props: { onClose: () => void }): JSX.Element {
         </div>
         <div style={{ flex: 1 }}>
           <div className="label">About me</div>
+          <FormatToolbar
+            textareaRef={aboutRef}
+            value={p.aboutText}
+            onChange={(v) => update('aboutText', v.slice(0, 2000))}
+          />
           <textarea
+            ref={aboutRef}
             className="bevel-in"
             rows={4}
             value={p.aboutText}
             onChange={(e) => update('aboutText', e.target.value.slice(0, 2000))}
+            onKeyDown={(e) =>
+              handleFormatShortcut(e, aboutRef, p.aboutText, (v) =>
+                update('aboutText', v.slice(0, 2000)),
+              )
+            }
             style={{ width: '100%', resize: 'vertical' }}
             placeholder="Tell your buddies about yourself…"
           />
@@ -227,7 +240,11 @@ export function ProfileEditor(props: { onClose: () => void }): JSX.Element {
         Preview
       </div>
       <div style={previewStyle}>
-        {p.aboutText || <span style={{ opacity: 0.5 }}>Your about text appears here…</span>}
+        {p.aboutText ? (
+          <RichText body={p.aboutText} />
+        ) : (
+          <span style={{ opacity: 0.5 }}>Your about text appears here…</span>
+        )}
       </div>
 
       {err && <div className="error">{err}</div>}
@@ -309,7 +326,9 @@ export function ProfileViewer(props: {
         </div>
       </div>
       <div style={style}>
-        {p?.aboutText || (
+        {p?.aboutText ? (
+          <RichText body={p.aboutText} />
+        ) : (
           <span style={{ opacity: 0.5 }}>This buddy hasn't shared a profile yet.</span>
         )}
       </div>
