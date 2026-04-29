@@ -123,7 +123,11 @@ class PlaybackSink {
   analyser: AnalyserNode | null = null;
 
   start(): void {
-    this.stop();
+    // Idempotent: if we already set this up for the current call, do nothing.
+    // (Calling stop() here would wipe the queue — including the very first
+    // MediaRecorder chunk that carries the WebM/Opus init segment, after
+    // which the SourceBuffer cannot decode anything.)
+    if (this.audio) return;
     if (typeof MediaSource === 'undefined') return;
     if (!MediaSource.isTypeSupported(MIME)) return;
     const audio = document.createElement('audio');
@@ -135,6 +139,10 @@ class PlaybackSink {
     const ms = new MediaSource();
     const url = URL.createObjectURL(ms);
     audio.src = url;
+    document.body.appendChild(audio);
+    // Kick playback synchronously — we're still inside the user-gesture frame
+    // (Accept / Talk click) so Chromium's autoplay policy lets us through.
+    void audio.play().catch(() => undefined);
     ms.addEventListener('sourceopen', () => {
       try {
         const sb = ms.addSourceBuffer(MIME);
@@ -143,19 +151,18 @@ class PlaybackSink {
         this.opened = true;
         this.drain();
         void audio.play().catch(() => undefined);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.error('[talk] addSourceBuffer failed', err);
       }
     });
-    document.body.appendChild(audio);
     this.audio = audio;
     this.mediaSource = ms;
     this.url = url;
 
-    // Route through WebAudio so an analyser can tap the signal. The element's
-    // own audio output is replaced by the AudioContext destination once we
-    // create a MediaElementAudioSourceNode — don't forget to .connect() to
-    // destination or you'll have silent playback.
+    // Route through WebAudio so an analyser can tap the signal. Note: once
+    // we create a MediaElementAudioSourceNode, the audio element's native
+    // output is replaced by the AudioContext destination — we MUST connect
+    // an->ctx.destination or playback is silent.
     const ctx = createAudioContext();
     if (ctx) {
       try {
@@ -169,8 +176,8 @@ class PlaybackSink {
         this.ctx = ctx;
         this.elNode = src;
         this.analyser = an;
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.error('[talk] WebAudio routing failed', err);
       }
     }
   }
@@ -191,9 +198,11 @@ class PlaybackSink {
     if (!next) return;
     try {
       sb.appendBuffer(next);
-    } catch {
-      // Reset on quota / decode errors so we don't get stuck.
-      this.queue.length = 0;
+    } catch (err) {
+      // Reset on quota / decode errors so we don't get stuck. Keep any later
+      // queued chunks — the next MediaRecorder cluster is independently
+      // decodable once the init segment is in.
+      console.warn('[talk] appendBuffer failed', err);
     }
   }
 
@@ -283,6 +292,8 @@ export function useTalk(peerId: string): CallUi {
     });
     const offAudio = window.buzz.onTalkAudio((e) => {
       if (e.peerId !== peerId) return;
+      // eslint-disable-next-line no-console
+      console.debug('[talk] rx audio', e.data.byteLength);
       playback.push(e.data);
     });
 
@@ -327,6 +338,8 @@ export function useTalk(peerId: string): CallUi {
     void capture
       .start(async (data) => {
         if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.debug('[talk] tx audio', data.byteLength);
         try {
           await window.buzz.talkSendAudio(call.callId, data);
         } catch {

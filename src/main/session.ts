@@ -933,8 +933,12 @@ export class Session {
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
+    // eslint-disable-next-line no-console
+    console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
     // We don't bother numbering on the main side; renderer-side seq is fine.
-    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch(() => undefined);
+    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
+      console.warn('[talk] tx send failed', err);
+    });
   }
 
   private endCallLocal(callId: string, reason?: string): void {
@@ -993,6 +997,8 @@ export class Session {
     if (!this.currentCall || this.currentCall.callId !== callId) return;
     if (this.currentCall.peerId !== peerId) return;
     if (this.currentCall.state !== 'active') return;
+    // eslint-disable-next-line no-console
+    console.debug('[talk] rx<-peer', peerId.slice(0, 8), data.byteLength);
     // Copy into a fresh ArrayBuffer-backed Uint8Array so it satisfies the
     // TalkAudioEvent schema (and to detach from the libp2p stream buffer).
     const copy = new Uint8Array(data.byteLength);
