@@ -88,7 +88,7 @@ function openSignOn(): BrowserWindow {
   }
   const win = new BrowserWindow({
     width: 360,
-    height: 480,
+    height: 500,
     resizable: false,
     minimizable: true,
     maximizable: false,

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { SignOnSettings } from '../../components/SignOnSettings';
+import buzzLogo from '../../assets/buzz-logo.png';
 import type { ProfileSummary } from '@shared/schemas';
 
 type Mode = 'signin' | 'create';
@@ -70,21 +71,15 @@ function App(): JSX.Element {
     <div className="window">
       <WindowChrome title="Sign On" canMaximize={false} />
       <div className="signon">
-        <div className="runner-big" title="Welcome" />
-        <h1>Welcome</h1>
-        <div className="muted">
-          {mode === 'create'
-            ? hasProfiles
-              ? 'Create a new screen name'
-              : 'Create your screen name'
-            : 'Sign on to your screen name'}
+        <div className="signon-banner">
+          <img src={buzzLogo} alt="Buzz" />
         </div>
 
         {mode === 'signin' && (
-          <div className="row">
-            <label className="label">Screen Name</label>
+          <div className="signon-row">
+            <label className="signon-label">Screen Name</label>
             <select
-              className="bevel-in"
+              className="signon-field"
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               autoFocus
@@ -99,10 +94,10 @@ function App(): JSX.Element {
         )}
 
         {mode === 'create' && (
-          <div className="row">
-            <label className="label">Screen Name</label>
+          <div className="signon-row">
+            <label className="signon-label">Screen Name</label>
             <input
-              className="bevel-in"
+              className="signon-field"
               value={screenName}
               onChange={(e) => setScreenName(e.target.value)}
               maxLength={32}
@@ -111,11 +106,11 @@ function App(): JSX.Element {
           </div>
         )}
 
-        <div className="row">
-          <label className="label">Passphrase</label>
+        <div className="signon-row">
+          <label className="signon-label">Password</label>
           <input
             type="password"
-            className="bevel-in"
+            className="signon-field"
             value={pass}
             onChange={(e) => setPass(e.target.value)}
             autoFocus={mode === 'signin'}
@@ -123,11 +118,11 @@ function App(): JSX.Element {
         </div>
 
         {mode === 'create' && (
-          <div className="row">
-            <label className="label">Confirm passphrase</label>
+          <div className="signon-row">
+            <label className="signon-label">Confirm</label>
             <input
               type="password"
-              className="bevel-in"
+              className="signon-field"
               value={pass2}
               onChange={(e) => setPass2(e.target.value)}
             />
@@ -136,12 +131,19 @@ function App(): JSX.Element {
 
         <div className="error">{err}</div>
 
-        <div className="actions">
-          <button onClick={submit} disabled={busy}>
-            {mode === 'create' ? 'Create' : 'Sign On'}
+        <div className="signon-actionbar">
+          <button
+            className="signon-iconbtn"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setShowSettings(true)}
+          >
+            <span className="signon-iconbtn-glyph">⚙</span>
+            <span className="signon-iconbtn-label">Setup</span>
           </button>
           {hasProfiles && (
             <button
+              className="signon-iconbtn"
               onClick={() => {
                 setErr('');
                 setPass('');
@@ -150,19 +152,30 @@ function App(): JSX.Element {
                 setMode((m) => (m === 'create' ? 'signin' : 'create'));
               }}
               disabled={busy}
+              title={mode === 'create' ? 'Sign on instead' : 'New screen name'}
             >
-              {mode === 'create' ? 'Sign On Instead' : 'New Screen Name'}
+              <span className="signon-iconbtn-glyph">{mode === 'create' ? '↩' : '＋'}</span>
+              <span className="signon-iconbtn-label">
+                {mode === 'create' ? 'Sign On' : 'New User'}
+              </span>
             </button>
           )}
+          <span className="signon-actionbar-spacer" />
+          <button
+            className="signon-iconbtn signon-iconbtn-primary"
+            onClick={submit}
+            disabled={busy}
+            title={mode === 'create' ? 'Create account' : 'Sign On'}
+          >
+            <span className="signon-iconbtn-glyph">🐝</span>
+            <span className="signon-iconbtn-label">
+              {mode === 'create' ? 'Create' : 'Sign On'}
+            </span>
+          </button>
         </div>
-        <button
-          className="signon-cog"
-          title="Settings"
-          aria-label="Settings"
-          onClick={() => setShowSettings(true)}
-        >
-          ⚙
-        </button>
+
+        <div className="signon-version">Version: 0.1.0</div>
+
         {showSettings && (
           <SignOnSettings
             onClose={() => setShowSettings(false)}

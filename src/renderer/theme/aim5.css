@@ -488,56 +488,105 @@ button:disabled {
 .signon {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   flex: 1;
-  padding: 18px;
-  gap: 10px;
+  padding: 10px 12px 8px;
+  gap: 8px;
   background: var(--c-bg);
   position: relative;
+  min-width: 300px;
 }
-.signon h1 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--c-title);
-}
-.signon .runner-big {
-  width: 72px;
-  height: 72px;
-  background: var(--c-yellow);
-  border: 2px solid #000;
-  border-radius: 6px;
-  margin-bottom: 4px;
-}
-.signon .row {
-  display: flex;
-  flex-direction: column;
-  width: 260px;
-  gap: 2px;
-}
-.signon input {
-  padding: 4px 6px;
-}
-.signon .actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-/* Network-settings cog at bottom-right of the Sign On window. */
-.signon-cog {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
+.signon-banner {
+  width: 100%;
+  background: #0b1d4a;
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 6px;
+  margin-bottom: 4px;
+}
+.signon-banner img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 160px;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+.signon-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.signon-label {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--c-fg);
+}
+.signon-field {
+  padding: 3px 5px;
+  font-size: 12px;
+  border: 1px solid #7f7f7f;
+  background: #fff;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.15);
+}
+.signon-actionbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 4px 0 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.15);
+}
+.signon-actionbar-spacer {
+  flex: 1;
+}
+.signon-iconbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-fg);
+  min-width: 48px;
+}
+.signon-iconbtn:hover:not(:disabled) {
+  border-color: #000;
+  background: rgba(255, 255, 255, 0.5);
+}
+.signon-iconbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.signon-iconbtn-glyph {
+  font-size: 22px;
+  line-height: 1;
+}
+.signon-iconbtn-label {
+  text-decoration: underline;
+}
+.signon-iconbtn-primary .signon-iconbtn-glyph {
+  font-size: 26px;
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.25));
+}
+.signon-iconbtn-primary .signon-iconbtn-label {
+  font-size: 12px;
+}
+.signon-version {
+  text-align: center;
+  font-size: 10px;
+  color: var(--c-fg);
+  opacity: 0.75;
+  margin-top: 2px;
 }
 
 /* Generic modal used for in-window dialogs (e.g. network settings). */
