@@ -571,12 +571,19 @@ button:disabled {
 
 /* Sectioned settings dialog (cog menu on Sign On). */
 .settings-modal {
-  min-width: 480px;
-  max-width: 560px;
+  /* Override the base .modal max-width and never spill outside the host
+     window. The SignOn window is small, so we cap to viewport with a small
+     gutter and rely on the inner content to scroll if needed. */
+  min-width: 0;
+  width: min(560px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
 }
 .settings-body {
   display: flex;
   min-height: 220px;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
 }
 .settings-nav {
   display: flex;
@@ -585,7 +592,7 @@ button:disabled {
   padding: 6px;
   border-right: 1px solid #bbb;
   background: #ececec;
-  min-width: 110px;
+  flex: 0 0 110px;
 }
 .settings-nav-item {
   text-align: left;
@@ -604,14 +611,28 @@ button:disabled {
   font-weight: bold;
 }
 .settings-content {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: auto;
 }
 .settings-danger {
   border: 1px solid #c8302a;
   background: #fff5f4;
   padding: 10px;
   border-radius: 3px;
+}
+
+/* Narrow window: stack the nav above the content so nothing trails off. */
+@media (max-width: 520px) {
+  .settings-body {
+    flex-direction: column;
+  }
+  .settings-nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid #bbb;
+  }
 }
 
 .label {
