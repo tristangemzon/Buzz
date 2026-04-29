@@ -388,7 +388,7 @@ export type CallUi = {
   // Live MediaStream / video element references for the UI tiles.
   getLocalVideoStream: () => MediaStream | null;
   getRemoteVideoEl: () => HTMLVideoElement | null;
-  startCall: () => Promise<void>;
+  startCall: (kind?: 'voice' | 'video') => Promise<void>;
   acceptIncoming: () => Promise<void>;
   rejectIncoming: () => Promise<void>;
   endCall: () => Promise<void>;
@@ -398,7 +398,18 @@ export type CallUi = {
 
 // Hook bound to a single peer. The main process tracks at most one global call
 // at a time, so this hook only fires for events whose peerId matches.
-export function useTalk(peerId: string): CallUi {
+// Pass `opts.kind` to ignore calls of the other kind — e.g. the IM window
+// passes 'voice' so the dedicated VideoCall window owns video calls.
+export function useTalk(
+  peerId: string,
+  opts: { kind?: 'voice' | 'video' } = {},
+): CallUi {
+  const filterKind = opts.kind;
+  const matchKind = (s: TalkCallState | null): boolean => {
+    if (!s) return false;
+    if (!filterKind) return true;
+    return (s.kind ?? 'voice') === filterKind;
+  };
   const [call, setCall] = useState<TalkCallState | null>(null);
   const [muted, setMuted] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
@@ -418,16 +429,18 @@ export function useTalk(peerId: string): CallUi {
       .talkGetActive(peerId)
       .then((s) => {
         if (cancelled) return;
-        if (s && s.peerId === peerId && s.state !== 'ended') setCall(s);
+        if (s && s.peerId === peerId && s.state !== 'ended' && matchKind(s)) setCall(s);
       })
       .catch(() => undefined);
 
     const offInvite = window.buzz.onTalkInvite((e) => {
       if (e.peerId !== peerId) return;
+      if (!matchKind(e)) return;
       setCall(e);
     });
     const offState = window.buzz.onTalkState((e) => {
       if (e.peerId !== peerId) return;
+      if (!matchKind(e)) return;
       setCall(e.state === 'ended' ? null : e);
     });
     const offEnded = window.buzz.onTalkEnded((e) => {
@@ -515,10 +528,32 @@ export function useTalk(peerId: string): CallUi {
         setError(err instanceof Error ? err.message : 'Microphone unavailable');
         void window.buzz.talkEnd(call.callId).catch(() => undefined);
       });
+    // For video calls, auto-enable the camera as soon as the call is active.
+    if ((call.kind ?? 'voice') === 'video' && !videoOn) {
+      void (async () => {
+        try {
+          await videoCapture.start(async (data) => {
+            try {
+              await window.buzz.talkSendVideo(call.callId, data);
+            } catch {
+              /* peer dropped */
+            }
+          });
+          if (!cancelled) {
+            setVideoOn(true);
+            await window.buzz.talkSetVideo(call.callId, true).catch(() => undefined);
+          } else {
+            videoCapture.stop();
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Camera unavailable');
+        }
+      })();
+    }
     return () => {
       cancelled = true;
     };
-  }, [call?.state, call?.callId, capture, playback, videoCapture, videoPlayback]);
+  }, [call?.state, call?.callId, call?.kind, capture, playback, videoCapture, videoPlayback]);
 
   // Apply mute changes to the live capture.
   useEffect(() => {
@@ -548,7 +583,7 @@ export function useTalk(peerId: string): CallUi {
     getRemoteAnalyser: () => playback.analyser,
     getLocalVideoStream: () => videoCapture.stream$,
     getRemoteVideoEl: () => videoPlayback.videoEl,
-    startCall: async () => {
+    startCall: async (kind: 'voice' | 'video' = 'voice') => {
       setError('');
       // Prime the playback element NOW while we still have a user gesture,
       // so Chromium's autoplay policy lets audio.play() through later.
@@ -558,7 +593,7 @@ export function useTalk(peerId: string): CallUi {
         /* ignore */
       }
       try {
-        await window.buzz.talkInvite(peerId);
+        await window.buzz.talkInvite(peerId, kind);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to start call');
       }

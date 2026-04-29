@@ -1144,3 +1144,92 @@ html[data-chat-theme='compact'] .chat-log > div {
 .call-video-tile:first-child .call-video {
   transform: scaleX(-1);
 }
+
+/* ── Dedicated video chat window ──────────────────────────────────────── */
+.vc-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #ece9d8;
+}
+.vc-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  gap: 6px;
+}
+.vc-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  border: 1px solid #062459;
+  overflow: hidden;
+}
+.vc-stage > .call-video-host,
+.vc-stage > .call-video-host video {
+  width: 100%;
+  height: 100%;
+}
+.vc-stage > .call-video-host video {
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: contrast(1.05) saturate(1.05);
+}
+.vc-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.04) 0px,
+    rgba(255,255,255,0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  z-index: 2;
+}
+.vc-stage-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9cf;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px;
+}
+.vc-self {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 120px;
+  height: 90px;
+  background: #000;
+  border: 1px solid #9cf;
+  overflow: hidden;
+  z-index: 3;
+}
+.vc-self video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  image-rendering: pixelated;
+}
+.vc-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 0;
+  font-size: 11px;
+}
+.vc-status {
+  margin-right: auto;
+  color: #062459;
+}

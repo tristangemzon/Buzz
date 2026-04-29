@@ -473,7 +473,7 @@ export type UnreadCounts = z.infer<typeof UnreadCounts>;
 
 // ── Voice talk ───────────────────────────────────────────────────────────────
 
-export const TalkInviteReq = z.object({ peerId: PeerIdStr });
+export const TalkInviteReq = z.object({ peerId: PeerIdStr, kind: z.enum(['voice', 'video']).optional() });
 export type TalkInviteReq = z.infer<typeof TalkInviteReq>;
 
 export const TalkCallIdReq = z.object({ callId: Uuid });
@@ -491,6 +491,7 @@ export const TalkCallState = z.object({
   peerId: PeerIdStr,
   role: z.enum(['caller', 'callee']),
   state: z.enum(['inviting', 'ringing', 'active', 'ended']),
+  kind: z.enum(['voice', 'video']).default('voice'),
   screenName: z.string().optional(),
   startedAt: z.number().int().nonnegative().optional(),
 });

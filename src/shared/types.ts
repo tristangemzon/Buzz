@@ -118,7 +118,7 @@ export type AppApi = {
   xferRespond(id: string, accept: boolean): Promise<{ ok: true }>;
 
   // voice talk
-  talkInvite(peerId: string): Promise<TalkCallState>;
+  talkInvite(peerId: string, kind?: 'voice' | 'video'): Promise<TalkCallState>;
   talkAccept(callId: string): Promise<void>;
   talkReject(callId: string, reason?: string): Promise<void>;
   talkEnd(callId: string): Promise<void>;

@@ -44,6 +44,7 @@ export default defineConfig({
           buddylist: resolve('src/renderer/buddylist.html'),
           im: resolve('src/renderer/im.html'),
           chat: resolve('src/renderer/chat.html'),
+          videocall: resolve('src/renderer/videocall.html'),
         },
       },
     },

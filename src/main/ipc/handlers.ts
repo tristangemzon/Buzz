@@ -295,9 +295,13 @@ export function registerIpc(session: Session): void {
   });
 
   // ── voice talk ───────────────────────────────────────────────────────────
-  handle(IPC.TalkInvite, z.object({ peerId: PeerIdStr }), async ({ peerId }) => {
-    return session.startCall(peerId);
-  });
+  handle(
+    IPC.TalkInvite,
+    z.object({ peerId: PeerIdStr, kind: z.enum(['voice', 'video']).optional() }),
+    async ({ peerId, kind }) => {
+      return session.startCall(peerId, kind ?? 'voice');
+    },
+  );
   handle(IPC.TalkAccept, z.object({ callId: Uuid }), async ({ callId }) => {
     await session.acceptCall(callId);
   });

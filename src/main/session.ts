@@ -378,7 +378,8 @@ export class Session {
     this.talk = new TalkService(
       node,
       {
-        onInvite: (peerId, callId, screenName, ts) => this.handleTalkInvite(peerId, callId, screenName, ts),
+        onInvite: (peerId, callId, screenName, ts, kind) =>
+          this.handleTalkInvite(peerId, callId, screenName, ts, kind),
         onAccept: (peerId, callId) => this.handleTalkAccept(peerId, callId),
         onReject: (peerId, callId, reason) => this.handleTalkReject(peerId, callId, reason),
         onBye: (peerId, callId) => this.handleTalkBye(peerId, callId),
@@ -880,7 +881,7 @@ export class Session {
     return this.currentCall;
   }
 
-  async startCall(peerId: string): Promise<TalkCallState> {
+  async startCall(peerId: string, kind: 'voice' | 'video' = 'voice'): Promise<TalkCallState> {
     if (!this.talk) throw new Error('Locked');
     if (this.currentCall && this.currentCall.state !== 'ended') {
       throw new Error('Another call is already active');
@@ -892,13 +893,20 @@ export class Session {
       peerId,
       role: 'caller',
       state: 'inviting',
+      kind,
       screenName: this.screenName,
       startedAt: ts,
     };
     this.currentCall = state;
     this.broadcast(IPC.EvtTalkState, state);
     try {
-      await this.talk.send(peerId, { type: 'invite', callId, screenName: this.screenName, ts });
+      await this.talk.send(peerId, {
+        type: 'invite',
+        callId,
+        screenName: this.screenName,
+        ts,
+        kind,
+      });
     } catch (err) {
       this.endCallLocal(callId, 'unreachable');
       throw err;
@@ -978,7 +986,13 @@ export class Session {
     }, 50);
   }
 
-  private handleTalkInvite(peerId: string, callId: string, screenName: string, _ts: number): void {
+  private handleTalkInvite(
+    peerId: string,
+    callId: string,
+    screenName: string,
+    _ts: number,
+    kind: 'voice' | 'video',
+  ): void {
     if (!this.talk) return;
     // Reject if already in another call.
     if (this.currentCall && this.currentCall.state !== 'ended') {
@@ -990,6 +1004,7 @@ export class Session {
       peerId,
       role: 'callee',
       state: 'ringing',
+      kind,
       screenName,
       startedAt: Date.now(),
     };

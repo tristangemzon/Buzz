@@ -46,7 +46,7 @@ function installCsp(): void {
 }
 
 // Resolve the renderer URL/file for a given page id (matches Vite multi-entry).
-function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat'): {
+function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall'): {
   url?: string;
   file?: string;
 } {
@@ -61,6 +61,7 @@ let signOnWin: BrowserWindow | null = null;
 let buddyListWin: BrowserWindow | null = null;
 const imWindows = new Map<string, BrowserWindow>();
 const chatWindows = new Map<string, BrowserWindow>();
+const videoCallWindows = new Map<string, BrowserWindow>();
 
 function commonWebPrefs() {
   return {
@@ -73,7 +74,7 @@ function commonWebPrefs() {
   } as const;
 }
 
-function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat', hash = ''): void {
+function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall', hash = ''): void {
   const t = rendererTarget(page);
   const suffix = hash ? `#${encodeURIComponent(hash)}` : '';
   if (t.url) void win.loadURL(t.url + suffix);
@@ -173,6 +174,30 @@ export function openChatWindow(roomId: string): BrowserWindow {
   return win;
 }
 
+export function openVideoCallWindow(peerId: string): BrowserWindow {
+  const cached = videoCallWindows.get(peerId);
+  if (cached && !cached.isDestroyed()) {
+    cached.focus();
+    return cached;
+  }
+  const win = new BrowserWindow({
+    width: 360,
+    height: 320,
+    minWidth: 280,
+    minHeight: 240,
+    frame: false,
+    title: 'Video Chat',
+    backgroundColor: '#000000',
+    webPreferences: commonWebPrefs(),
+  });
+  loadInto(win, 'videocall', peerId);
+  win.on('closed', () => {
+    if (videoCallWindows.get(peerId) === win) videoCallWindows.delete(peerId);
+  });
+  videoCallWindows.set(peerId, win);
+  return win;
+}
+
 // Strict default for webContents: deny new window opens to external URLs except
 // safe http(s) which we hand off to the OS browser.
 app.on('web-contents-created', (_e, contents) => {
@@ -210,6 +235,10 @@ app.whenReady().then(() => {
   ipcMain.handle('windows:openChat', (_e, roomId: string) => {
     if (typeof roomId !== 'string') throw new Error('bad roomId');
     openChatWindow(roomId);
+  });
+  ipcMain.handle('windows:openVideoCall', (_e, peerId: string) => {
+    if (typeof peerId !== 'string') throw new Error('bad peerId');
+    openVideoCallWindow(peerId);
   });
 
   // Custom-chrome window controls. The renderer's titlebar exposes

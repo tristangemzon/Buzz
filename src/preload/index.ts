@@ -55,7 +55,7 @@ const api: AppApi = {
   xferOffer: (toPeerId) => ipcRenderer.invoke(IPC.XferOffer, { toPeerId }),
   xferRespond: (id, accept) => ipcRenderer.invoke(IPC.XferRespond, { id, accept }),
 
-  talkInvite: (peerId) => ipcRenderer.invoke(IPC.TalkInvite, { peerId }),
+  talkInvite: (peerId, kind) => ipcRenderer.invoke(IPC.TalkInvite, { peerId, kind }),
   talkAccept: (callId) => ipcRenderer.invoke(IPC.TalkAccept, { callId }),
   talkReject: (callId, reason) => ipcRenderer.invoke(IPC.TalkReject, { callId, reason }),
   talkEnd: (callId) => ipcRenderer.invoke(IPC.TalkEnd, { callId }),
@@ -110,6 +110,7 @@ const api: AppApi = {
 // the buddy list to open IM windows.
 const windows = {
   openIm: (peerId: string) => ipcRenderer.invoke('windows:openIm', peerId),
+  openVideoCall: (peerId: string) => ipcRenderer.invoke('windows:openVideoCall', peerId),
   openBuddyList: () => ipcRenderer.invoke('windows:openBuddyList'),
   openChat: (roomId: string) => ipcRenderer.invoke('windows:openChat', roomId),
   minimize: () => ipcRenderer.invoke('window:minimize'),

@@ -4,6 +4,7 @@ declare global {
   interface Window {
     buzzWindows: {
       openIm(peerId: string): Promise<void>;
+      openVideoCall(peerId: string): Promise<void>;
       openBuddyList(): Promise<void>;
       openChat(roomId: string): Promise<void>;
       minimize(): Promise<void>;

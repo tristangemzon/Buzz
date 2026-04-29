@@ -26,7 +26,7 @@ export const TALK_MIME = 'audio/webm;codecs=opus';
 export const TALK_VIDEO_MIME = 'video/webm;codecs=vp8';
 
 export type TalkFrame =
-  | { type: 'invite'; callId: string; screenName: string; ts: number }
+  | { type: 'invite'; callId: string; screenName: string; ts: number; kind?: 'voice' | 'video' }
   | { type: 'accept'; callId: string }
   | { type: 'reject'; callId: string; reason?: string }
   | { type: 'bye'; callId: string }
@@ -35,7 +35,7 @@ export type TalkFrame =
   | { type: 'videoState'; callId: string; on: boolean };
 
 export type TalkEvents = {
-  onInvite(peerId: string, callId: string, screenName: string, ts: number): void;
+  onInvite(peerId: string, callId: string, screenName: string, ts: number, kind: 'voice' | 'video'): void;
   onAccept(peerId: string, callId: string): void;
   onReject(peerId: string, callId: string, reason?: string): void;
   onBye(peerId: string, callId: string): void;
@@ -192,7 +192,8 @@ export class TalkService {
     switch (f.type) {
       case 'invite':
         if (typeof f.callId === 'string' && typeof f.screenName === 'string') {
-          this.events.onInvite(peerIdStr, f.callId, f.screenName, f.ts ?? Date.now());
+          const kind = f.kind === 'video' ? 'video' : 'voice';
+          this.events.onInvite(peerIdStr, f.callId, f.screenName, f.ts ?? Date.now(), kind);
         }
         break;
       case 'accept':
