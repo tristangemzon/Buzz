@@ -318,6 +318,20 @@ export function registerIpc(session: Session): void {
       await session.sendCallAudio(callId, data);
     },
   );
+  handle(
+    IPC.TalkVideo,
+    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
+    async ({ callId, data }) => {
+      await session.sendCallVideo(callId, data);
+    },
+  );
+  handle(
+    IPC.TalkVideoState,
+    z.object({ callId: Uuid, on: z.boolean() }),
+    async ({ callId, on }) => {
+      await session.setCallVideo(callId, on);
+    },
+  );
   handle(IPC.TalkGetActive, z.object({ peerId: PeerIdStr }), ({ peerId }) =>
     session.getActiveCall(peerId),
   );

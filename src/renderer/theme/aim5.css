@@ -1084,3 +1084,63 @@ html[data-chat-theme='compact'] .chat-log > div {
 .waveform {
   image-rendering: pixelated;
 }
+
+/* ── Retro low-bitrate video tiles ─────────────────────────────────────── */
+.call-videos {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.call-video-tile {
+  position: relative;
+  background: #000;
+  border: 1px solid #062459;
+  padding: 0;
+  width: 160px;
+  height: 120px;
+  overflow: hidden;
+}
+.call-video-host {
+  width: 100%;
+  height: 100%;
+}
+.call-video-label {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #9cf;
+  background: rgba(0,0,0,0.5);
+  padding: 0 3px;
+  z-index: 1;
+}
+.call-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Capture is 160x120 but we crank up the chunk via pixelated rendering and
+     a faint scanline overlay for that cheap-webcam-on-dial-up vibe. */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: contrast(1.05) saturate(1.05);
+}
+.call-video-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.04) 0px,
+    rgba(255,255,255,0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+/* Mirror the local camera feed like every webcam app since 2002. */
+.call-video-tile:first-child .call-video {
+  transform: scaleX(-1);
+}

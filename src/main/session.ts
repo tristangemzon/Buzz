@@ -42,6 +42,8 @@ import type {
   TalkCallState,
   TalkEndedEvent,
   TalkAudioEvent,
+  TalkVideoEvent,
+  TalkVideoStateEvent,
 } from '@shared/schemas.js';
 import { sodium } from './crypto/keystore.js';
 
@@ -381,6 +383,8 @@ export class Session {
         onReject: (peerId, callId, reason) => this.handleTalkReject(peerId, callId, reason),
         onBye: (peerId, callId) => this.handleTalkBye(peerId, callId),
         onAudio: (peerId, callId, seq, data) => this.handleTalkAudio(peerId, callId, seq, data),
+        onVideo: (peerId, callId, seq, data) => this.handleTalkVideo(peerId, callId, seq, data),
+        onVideoState: (peerId, callId, on) => this.handleTalkVideoState(peerId, callId, on),
       },
       (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
     );
@@ -941,6 +945,26 @@ export class Session {
     });
   }
 
+  async sendCallVideo(callId: string, data: Uint8Array): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.state !== 'active') return;
+    const peerId = this.currentCall.peerId;
+    await this.talk.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
+      console.warn('[talk] video tx send failed', err);
+    });
+  }
+
+  async setCallVideo(callId: string, on: boolean): Promise<void> {
+    if (!this.talk || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.state !== 'active') return;
+    const peerId = this.currentCall.peerId;
+    await this.talk.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
+      console.warn('[talk] videoState send failed', err);
+    });
+  }
+
   private endCallLocal(callId: string, reason?: string): void {
     if (!this.currentCall || this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
@@ -1005,6 +1029,24 @@ export class Session {
     copy.set(data);
     const ev: TalkAudioEvent = { callId, peerId, seq, data: copy };
     this.broadcast(IPC.EvtTalkAudio, ev);
+  }
+
+  private handleTalkVideo(peerId: string, callId: string, seq: number, data: Uint8Array): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    if (this.currentCall.state !== 'active') return;
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    const ev: TalkVideoEvent = { callId, peerId, seq, data: copy };
+    this.broadcast(IPC.EvtTalkVideo, ev);
+  }
+
+  private handleTalkVideoState(peerId: string, callId: string, on: boolean): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    if (this.currentCall.state !== 'active') return;
+    const ev: TalkVideoStateEvent = { callId, peerId, on };
+    this.broadcast(IPC.EvtTalkVideoState, ev);
   }
 
   private broadcast(channel: string, payload: unknown): void {

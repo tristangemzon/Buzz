@@ -12,6 +12,13 @@ import { playSound } from '../sounds/synth';
 
 const MIME = 'audio/webm;codecs=opus';
 const TIMESLICE_MS = 80;
+// Early-2000s vibe video: 160x120 @ 10fps, 64 kbps VP8.
+const VIDEO_MIME = 'video/webm;codecs=vp8';
+const VIDEO_TIMESLICE_MS = 250;
+const VIDEO_BITS_PER_SEC = 64_000;
+const VIDEO_WIDTH = 160;
+const VIDEO_HEIGHT = 120;
+const VIDEO_FPS = 10;
 
 function createAudioContext(): AudioContext | null {
   try {
@@ -238,9 +245,139 @@ class PlaybackSink {
   }
 }
 
+// Low-bitrate video capture: getUserMedia → MediaRecorder VP8.
+class VideoCaptureSink {
+  private stream: MediaStream | null = null;
+  private rec: MediaRecorder | null = null;
+  stream$: MediaStream | null = null; // exposed to the local <video> tile
+
+  async start(send: (data: Uint8Array) => void): Promise<void> {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        width: { ideal: VIDEO_WIDTH },
+        height: { ideal: VIDEO_HEIGHT },
+        frameRate: { ideal: VIDEO_FPS, max: VIDEO_FPS },
+      },
+    });
+    this.stream = stream;
+    this.stream$ = stream;
+    if (!('MediaRecorder' in window)) throw new Error('MediaRecorder not supported');
+    if (!MediaRecorder.isTypeSupported(VIDEO_MIME)) throw new Error('VP8/WebM not supported');
+    const rec = new MediaRecorder(stream, {
+      mimeType: VIDEO_MIME,
+      videoBitsPerSecond: VIDEO_BITS_PER_SEC,
+    });
+    rec.ondataavailable = async (e) => {
+      if (e.data && e.data.size > 0) {
+        try {
+          const buf = new Uint8Array(await e.data.arrayBuffer());
+          send(buf);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    rec.start(VIDEO_TIMESLICE_MS);
+    this.rec = rec;
+  }
+
+  stop(): void {
+    try {
+      if (this.rec && this.rec.state !== 'inactive') this.rec.stop();
+    } catch {
+      /* ignore */
+    }
+    if (this.stream) for (const t of this.stream.getTracks()) t.stop();
+    this.rec = null;
+    this.stream = null;
+    this.stream$ = null;
+  }
+}
+
+// Receives VP8 chunks → MediaSource → <video> element. Same shape as PlaybackSink
+// but no WebAudio analyser (we just display the raw video).
+class VideoPlaybackSink {
+  private video: HTMLVideoElement | null = null;
+  private mediaSource: MediaSource | null = null;
+  private sourceBuffer: SourceBuffer | null = null;
+  private queue: ArrayBuffer[] = [];
+  private opened = false;
+  private url: string | null = null;
+  videoEl: HTMLVideoElement | null = null;
+
+  start(): void {
+    if (this.video) return;
+    if (typeof MediaSource === 'undefined') return;
+    if (!MediaSource.isTypeSupported(VIDEO_MIME)) return;
+    const v = document.createElement('video');
+    v.autoplay = true;
+    v.muted = true; // remote audio comes from the audio sink, not this element
+    v.playsInline = true;
+    v.controls = false;
+    const ms = new MediaSource();
+    const url = URL.createObjectURL(ms);
+    v.src = url;
+    void v.play().catch(() => undefined);
+    ms.addEventListener('sourceopen', () => {
+      try {
+        const sb = ms.addSourceBuffer(VIDEO_MIME);
+        sb.addEventListener('updateend', () => this.drain());
+        this.sourceBuffer = sb;
+        this.opened = true;
+        this.drain();
+        void v.play().catch(() => undefined);
+      } catch (err) {
+        console.error('[talk] video addSourceBuffer failed', err);
+      }
+    });
+    this.video = v;
+    this.videoEl = v;
+    this.mediaSource = ms;
+    this.url = url;
+  }
+
+  push(data: Uint8Array): void {
+    const buf = new ArrayBuffer(data.byteLength);
+    new Uint8Array(buf).set(data);
+    this.queue.push(buf);
+    if (this.opened) this.drain();
+  }
+
+  private drain(): void {
+    const sb = this.sourceBuffer;
+    if (!sb || sb.updating) return;
+    const next = this.queue.shift();
+    if (!next) return;
+    try {
+      sb.appendBuffer(next);
+    } catch (err) {
+      console.warn('[talk] video appendBuffer failed', err);
+    }
+  }
+
+  stop(): void {
+    if (this.video) {
+      try { this.video.pause(); } catch { /* ignore */ }
+      this.video.removeAttribute('src');
+      try { this.video.load(); } catch { /* ignore */ }
+    }
+    if (this.url) URL.revokeObjectURL(this.url);
+    this.video = null;
+    this.videoEl = null;
+    this.mediaSource = null;
+    this.sourceBuffer = null;
+    this.queue = [];
+    this.opened = false;
+    this.url = null;
+  }
+}
+
 export type CallUi = {
   call: TalkCallState | null;
   muted: boolean;
+  videoOn: boolean;
+  remoteVideoOn: boolean;
   error: string;
   elapsedSec: number;
   // Live AudioWorklet-style analysers — may be null when no call is active.
@@ -248,11 +385,15 @@ export type CallUi = {
   // each animation frame (sinks recreate them on start/stop).
   getMicAnalyser: () => AnalyserNode | null;
   getRemoteAnalyser: () => AnalyserNode | null;
+  // Live MediaStream / video element references for the UI tiles.
+  getLocalVideoStream: () => MediaStream | null;
+  getRemoteVideoEl: () => HTMLVideoElement | null;
   startCall: () => Promise<void>;
   acceptIncoming: () => Promise<void>;
   rejectIncoming: () => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
+  toggleVideo: () => Promise<void>;
 };
 
 // Hook bound to a single peer. The main process tracks at most one global call
@@ -260,10 +401,14 @@ export type CallUi = {
 export function useTalk(peerId: string): CallUi {
   const [call, setCall] = useState<TalkCallState | null>(null);
   const [muted, setMuted] = useState(false);
+  const [videoOn, setVideoOn] = useState(false);
+  const [remoteVideoOn, setRemoteVideoOn] = useState(false);
   const [error, setError] = useState('');
   const [elapsedSec, setElapsedSec] = useState(0);
   const capture = useMemo(() => new CaptureSink(), []);
   const playback = useMemo(() => new PlaybackSink(), []);
+  const videoCapture = useMemo(() => new VideoCaptureSink(), []);
+  const videoPlayback = useMemo(() => new VideoPlaybackSink(), []);
   const ringTimer = useRef<number | null>(null);
 
   // On mount, sync any in-progress call state for this peer.
@@ -296,6 +441,18 @@ export function useTalk(peerId: string): CallUi {
       console.debug('[talk] rx audio', e.data.byteLength);
       playback.push(e.data);
     });
+    const offVideo = window.buzz.onTalkVideo((e) => {
+      if (e.peerId !== peerId) return;
+      videoPlayback.push(e.data);
+    });
+    const offVideoState = window.buzz.onTalkVideoState((e) => {
+      if (e.peerId !== peerId) return;
+      setRemoteVideoOn(e.on);
+      // Reset the playback sink between toggles so the next 'on' starts with
+      // a fresh init segment from the remote MediaRecorder.
+      if (!e.on) videoPlayback.stop();
+      else videoPlayback.start();
+    });
 
     return () => {
       cancelled = true;
@@ -303,14 +460,18 @@ export function useTalk(peerId: string): CallUi {
       offState();
       offEnded();
       offAudio();
+      offVideo();
+      offVideoState();
       capture.stop();
       playback.stop();
+      videoCapture.stop();
+      videoPlayback.stop();
       if (ringTimer.current !== null) {
         window.clearInterval(ringTimer.current);
         ringTimer.current = null;
       }
     };
-  }, [peerId, capture, playback]);
+  }, [peerId, capture, playback, videoCapture, videoPlayback]);
 
   // Drive ringing sound on the callee side.
   useEffect(() => {
@@ -331,6 +492,10 @@ export function useTalk(peerId: string): CallUi {
     if (call?.state !== 'active') {
       capture.stop();
       playback.stop();
+      videoCapture.stop();
+      videoPlayback.stop();
+      setVideoOn(false);
+      setRemoteVideoOn(false);
       return;
     }
     playback.start();
@@ -353,7 +518,7 @@ export function useTalk(peerId: string): CallUi {
     return () => {
       cancelled = true;
     };
-  }, [call?.state, call?.callId, capture, playback]);
+  }, [call?.state, call?.callId, capture, playback, videoCapture, videoPlayback]);
 
   // Apply mute changes to the live capture.
   useEffect(() => {
@@ -375,10 +540,14 @@ export function useTalk(peerId: string): CallUi {
   return {
     call,
     muted,
+    videoOn,
+    remoteVideoOn,
     error,
     elapsedSec,
     getMicAnalyser: () => capture.analyser,
     getRemoteAnalyser: () => playback.analyser,
+    getLocalVideoStream: () => videoCapture.stream$,
+    getRemoteVideoEl: () => videoPlayback.videoEl,
     startCall: async () => {
       setError('');
       // Prime the playback element NOW while we still have a user gesture,
@@ -426,6 +595,30 @@ export function useTalk(peerId: string): CallUi {
       }
     },
     toggleMute: () => setMuted((m) => !m),
+    toggleVideo: async () => {
+      if (!call || call.state !== 'active') return;
+      if (videoOn) {
+        videoCapture.stop();
+        setVideoOn(false);
+        await window.buzz.talkSetVideo(call.callId, false).catch(() => undefined);
+        return;
+      }
+      try {
+        await videoCapture.start(async (data) => {
+          try {
+            await window.buzz.talkSendVideo(call.callId, data);
+          } catch {
+            /* peer disconnected */
+          }
+        });
+        setVideoOn(true);
+        await window.buzz.talkSetVideo(call.callId, true).catch(() => undefined);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Camera unavailable');
+        videoCapture.stop();
+        setVideoOn(false);
+      }
+    },
   };
 }
 

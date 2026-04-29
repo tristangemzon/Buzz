@@ -51,6 +51,8 @@ import type {
   TalkStateEvent,
   TalkEndedEvent,
   TalkAudioEvent,
+  TalkVideoEvent,
+  TalkVideoStateEvent,
 } from './schemas.js';
 
 export type Platform = 'mac' | 'windows' | 'linux';
@@ -121,6 +123,8 @@ export type AppApi = {
   talkReject(callId: string, reason?: string): Promise<void>;
   talkEnd(callId: string): Promise<void>;
   talkSendAudio(callId: string, data: Uint8Array): Promise<void>;
+  talkSendVideo(callId: string, data: Uint8Array): Promise<void>;
+  talkSetVideo(callId: string, on: boolean): Promise<void>;
   talkGetActive(peerId: string): Promise<TalkCallState | null>;
 
   // chat rooms
@@ -165,6 +169,8 @@ export type AppApi = {
   onTalkState(cb: (e: TalkStateEvent) => void): () => void;
   onTalkEnded(cb: (e: TalkEndedEvent) => void): () => void;
   onTalkAudio(cb: (e: TalkAudioEvent) => void): () => void;
+  onTalkVideo(cb: (e: TalkVideoEvent) => void): () => void;
+  onTalkVideoState(cb: (e: TalkVideoStateEvent) => void): () => void;
 };
 
 declare global {

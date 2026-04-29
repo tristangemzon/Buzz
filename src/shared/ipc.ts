@@ -58,6 +58,8 @@ export const IPC = {
   TalkReject: 'talk:reject',
   TalkEnd: 'talk:end',
   TalkAudio: 'talk:audio',
+  TalkVideo: 'talk:video',
+  TalkVideoState: 'talk:videoState',
   TalkGetActive: 'talk:getActive',
 
   // chat rooms
@@ -106,6 +108,8 @@ export const IPC = {
   EvtTalkState: 'evt:talkState',
   EvtTalkEnded: 'evt:talkEnded',
   EvtTalkAudio: 'evt:talkAudio',
+  EvtTalkVideo: 'evt:talkVideo',
+  EvtTalkVideoState: 'evt:talkVideoState',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

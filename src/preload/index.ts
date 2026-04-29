@@ -60,6 +60,8 @@ const api: AppApi = {
   talkReject: (callId, reason) => ipcRenderer.invoke(IPC.TalkReject, { callId, reason }),
   talkEnd: (callId) => ipcRenderer.invoke(IPC.TalkEnd, { callId }),
   talkSendAudio: (callId, data) => ipcRenderer.invoke(IPC.TalkAudio, { callId, data }),
+  talkSendVideo: (callId, data) => ipcRenderer.invoke(IPC.TalkVideo, { callId, data }),
+  talkSetVideo: (callId, on) => ipcRenderer.invoke(IPC.TalkVideoState, { callId, on }),
   talkGetActive: (peerId) => ipcRenderer.invoke(IPC.TalkGetActive, { peerId }),
 
   listRooms: () => ipcRenderer.invoke(IPC.RoomsList),
@@ -100,6 +102,8 @@ const api: AppApi = {
   onTalkState: (cb) => on(IPC.EvtTalkState, cb),
   onTalkEnded: (cb) => on(IPC.EvtTalkEnded, cb),
   onTalkAudio: (cb) => on(IPC.EvtTalkAudio, cb),
+  onTalkVideo: (cb) => on(IPC.EvtTalkVideo, cb),
+  onTalkVideoState: (cb) => on(IPC.EvtTalkVideoState, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

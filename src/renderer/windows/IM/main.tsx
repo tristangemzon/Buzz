@@ -442,12 +442,33 @@ function App(): JSX.Element {
             )}
             <span className="spacer" />
             {talk.call.state === 'active' && (
-              <button onClick={() => talk.toggleMute()} title={talk.muted ? 'Unmute' : 'Mute'}>
-                {talk.muted ? 'Unmute' : 'Mute'}
-              </button>
+              <>
+                <button onClick={() => void talk.toggleVideo()} title={talk.videoOn ? 'Stop video' : 'Start video'}>
+                  {talk.videoOn ? 'Video Off' : 'Video'}
+                </button>
+                <button onClick={() => talk.toggleMute()} title={talk.muted ? 'Unmute' : 'Mute'}>
+                  {talk.muted ? 'Unmute' : 'Mute'}
+                </button>
+              </>
             )}
             <button onClick={() => void talk.endCall()}>End</button>
           </div>
+          {talk.call.state === 'active' && (talk.videoOn || talk.remoteVideoOn) && (
+            <div className="call-videos">
+              {talk.videoOn && (
+                <div className="call-video-tile">
+                  <span className="call-video-label">You</span>
+                  <CallVideoLocal getStream={talk.getLocalVideoStream} />
+                </div>
+              )}
+              {talk.remoteVideoOn && (
+                <div className="call-video-tile">
+                  <span className="call-video-label">Them</span>
+                  <CallVideoRemote getEl={talk.getRemoteVideoEl} />
+                </div>
+              )}
+            </div>
+          )}
           {talk.call.state === 'active' && (
             <div className="call-waves">
               <div className="call-wave-pair">
@@ -474,6 +495,51 @@ function App(): JSX.Element {
       {talk.error && <div className="error" style={{ margin: '0 6px 6px' }}>{talk.error}</div>}
     </div>
   );
+}
+
+// Local-camera <video> tile. Polls the capture sink each render for the latest
+// MediaStream and binds it to a hidden <video>. Mirrored for natural webcam feel.
+function CallVideoLocal(props: { getStream: () => MediaStream | null }): JSX.Element {
+  const ref = React.useRef<HTMLVideoElement>(null);
+  React.useEffect(() => {
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      const v = ref.current;
+      const s = props.getStream();
+      if (v && s && v.srcObject !== s) {
+        v.srcObject = s;
+        void v.play().catch(() => undefined);
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+    return () => { stopped = true; };
+  }, [props]);
+  return <video ref={ref} className="call-video" autoPlay muted playsInline />;
+}
+
+// Remote video tile. The MediaSource-driven <video> already exists in the
+// VideoPlaybackSink; we pluck it and reparent it into our tile.
+function CallVideoRemote(props: { getEl: () => HTMLVideoElement | null }): JSX.Element {
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      const host = hostRef.current;
+      const el = props.getEl();
+      if (host && el && el.parentElement !== host) {
+        el.classList.add('call-video');
+        el.muted = true;
+        host.appendChild(el);
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+    return () => { stopped = true; };
+  }, [props]);
+  return <div ref={hostRef} className="call-video-host" />;
 }
 
 function XferLine(props: {

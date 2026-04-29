@@ -23,13 +23,16 @@ import type { Source } from 'it-stream-types';
 export const TALK_PROTOCOL = '/buzz/talk/1.0.0';
 export const TALK_MAX_FRAME = 256 * 1024;
 export const TALK_MIME = 'audio/webm;codecs=opus';
+export const TALK_VIDEO_MIME = 'video/webm;codecs=vp8';
 
 export type TalkFrame =
   | { type: 'invite'; callId: string; screenName: string; ts: number }
   | { type: 'accept'; callId: string }
   | { type: 'reject'; callId: string; reason?: string }
   | { type: 'bye'; callId: string }
-  | { type: 'audio'; callId: string; seq: number; data: Uint8Array };
+  | { type: 'audio'; callId: string; seq: number; data: Uint8Array }
+  | { type: 'video'; callId: string; seq: number; data: Uint8Array }
+  | { type: 'videoState'; callId: string; on: boolean };
 
 export type TalkEvents = {
   onInvite(peerId: string, callId: string, screenName: string, ts: number): void;
@@ -37,6 +40,8 @@ export type TalkEvents = {
   onReject(peerId: string, callId: string, reason?: string): void;
   onBye(peerId: string, callId: string): void;
   onAudio(peerId: string, callId: string, seq: number, data: Uint8Array): void;
+  onVideo(peerId: string, callId: string, seq: number, data: Uint8Array): void;
+  onVideoState(peerId: string, callId: string, on: boolean): void;
 };
 
 type ConnState = {
@@ -206,6 +211,20 @@ export class TalkService {
           f.data instanceof Uint8Array
         ) {
           this.events.onAudio(peerIdStr, f.callId, f.seq, f.data);
+        }
+        break;
+      case 'video':
+        if (
+          typeof f.callId === 'string' &&
+          typeof f.seq === 'number' &&
+          f.data instanceof Uint8Array
+        ) {
+          this.events.onVideo(peerIdStr, f.callId, f.seq, f.data);
+        }
+        break;
+      case 'videoState':
+        if (typeof f.callId === 'string' && typeof f.on === 'boolean') {
+          this.events.onVideoState(peerIdStr, f.callId, f.on);
         }
         break;
     }

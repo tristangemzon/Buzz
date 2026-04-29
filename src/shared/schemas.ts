@@ -516,3 +516,30 @@ export const TalkAudioEvent = z.object({
   data: z.instanceof(Uint8Array),
 });
 export type TalkAudioEvent = z.infer<typeof TalkAudioEvent>;
+
+export const TalkVideoReq = z.object({
+  callId: Uuid,
+  data: z.instanceof(Uint8Array),
+});
+export type TalkVideoReq = z.infer<typeof TalkVideoReq>;
+
+export const TalkVideoStateReq = z.object({
+  callId: Uuid,
+  on: z.boolean(),
+});
+export type TalkVideoStateReq = z.infer<typeof TalkVideoStateReq>;
+
+export const TalkVideoEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  seq: z.number().int().nonnegative(),
+  data: z.instanceof(Uint8Array),
+});
+export type TalkVideoEvent = z.infer<typeof TalkVideoEvent>;
+
+export const TalkVideoStateEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  on: z.boolean(),
+});
+export type TalkVideoStateEvent = z.infer<typeof TalkVideoStateEvent>;
