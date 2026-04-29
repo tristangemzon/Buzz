@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session as electronSession, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, session as electronSession, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +9,21 @@ import { migrateLegacy } from './profiles.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL'];
+
+// Set the user-facing app name as early as possible so the menu bar, dock,
+// and window titles all read "Buzz" instead of "Electron" in dev.
+app.setName('Buzz');
+process.title = 'Buzz';
+
+// Resolve the bundled app icon. In dev, `here` is `<repo>/out/main`, so the
+// icon lives two dirs up under `resources/`. In a packaged build, both
+// `here` and the `resources/` dir end up siblings inside the app's resources,
+// so the same relative path resolves correctly.
+const APP_ICON_PATH = path.resolve(here, '../../resources/icon.png');
+const APP_ICON = nativeImage.createFromPath(APP_ICON_PATH);
+if (process.platform === 'darwin' && app.dock && !APP_ICON.isEmpty()) {
+  app.dock.setIcon(APP_ICON);
+}
 
 // CSP — strict in production, relaxed in dev so Vite's HMR + react-refresh
 // inline bootstrap can run. The dev server origin is whatever Vite gave us.
@@ -95,6 +110,7 @@ function openSignOn(): BrowserWindow {
     frame: false,
     title: 'Sign On',
     backgroundColor: '#ece9d8',
+    icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
   loadInto(win, 'signon');
@@ -118,6 +134,7 @@ function openBuddyList(): BrowserWindow {
     frame: false,
     title: 'Buddy List',
     backgroundColor: '#ece9d8',
+    icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
   loadInto(win, 'buddylist');
@@ -140,6 +157,7 @@ export function openImWindow(peerId: string): BrowserWindow {
     frame: false,
     title: 'Instant Message',
     backgroundColor: '#ece9d8',
+    icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
   loadInto(win, 'im', peerId);
@@ -164,6 +182,7 @@ export function openChatWindow(roomId: string): BrowserWindow {
     frame: false,
     title: 'Chat Room',
     backgroundColor: '#ece9d8',
+    icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
   loadInto(win, 'chat', roomId);
@@ -188,6 +207,7 @@ export function openVideoCallWindow(peerId: string): BrowserWindow {
     frame: false,
     title: 'Video Chat',
     backgroundColor: '#000000',
+    icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
   loadInto(win, 'videocall', peerId);
