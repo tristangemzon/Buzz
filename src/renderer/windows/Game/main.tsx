@@ -10,7 +10,7 @@ import { SpadesGame }   from './spades';
 import '../../theme/aim5.css';
 
 function parseProps(): GameProps {
-  const h = window.location.hash.replace(/^#/, '');
+  const h = decodeURIComponent(window.location.hash.replace(/^#/, ''));
   const [peerId, kind, init] = h.split(':');
   return { peerId: peerId ?? '', kind: kind ?? 'checkers', initiator: init === '1' };
 }
