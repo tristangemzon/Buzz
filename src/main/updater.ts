@@ -16,7 +16,8 @@
 // there is no packaged `app-update.yml` to read.
 
 import { ipcMain, app } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import updaterPkg from 'electron-updater';
+const { autoUpdater } = updaterPkg;
 import type { UpdateStatus } from '@shared/types.js';
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL'];
