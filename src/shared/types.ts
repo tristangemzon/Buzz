@@ -62,7 +62,7 @@ import type {
 export type Platform = 'mac' | 'windows' | 'linux';
 
 // ── Games ─────────────────────────────────────────────────────────────────
-export type GameKind = 'checkers';
+export type GameKind = 'checkers' | 'chess' | 'reversi' | 'gomoku' | 'poker' | 'spades' | (string & {});
 
 /** Checkers: 64-cell board, null = empty, 'r'/'b' = red/black man, 'R'/'B' = king. */
 export type CheckersCell = null | 'r' | 'b' | 'R' | 'B';

@@ -43,6 +43,45 @@ type XferCard = {
   savedPath?: string;
 };
 
+// ── Game picker ──────────────────────────────────────────────────────────────
+type GameEntry = { kind: string; label: string; icon: string; available: boolean };
+const GAME_LIST: GameEntry[] = [
+  { kind: 'checkers', label: 'Checkers',   icon: '🔴', available: true },
+  { kind: 'chess',    label: 'Chess',      icon: '♟️', available: false },
+  { kind: 'reversi',  label: 'Reversi',    icon: '⚫', available: false },
+  { kind: 'gomoku',   label: 'Gomoku',     icon: '🟡', available: false },
+  { kind: 'poker',    label: 'Poker',      icon: '🃏', available: false },
+  { kind: 'spades',   label: 'Spades',     icon: '♠️', available: false },
+];
+
+function GamePicker({ onSelect, onClose }: { onSelect: (kind: string) => void; onClose: () => void }) {
+  return (
+    <div className="game-picker-backdrop" onClick={onClose}>
+      <div className="game-picker-box bevel-out" onClick={(e) => e.stopPropagation()}>
+        <div className="game-picker-title">
+          <span>Select a Game</span>
+          <button className="game-picker-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="game-picker-subtitle">Choose a game to invite your buddy to play</div>
+        <ul className="game-picker-list">
+          {GAME_LIST.map((g) => (
+            <li
+              key={g.kind}
+              className={['game-picker-item', g.available ? 'available' : 'unavailable'].join(' ')}
+              onClick={() => g.available && onSelect(g.kind)}
+              title={g.available ? `Play ${g.label}` : `${g.label} — coming soon`}
+            >
+              <span className="game-picker-icon">{g.icon}</span>
+              <span className="game-picker-label">{g.label}</span>
+              {!g.available && <span className="game-picker-soon">Soon</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function App(): JSX.Element {
   const peerId = getPeerIdFromHash();
   const [me, setMe] = useState<{ screenName: string } | null>(null);
@@ -58,6 +97,7 @@ function App(): JSX.Element {
   const [blocked, setBlocked] = useState(false);
   const [warnLevel, setWarnLevel] = useState(0);
   const [showProfile, setShowProfile] = useState(false);
+  const [showGamePicker, setShowGamePicker] = useState(false);
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
@@ -284,9 +324,10 @@ function App(): JSX.Element {
     }
   }
 
-  async function handleInviteGame(): Promise<void> {
-    await window.buzzWindows.openGame(peerId, 'checkers', true);
-    await window.buzz.gameInvite({ toPeerId: peerId, kind: 'checkers' });
+  async function handleInviteGame(kind: string): Promise<void> {
+    setShowGamePicker(false);
+    await window.buzzWindows.openGame(peerId, kind, true);
+    await window.buzz.gameInvite({ toPeerId: peerId, kind });
   }
 
   const myName = me?.screenName ?? 'me';
@@ -402,7 +443,7 @@ function App(): JSX.Element {
           <span className="im-action-btn-icon">👤</span>
           <span className="im-action-btn-label">Profile</span>
         </button>
-        <button className="im-action-btn" onClick={() => void handleInviteGame()} title="Play a game" disabled={blocked}>
+        <button className="im-action-btn" onClick={() => setShowGamePicker(true)} title="Play a game" disabled={blocked}>
           <span className="im-action-btn-icon">🎲</span>
           <span className="im-action-btn-label">Games</span>
         </button>
@@ -444,6 +485,13 @@ function App(): JSX.Element {
 
       {showProfile && (
         <ProfileViewer peerId={peerId} alias={alias} onClose={() => setShowProfile(false)} />
+      )}
+
+      {showGamePicker && (
+        <GamePicker
+          onSelect={(kind) => void handleInviteGame(kind)}
+          onClose={() => setShowGamePicker(false)}
+        />
       )}
 
       {talk.call && talk.call.state === 'ringing' && talk.call.role === 'callee' && (
