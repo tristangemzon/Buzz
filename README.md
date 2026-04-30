@@ -2,7 +2,7 @@
 
 A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built with Electron + React + TypeScript and powered by [`js-libp2p`](https://github.com/libp2p/js-libp2p) (Noise XX + Yamux + KadDHT) and **SQLCipher** for encrypted local storage.
 
-> Status: **early scaffold, but feature-rich.** Sign-on, buddy list, 1:1 IM, encrypted local DB, P2P transport, platform-aware Mac/Windows skinning, profile customization, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (with text *and* voice channels)**, **1:1 voice + video calls**, and **offline mailbox relay** are all wired up.
+> Status: **early scaffold, but feature-rich.** Sign-on, buddy list, 1:1 IM, encrypted local DB, P2P transport, platform-aware Mac/Windows skinning, profile customization, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (with text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, and **auto-updates via GitHub Releases** are all wired up.
 
 ## Features in this build
 
@@ -19,6 +19,8 @@ A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built
 - **Custom IM protocol** `/buzz/im/1.0.0` (length-prefixed CBOR frames, 256 KiB cap) — carries IMs, typing/read receipts, profile cards, room control, talk/video signalling, and voice-channel audio.
 - **Automatic peer discovery** on the local network via mDNS (in P2P mode).
 - **Buddy request approval flow**: outgoing requests can be approved, denied, or cancelled; only mutual buddies see your presence.
+- **Presence heartbeat** every 10 s keeps buddy statuses fresh; a **login burst** re-announces at 2 s / 5 s / 12 s / 25 s after sign-in to catch peers who are already online.
+- **Offline debounce** (6 s default, 18 s during active calls) prevents flicker when libp2p re-negotiates transports.
 
 ### 1:1 messaging
 
@@ -54,6 +56,15 @@ A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built
 - **iChat-style chat themes**: classic / balloons / compact, with customisable my/their bubble colours, optional timestamps and avatars.
 - **Per-event sounds** (door open/close, IM send/receive, buddy on/off) with mute toggle.
 - **Custom window chrome** that adapts to platform skin.
+- **Settings panel** (⚙️ in the buddy list action bar): auto-update status, Check Now / Download / Install & Restart buttons.
+
+### Auto-updates
+
+- Built on [`electron-updater`](https://www.electron.build/auto-update) + **GitHub Releases**.
+- Running `npm run pack:mac` / `pack:win` / `pack:linux` builds the installer, generates a `latest-*.yml` manifest (version + SHA-512 hash), and uploads both to the matching GitHub Release.
+- At runtime the app fetches the manifest from the public GitHub API — no token required.
+- Updates are **opt-in**: the download doesn't start until the user clicks **Download Update** in Settings; **Install & Restart** applies it.
+- Silent no-op in `npm run dev` (no packaged `app-update.yml` present).
 
 ### Security
 
@@ -119,4 +130,4 @@ src/
 
 ## What's not built yet (planned)
 
-- Auto-update + code signing.
+- Code signing / notarisation (macOS Gatekeeper).
