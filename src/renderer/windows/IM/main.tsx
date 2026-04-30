@@ -47,11 +47,11 @@ type XferCard = {
 type GameEntry = { kind: string; label: string; icon: string; available: boolean };
 const GAME_LIST: GameEntry[] = [
   { kind: 'checkers', label: 'Checkers',   icon: '🔴', available: true },
-  { kind: 'chess',    label: 'Chess',      icon: '♟️', available: false },
-  { kind: 'reversi',  label: 'Reversi',    icon: '⚫', available: false },
-  { kind: 'gomoku',   label: 'Gomoku',     icon: '🟡', available: false },
-  { kind: 'poker',    label: 'Poker',      icon: '🃏', available: false },
-  { kind: 'spades',   label: 'Spades',     icon: '♠️', available: false },
+  { kind: 'chess',    label: 'Chess',      icon: '♟️', available: true },
+  { kind: 'reversi',  label: 'Reversi',    icon: '⚫', available: true },
+  { kind: 'gomoku',   label: 'Gomoku',     icon: '🟡', available: true },
+  { kind: 'poker',    label: 'Poker',      icon: '🃏', available: true },
+  { kind: 'spades',   label: 'Spades',     icon: '♠️', available: true },
 ];
 
 function GamePicker({ onSelect, onClose }: { onSelect: (kind: string) => void; onClose: () => void }) {
