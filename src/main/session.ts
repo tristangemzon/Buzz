@@ -464,6 +464,7 @@ export class Session {
       (peerId) => (this.talk?.getActivePeerIds().has(peerId) ?? false),
     );
     this.presence.start();
+    this.presence.loginBurst();
 
     // Multi-party chat rooms. Decode all known room keys into RAM so the
     // RoomBridge can return them synchronously when encrypting/decrypting.

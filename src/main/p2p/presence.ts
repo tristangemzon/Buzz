@@ -27,7 +27,10 @@ const OFFLINE_DEBOUNCE_MS = 6_000;
 // Interval at which we re-announce our own presence to every connected peer.
 // Catches the case where the initial sendProfileTo after peer:connect was
 // dropped (stream not yet open, relay not yet usable, etc.).
-const REANNOUNCE_INTERVAL_MS = 30_000;
+const REANNOUNCE_INTERVAL_MS = 10_000;
+// Login burst: re-announce at these offsets (ms) after start() so we catch
+// peers that are already online but connected before our stream was ready.
+const LOGIN_BURST_DELAYS_MS = [2_000, 5_000, 12_000, 25_000];
 
 export type BroadcastFn = (peerId: string, status: Status, awayMessage?: string) => void;
 export type PrefsBridge = {
@@ -44,6 +47,7 @@ export class PresenceManager {
   private awayMessage: string | undefined;
   private timer: NodeJS.Timeout | null = null;
   private reannounceTimer: NodeJS.Timeout | null = null;
+  private burstTimers: NodeJS.Timeout[] = [];
   private started = false;
   // Track peers we have an active connection with so we can target broadcasts.
   private readonly connected = new Set<string>();
@@ -88,6 +92,8 @@ export class PresenceManager {
       clearInterval(this.reannounceTimer);
       this.reannounceTimer = null;
     }
+    for (const t of this.burstTimers) clearTimeout(t);
+    this.burstTimers = [];
     // Cancel any pending offline debounce timers — we're shutting down.
     for (const t of this.offlineTimers.values()) clearTimeout(t);
     this.offlineTimers.clear();
@@ -107,6 +113,15 @@ export class PresenceManager {
       baseStatus: this.base,
       awayMessage: this.awayMessage,
     };
+  }
+
+  // Schedule a burst of re-announces right after login to catch peers who were
+  // already connected before our IM stream was ready.
+  loginBurst(): void {
+    for (const t of this.burstTimers) clearTimeout(t);
+    this.burstTimers = LOGIN_BURST_DELAYS_MS.map((delay) =>
+      setTimeout(() => void this.broadcastToConnected(), delay),
+    );
   }
 
   // Re-broadcast the current effective status — used after the user edits their
