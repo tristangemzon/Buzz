@@ -123,6 +123,19 @@ export const IPC = {
   UpdatesGetStatus: 'updates:getStatus',
   UpdatesGetVersion: 'updates:getVersion',
   EvtUpdateStatus: 'evt:updateStatus',
+
+  // peer-to-peer games
+  GameInvite: 'game:invite',
+  GameAccept: 'game:accept',
+  GameDecline: 'game:decline',
+  GameMove: 'game:move',
+  GameResign: 'game:resign',
+  // events (main -> renderer)
+  EvtGameInvite: 'evt:gameInvite',
+  EvtGameAccepted: 'evt:gameAccepted',
+  EvtGameDeclined: 'evt:gameDeclined',
+  EvtGameMove: 'evt:gameMove',
+  EvtGameResigned: 'evt:gameResigned',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

@@ -56,8 +56,9 @@ type SrvRoomMsg = { type: 'roomMsg'; roomId: string; channelId: string; from: st
 type SrvRoomMemberJoin = { type: 'roomMemberJoin'; roomId: string; peerId: string; screenName: string };
 type SrvRoomMemberLeave = { type: 'roomMemberLeave'; roomId: string; peerId: string };
 type SrvTalkSignal = { type: 'talkSignal'; from: string; callId: string; signal: string; payload: unknown };
+type SrvGameSignal = { type: 'gameSignal'; from: string; action: string; kind: string; path?: number[] };
 type SrvError = { type: 'error'; code: string; message: string };
-type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvError;
+type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError;
 
 // Subset of client→server messages that the client sends.
 type CliAuth = { type: 'auth'; peerId: string; screenName: string; pubKeyB64: string; sigB64: string };
@@ -75,7 +76,8 @@ type CliRoomChannelAdd = { type: 'roomChannelAdd'; roomId: string; channelId: st
 type CliGetHistory = { type: 'getHistory'; peerId: string; before?: number; limit?: number };
 type CliGetRoomHistory = { type: 'getRoomHistory'; roomId: string; channelId: string; before?: number; limit?: number };
 type CliTalkSignal = { type: 'talkSignal'; to: string; callId: string; signal: string; payload: unknown };
-type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal;
+type CliGameSignal = { type: 'gameSignal'; to: string; action: string; kind: string; path?: number[] };
+type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal;
 
 // Sodium import — same pattern as keystore.ts uses.
 import sodiumPkg from 'libsodium-wrappers-sumo';
@@ -103,6 +105,7 @@ export type HiveCallbacks = {
   onTalkSignal: (from: string, callId: string, signal: string, payload: unknown) => void;
   onTalkAudio: (from: string, callId: string, buf: Buffer) => void;
   onTalkVideo: (from: string, callId: string, buf: Buffer) => void;
+  onGameSignal?: (from: string, action: string, kind: string, path?: number[]) => void;
   onAuthed: (peerId: string, buddies: BuddyEntry[], pendingRequests: BuddyRequest[], pubKeys: Record<string, string>) => void;
   onConnected: () => void;
   onDisconnected: () => void;
@@ -298,6 +301,11 @@ export class HiveClient {
       case 'talkSignal':
         this.callbacks.onTalkSignal(msg.from, msg.callId, msg.signal, msg.payload);
         break;
+      case 'gameSignal':
+        if (this.callbacks.onGameSignal && typeof msg.from === 'string' && typeof msg.action === 'string' && typeof msg.kind === 'string') {
+          this.callbacks.onGameSignal(msg.from, msg.action, msg.kind, Array.isArray(msg.path) ? msg.path : undefined);
+        }
+        break;
       case 'error':
         this.callbacks.onError(new Error(`[hive] ${msg.code}: ${msg.message}`));
         break;
@@ -481,6 +489,10 @@ export class HiveClient {
 
   sendTalkSignal(to: string, callId: string, signal: string, payload: unknown): void {
     this._send({ type: 'talkSignal', to, callId, signal, payload });
+  }
+
+  sendGame(to: string, action: string, kind: string, path?: number[]): void {
+    this._send({ type: 'gameSignal', to, action, kind, ...(path ? { path } : {}) });
   }
 
   /**

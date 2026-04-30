@@ -97,7 +97,9 @@ export type Frame =
     }
   // Buddy add request flow.
   | { type: 'buddy-req'; screenName: string; ts: number }
-  | { type: 'buddy-resp'; accepted: boolean; screenName?: string };
+  | { type: 'buddy-resp'; accepted: boolean; screenName?: string }
+  // In-IM peer-to-peer games.
+  | { type: 'game'; action: 'invite' | 'accept' | 'decline' | 'move' | 'resign'; kind: string; path?: number[] };
 
 export type RoomInvitePayload = {
   roomId: string;
@@ -156,6 +158,7 @@ export type ImEvents = {
   onRoomVoiceAudio?(peerId: string, p: RoomVoiceAudioPayload): void;
   onBuddyReq?(peerId: string, p: { screenName: string; ts: number }): void;
   onBuddyResp?(peerId: string, p: { accepted: boolean; screenName?: string }): void;
+  onGameFrame?(peerId: string, p: { action: string; kind: string; path?: number[] }): void;
 };
 
 type ConnState = {
@@ -481,6 +484,15 @@ export class ImService {
           this.events.onBuddyResp(peerIdStr, {
             accepted: f.accepted,
             screenName: typeof f.screenName === 'string' ? f.screenName : undefined,
+          });
+        }
+        break;
+      case 'game':
+        if (this.events.onGameFrame && typeof f.action === 'string' && typeof f.kind === 'string') {
+          this.events.onGameFrame(peerIdStr, {
+            action: f.action,
+            kind: f.kind,
+            path: Array.isArray(f.path) ? (f.path as number[]) : undefined,
           });
         }
         break;

@@ -345,6 +345,7 @@ export class Session {
         onRoomVoiceAudio: (peer, p) => this.rooms?.handleVoiceAudio(peer, p),
         onBuddyReq: (peer, p) => this.handleBuddyReq(peer, p),
         onBuddyResp: (peer, p) => this.handleBuddyResp(peer, p),
+        onGameFrame: (peer, p) => this.handleGameFrame(peer, p),
       },
       (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
     );
@@ -906,6 +907,9 @@ export class Session {
       onTalkVideo: (from, callId, buf) => {
         this.handleTalkVideo(from, callId, 0, buf);
       },
+      onGameSignal: (from, action, kind, path) => {
+        this.handleGameFrame(from, { action, kind, path });
+      },
     };
 
     this.hiveClient = new HiveClient(id, serverUrl, this.screenName, cbs);
@@ -1125,6 +1129,47 @@ export class Session {
     }
     const ev: BuddyRequestResolvedEvent = { peerId, accepted: p.accepted };
     this.broadcast(IPC.EvtBuddyRequestResolved, ev);
+  }
+
+  // ── Peer-to-peer games ────────────────────────────────────────────────────
+  private handleGameFrame(
+    peerId: string,
+    p: { action: string; kind: string; path?: number[] },
+  ): void {
+    const fromName = this.db
+      ? (repos.listBuddies(this.db).find((b) => b.peerId === peerId)?.alias ?? peerId.slice(0, 8))
+      : peerId.slice(0, 8);
+    switch (p.action) {
+      case 'invite':
+        this.broadcast(IPC.EvtGameInvite, { fromPeerId: peerId, fromName, kind: p.kind });
+        break;
+      case 'accept':
+        this.broadcast(IPC.EvtGameAccepted, { fromPeerId: peerId, kind: p.kind });
+        break;
+      case 'decline':
+        this.broadcast(IPC.EvtGameDeclined, { fromPeerId: peerId, kind: p.kind });
+        break;
+      case 'move':
+        this.broadcast(IPC.EvtGameMove, { fromPeerId: peerId, kind: p.kind, path: p.path ?? [] });
+        break;
+      case 'resign':
+        this.broadcast(IPC.EvtGameResigned, { fromPeerId: peerId, kind: p.kind });
+        break;
+    }
+  }
+
+  async sendGameFrame(
+    toPeerId: string,
+    action: 'invite' | 'accept' | 'decline' | 'move' | 'resign',
+    kind: string,
+    path?: number[],
+  ): Promise<void> {
+    if (this.hiveClient) {
+      this.hiveClient.sendGame(toPeerId, action, kind, path);
+    } else {
+      if (!this.im) throw new Error('Locked');
+      await this.im.send(toPeerId, { type: 'game' as const, action, kind, ...(path ? { path } : {}) });
+    }
   }
 
   // Unread broadcast ───────────────────────────────────────────────────────

@@ -186,6 +186,11 @@ function App(): JSX.Element {
     const offPeerProfile = window.buzz.onPeerProfile((pp) => {
       if (pp.peerId === peerId) setTheirAvatar(pp.avatarDataUrl || '');
     });
+    const offGameInvite = window.buzz.onGameInvite((ev) => {
+      if (ev.fromPeerId !== peerId) return;
+      // Open the game window as acceptor (no initiator flag)
+      void window.buzzWindows.openGame(peerId, ev.kind ?? 'checkers');
+    });
     return () => {
       offRecv();
       offAck();
@@ -194,6 +199,7 @@ function App(): JSX.Element {
       offProgress();
       offDone();
       offPeerProfile();
+      offGameInvite();
       playSound('door-close');
     };
   }, [peerId]);
@@ -276,6 +282,11 @@ function App(): JSX.Element {
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed.');
     }
+  }
+
+  async function handleInviteGame(): Promise<void> {
+    await window.buzzWindows.openGame(peerId, 'checkers', true);
+    await window.buzz.gameInvite({ toPeerId: peerId, kind: 'checkers' });
   }
 
   const myName = me?.screenName ?? 'me';
@@ -391,7 +402,7 @@ function App(): JSX.Element {
           <span className="im-action-btn-icon">👤</span>
           <span className="im-action-btn-label">Profile</span>
         </button>
-        <button className="im-action-btn" disabled title="Games (coming soon)">
+        <button className="im-action-btn" onClick={() => void handleInviteGame()} title="Play a game" disabled={blocked}>
           <span className="im-action-btn-icon">🎲</span>
           <span className="im-action-btn-label">Games</span>
         </button>

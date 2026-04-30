@@ -7,6 +7,7 @@ declare global {
       openVideoCall(peerId: string): Promise<void>;
       openBuddyList(): Promise<void>;
       openChat(roomId: string): Promise<void>;
+      openGame(peerId: string, kind: string, initiator?: boolean): Promise<void>;
       minimize(): Promise<void>;
       toggleMax(): Promise<void>;
       close(): Promise<void>;

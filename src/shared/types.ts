@@ -61,6 +61,32 @@ import type {
 
 export type Platform = 'mac' | 'windows' | 'linux';
 
+// ── Games ─────────────────────────────────────────────────────────────────
+export type GameKind = 'checkers';
+
+/** Checkers: 64-cell board, null = empty, 'r'/'b' = red/black man, 'R'/'B' = king. */
+export type CheckersCell = null | 'r' | 'b' | 'R' | 'B';
+
+export type GameInviteReq = {
+  toPeerId: string;
+  kind: GameKind;
+};
+export type GameMoveReq = {
+  toPeerId: string;
+  kind: GameKind;
+  /** Sequence of board-index steps for the move (multi-jump = length > 2). */
+  path: number[];
+};
+export type GameInviteEvent = {
+  fromPeerId: string;
+  fromName: string;
+  kind: GameKind;
+};
+export type GameAcceptedEvent = { fromPeerId: string; kind: GameKind };
+export type GameDeclinedEvent = { fromPeerId: string; kind: GameKind };
+export type GameMoveEvent   = { fromPeerId: string; kind: GameKind; path: number[] };
+export type GameResignedEvent = { fromPeerId: string; kind: GameKind };
+
 export type UpdateStatus =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -198,6 +224,18 @@ export type AppApi = {
   updatesGetStatus(): Promise<UpdateStatus>;
   updatesGetVersion(): Promise<string>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;
+
+  // games
+  gameInvite(req: GameInviteReq): Promise<void>;
+  gameAccept(toPeerId: string): Promise<void>;
+  gameDecline(toPeerId: string): Promise<void>;
+  gameMove(req: GameMoveReq): Promise<void>;
+  gameResign(toPeerId: string): Promise<void>;
+  onGameInvite(cb: (e: GameInviteEvent) => void): () => void;
+  onGameAccepted(cb: (e: GameAcceptedEvent) => void): () => void;
+  onGameDeclined(cb: (e: GameDeclinedEvent) => void): () => void;
+  onGameMove(cb: (e: GameMoveEvent) => void): () => void;
+  onGameResigned(cb: (e: GameResignedEvent) => void): () => void;
 };
 
 declare global {

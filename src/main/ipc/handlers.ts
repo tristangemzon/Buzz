@@ -522,6 +522,26 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     if (!mbx) throw new Error('Locked');
     return mbx.pollAll();
   });
+
+  // ── Games ──────────────────────────────────────────────────────────────
+  handle(IPC.GameInvite, z.object({ toPeerId: z.string(), kind: z.string() }), async ({ toPeerId, kind }) => {
+    await session.sendGameFrame(toPeerId, 'invite', kind);
+  });
+  handle(IPC.GameAccept, null, async (toPeerId: string) => {
+    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+    await session.sendGameFrame(toPeerId, 'accept', 'checkers');
+  });
+  handle(IPC.GameDecline, null, async (toPeerId: string) => {
+    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+    await session.sendGameFrame(toPeerId, 'decline', 'checkers');
+  });
+  handle(IPC.GameMove, z.object({ toPeerId: z.string(), kind: z.string(), path: z.array(z.number()) }), async ({ toPeerId, kind, path }) => {
+    await session.sendGameFrame(toPeerId, 'move', kind, path);
+  });
+  handle(IPC.GameResign, null, async (toPeerId: string) => {
+    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+    await session.sendGameFrame(toPeerId, 'resign', 'checkers');
+  });
 }
 
 function requireDb(s: Session) {

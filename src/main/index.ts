@@ -62,7 +62,7 @@ function installCsp(): void {
 }
 
 // Resolve the renderer URL/file for a given page id (matches Vite multi-entry).
-function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall'): {
+function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game'): {
   url?: string;
   file?: string;
 } {
@@ -78,6 +78,7 @@ let buddyListWin: BrowserWindow | null = null;
 const imWindows = new Map<string, BrowserWindow>();
 const chatWindows = new Map<string, BrowserWindow>();
 const videoCallWindows = new Map<string, BrowserWindow>();
+const gameWindows = new Map<string, BrowserWindow>();
 
 function commonWebPrefs() {
   return {
@@ -90,7 +91,7 @@ function commonWebPrefs() {
   } as const;
 }
 
-function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall', hash = ''): void {
+function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game', hash = ''): void {
   const t = rendererTarget(page);
   const suffix = hash ? `#${encodeURIComponent(hash)}` : '';
   if (t.url) void win.loadURL(t.url + suffix);
@@ -219,6 +220,32 @@ export function openVideoCallWindow(peerId: string): BrowserWindow {
   return win;
 }
 
+export function openGameWindow(peerId: string, kind: string, initiator = false): BrowserWindow {
+  const key = `${peerId}:${kind}`;
+  const cached = gameWindows.get(key);
+  if (cached && !cached.isDestroyed()) {
+    cached.focus();
+    return cached;
+  }
+  const win = new BrowserWindow({
+    width: 460,
+    height: 540,
+    minWidth: 380,
+    minHeight: 460,
+    frame: false,
+    title: 'Games',
+    backgroundColor: '#ece9d8',
+    icon: APP_ICON,
+    webPreferences: commonWebPrefs(),
+  });
+  loadInto(win, 'game', `${peerId}:${kind}:${initiator ? '1' : '0'}`);
+  win.on('closed', () => {
+    if (gameWindows.get(key) === win) gameWindows.delete(key);
+  });
+  gameWindows.set(key, win);
+  return win;
+}
+
 // Strict default for webContents: deny new window opens to external URLs except
 // safe http(s) which we hand off to the OS browser.
 app.on('web-contents-created', (_e, contents) => {
@@ -275,6 +302,10 @@ app.whenReady().then(() => {
   ipcMain.handle('windows:openVideoCall', (_e, peerId: string) => {
     if (typeof peerId !== 'string') throw new Error('bad peerId');
     openVideoCallWindow(peerId);
+  });
+  ipcMain.handle('windows:openGame', (_e, peerId: string, kind: string, initiator?: boolean) => {
+    if (typeof peerId !== 'string' || typeof kind !== 'string') throw new Error('bad args');
+    openGameWindow(peerId, kind, initiator ?? false);
   });
 
   // Custom-chrome window controls. The renderer's titlebar exposes

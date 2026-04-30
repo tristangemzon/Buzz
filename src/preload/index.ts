@@ -118,6 +118,18 @@ const api: AppApi = {
   updatesGetStatus: () => ipcRenderer.invoke(IPC.UpdatesGetStatus),
   updatesGetVersion: () => ipcRenderer.invoke(IPC.UpdatesGetVersion),
   onUpdateStatus: (cb) => on(IPC.EvtUpdateStatus, cb),
+
+  // games
+  gameInvite: (req) => ipcRenderer.invoke(IPC.GameInvite, req),
+  gameAccept: (toPeerId: string) => ipcRenderer.invoke(IPC.GameAccept, toPeerId),
+  gameDecline: (toPeerId: string) => ipcRenderer.invoke(IPC.GameDecline, toPeerId),
+  gameMove: (req) => ipcRenderer.invoke(IPC.GameMove, req),
+  gameResign: (toPeerId: string) => ipcRenderer.invoke(IPC.GameResign, toPeerId),
+  onGameInvite: (cb) => on(IPC.EvtGameInvite, cb),
+  onGameAccepted: (cb) => on(IPC.EvtGameAccepted, cb),
+  onGameDeclined: (cb) => on(IPC.EvtGameDeclined, cb),
+  onGameMove: (cb) => on(IPC.EvtGameMove, cb),
+  onGameResigned: (cb) => on(IPC.EvtGameResigned, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by
@@ -127,6 +139,7 @@ const windows = {
   openVideoCall: (peerId: string) => ipcRenderer.invoke('windows:openVideoCall', peerId),
   openBuddyList: () => ipcRenderer.invoke('windows:openBuddyList'),
   openChat: (roomId: string) => ipcRenderer.invoke('windows:openChat', roomId),
+  openGame: (peerId: string, kind: string, initiator?: boolean) => ipcRenderer.invoke('windows:openGame', peerId, kind, initiator),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   toggleMax: () => ipcRenderer.invoke('window:toggleMax'),
   close: () => ipcRenderer.invoke('window:close'),
