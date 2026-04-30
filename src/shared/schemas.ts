@@ -165,19 +165,30 @@ const Multiaddr = z
   .max(512)
   .regex(/^\/[A-Za-z0-9._\-/]+\/p2p\/[A-Za-z0-9]+$/, 'Must be a multiaddr ending in /p2p/<peerid>');
 
+// WSS URL for Hive server mode, e.g. wss://hive.example.com:7700
+const WssUrl = z
+  .string()
+  .max(512)
+  .regex(/^wss?:\/\/.+/, 'Must be a wss:// or ws:// URL');
+
 export const NetworkConfig = z
   .object({
     mode: z.enum(['p2p', 'server']).default('p2p'),
+    // Legacy libp2p multiaddr (kept for backward compat, unused in server mode).
     serverAddr: z.string().max(512).default(''),
+    // Hive server mode: WSS URL (e.g. wss://localhost:7700)
+    serverUrl: z.string().max(512).default(''),
+    // Whether to cache messages locally when in server mode.
+    serverCacheEnabled: z.boolean().default(true),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.mode === 'server') {
-      const r = Multiaddr.safeParse(cfg.serverAddr);
+      const r = WssUrl.safeParse(cfg.serverUrl);
       if (!r.success) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['serverAddr'],
-          message: r.error.issues[0]?.message ?? 'Invalid server address',
+          path: ['serverUrl'],
+          message: r.error.issues[0]?.message ?? 'Invalid server URL',
         });
       }
     }

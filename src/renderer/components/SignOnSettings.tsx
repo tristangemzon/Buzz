@@ -19,7 +19,8 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
 
   // Network mode state.
   const [mode, setMode] = useState<'p2p' | 'server'>('p2p');
-  const [serverAddr, setServerAddr] = useState('');
+  const [serverUrl, setServerUrl] = useState('');
+  const [serverCacheEnabled, setServerCacheEnabled] = useState(true);
   const [netErr, setNetErr] = useState('');
   const [netBusy, setNetBusy] = useState(false);
   const [netLoaded, setNetLoaded] = useState(false);
@@ -34,7 +35,8 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
       .getNetworkConfig()
       .then((cfg) => {
         setMode(cfg.mode);
-        setServerAddr(cfg.serverAddr ?? '');
+        setServerUrl(cfg.serverUrl ?? '');
+        setServerCacheEnabled(cfg.serverCacheEnabled ?? true);
       })
       .catch(() => undefined)
       .finally(() => setNetLoaded(true));
@@ -44,7 +46,12 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
     setNetErr('');
     setNetBusy(true);
     try {
-      const cfg: NetworkConfig = { mode, serverAddr: mode === 'server' ? serverAddr.trim() : '' };
+      const cfg: NetworkConfig = {
+        mode,
+        serverAddr: '',
+        serverUrl: mode === 'server' ? serverUrl.trim() : '',
+        serverCacheEnabled,
+      };
       await window.buzz.setNetworkConfig(cfg);
       onClose();
     } catch (e) {
@@ -127,24 +134,35 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
                           onChange={() => setMode('server')}
                         />
                         <span>
-                          <strong>Server</strong> — connect to a Buzz server
+                          <strong>Server</strong> — connect to a Hive server
                         </span>
                       </label>
                       <div className="muted small">
-                        Use a specific Buzz server as bootstrap and offline mailbox relay. Still
-                        end-to-end encrypted; the server cannot read your messages.
+                        Connect to a Hive server for presence, message delivery, and offline storage.
+                        End-to-end encrypted — the server only stores ciphertext.
                       </div>
                       {mode === 'server' && (
                         <div className="row indent">
-                          <label className="label">Server address (multiaddr)</label>
+                          <label className="label">Hive server URL</label>
                           <input
                             className="bevel-in"
-                            value={serverAddr}
-                            onChange={(e) => setServerAddr(e.target.value)}
-                            placeholder="/dns4/buzz.example.com/tcp/4001/p2p/12D3KooW..."
+                            value={serverUrl}
+                            onChange={(e) => setServerUrl(e.target.value)}
+                            placeholder="wss://hive.example.com:7700"
                             spellCheck={false}
                             autoFocus
                           />
+                          <label className="checkbox" style={{ marginTop: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={serverCacheEnabled}
+                              onChange={(e) => setServerCacheEnabled(e.target.checked)}
+                            />
+                            <span>Cache messages locally</span>
+                          </label>
+                          <div className="muted small" style={{ marginTop: 4 }}>
+                            When enabled, messages are stored in your encrypted local database in addition to the server.
+                          </div>
                         </div>
                       )}
                     </div>
