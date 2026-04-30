@@ -527,19 +527,16 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   handle(IPC.GameInvite, z.object({ toPeerId: z.string(), kind: z.string() }), async ({ toPeerId, kind }) => {
     await session.sendGameFrame(toPeerId, 'invite', kind);
   });
-  handle(IPC.GameAccept, null, async (toPeerId: string) => {
-    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+  handle(IPC.GameAccept, z.string(), async (toPeerId) => {
     await session.sendGameFrame(toPeerId, 'accept', 'checkers');
   });
-  handle(IPC.GameDecline, null, async (toPeerId: string) => {
-    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+  handle(IPC.GameDecline, z.string(), async (toPeerId) => {
     await session.sendGameFrame(toPeerId, 'decline', 'checkers');
   });
   handle(IPC.GameMove, z.object({ toPeerId: z.string(), kind: z.string(), path: z.array(z.number()) }), async ({ toPeerId, kind, path }) => {
     await session.sendGameFrame(toPeerId, 'move', kind, path);
   });
-  handle(IPC.GameResign, null, async (toPeerId: string) => {
-    if (typeof toPeerId !== 'string') throw new Error('bad peerId');
+  handle(IPC.GameResign, z.string(), async (toPeerId) => {
     await session.sendGameFrame(toPeerId, 'resign', 'checkers');
   });
 }
