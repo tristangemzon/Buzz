@@ -380,15 +380,6 @@ function App(): JSX.Element {
 
           {/* AIM-style action bar */}
           <div className="im-actionbar">
-            <button
-              className="im-action-btn"
-              onClick={() => editorRef.current?.openEmojiPicker()}
-              disabled={!activeChannelId}
-              title="Expressions / Emoji"
-            >
-              <span className="im-action-btn-icon">🎭</span>
-              <span className="im-action-btn-label">Expressions</span>
-            </button>
             <button className="im-action-btn" disabled title="Games (coming soon)">
               <span className="im-action-btn-icon">🎲</span>
               <span className="im-action-btn-label">Games</span>

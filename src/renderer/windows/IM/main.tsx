@@ -387,17 +387,9 @@ function App(): JSX.Element {
         <span className="im-actionbar-sep" />
 
         {/* Center: actions */}
-        <button className="im-action-btn" onClick={() => void sendFile()} disabled={blocked} title="Send a file">
-          <span className="im-action-btn-icon">📎</span>
-          <span className="im-action-btn-label">Send File</span>
-        </button>
         <button className="im-action-btn" onClick={() => setShowProfile(true)} title="View profile">
           <span className="im-action-btn-icon">👤</span>
           <span className="im-action-btn-label">Profile</span>
-        </button>
-        <button className="im-action-btn" onClick={() => editorRef.current?.openEmojiPicker()} disabled={blocked} title="Expressions / Emoji">
-          <span className="im-action-btn-icon">🎭</span>
-          <span className="im-action-btn-label">Expressions</span>
         </button>
         <button className="im-action-btn" disabled title="Games (coming soon)">
           <span className="im-action-btn-icon">🎲</span>
