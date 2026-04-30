@@ -459,6 +459,9 @@ export class Session {
         this.peerStatuses.set(peerId, ev);
         this.broadcast(IPC.EvtBuddyStatus, ev);
       },
+      // Suppress (or extend debounce for) offline signals while a video/voice
+      // call is in progress with this peer.
+      (peerId) => (this.talk?.getActivePeerIds().has(peerId) ?? false),
     );
     this.presence.start();
 

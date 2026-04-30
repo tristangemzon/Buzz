@@ -238,12 +238,27 @@ app.on('web-contents-created', (_e, contents) => {
   });
 });
 
+/** Close every session window (IM, chat, video-call, buddy-list) without
+ * quitting the app, then surface the Sign On window again. Called both on
+ * explicit sign-out and when the app is about to quit. */
+function closeSessionWindows(): void {
+  for (const win of [...imWindows.values(), ...chatWindows.values(), ...videoCallWindows.values()]) {
+    if (!win.isDestroyed()) win.close();
+  }
+  if (buddyListWin && !buddyListWin.isDestroyed()) buddyListWin.close();
+}
+
 app.whenReady().then(() => {
   // Migrate any legacy single-profile install (userData/keystore.bin +
   // buzz.sqlite) into a profile dir so existing users keep their identity.
   migrateLegacy();
   installCsp();
-  registerIpc(session);
+  registerIpc(session, {
+    onLocked: () => {
+      closeSessionWindows();
+      openSignOn();
+    },
+  });
   // Window-management helpers used by the buddy list to open IM windows.
   ipcMain.handle('windows:openIm', (_e, peerId: string) => {
     if (typeof peerId !== 'string') throw new Error('bad peerId');

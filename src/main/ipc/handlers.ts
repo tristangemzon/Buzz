@@ -58,7 +58,12 @@ function handle<S extends ZodTypeAny, R>(
   });
 }
 
-export function registerIpc(session: Session): void {
+export interface RegisterIpcOpts {
+  /** Called (on the main thread) after the session is successfully locked. */
+  onLocked?: () => void;
+}
+
+export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void {
   // ── auth ──────────────────────────────────────────────────────────────────
   handle(IPC.AuthHasIdentity, null, () => session.listProfiles().length > 0);
   handle(IPC.AuthListProfiles, null, () => session.listProfiles());
@@ -69,7 +74,10 @@ export function registerIpc(session: Session): void {
     const r = await session.unlock(profileId, passphrase);
     return { ok: true as const, profileId: r.profileId, buddyCode: r.buddyCode };
   });
-  handle(IPC.AuthLock, null, () => session.lock());
+  handle(IPC.AuthLock, null, async () => {
+    await session.lock();
+    opts.onLocked?.();
+  });
   handle(IPC.AuthFactoryReset, null, () => session.factoryReset());
   handle(IPC.AuthGetPlatform, null, () => platform());
   handle(IPC.AuthGetMyId, null, () => ({

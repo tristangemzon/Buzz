@@ -58,7 +58,7 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
     bootstrap({ list: bootstrapList }),
   ];
   if (opts.network?.mode !== 'server') {
-    peerDiscovery.push(mdns({ interval: 20_000 }));
+    peerDiscovery.push(mdns({ interval: 5_000 }));
   }
 
   const node = await createLibp2p({

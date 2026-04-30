@@ -51,6 +51,14 @@ type ConnState = {
 
 export class TalkService {
   private readonly conns = new Map<string, ConnState>();
+  // Peers with whom we currently have an active TALK connection (ringing,
+  // active, etc.). PresenceManager queries this to avoid marking a peer offline
+  // while a call is in progress.
+  private readonly activePeers = new Set<string>();
+
+  getActivePeerIds(): ReadonlySet<string> {
+    return this.activePeers;
+  }
 
   constructor(
     private readonly node: Libp2p,
@@ -99,6 +107,7 @@ export class TalkService {
   }
 
   private attach(peerIdStr: string, stream: Stream): ConnState {
+    this.activePeers.add(peerIdStr);
     const outQueue: Uint8Array[] = [];
     let resolveWaiter: (() => void) | null = null;
     let closed = false;
@@ -141,6 +150,7 @@ export class TalkService {
       } catch {
         /* ignore */
       }
+      this.activePeers.delete(peerIdStr);
       this.conns.delete(peerIdStr);
     };
 

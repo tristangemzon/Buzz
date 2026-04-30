@@ -196,8 +196,22 @@ export class ImService {
   }
 
   async send(peerIdStr: string, frame: Frame): Promise<void> {
-    const c = await this.connect(peerIdStr);
-    await c.send(frame);
+    // Attempt once; if the cached stream has died, evict it and retry once.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const c = await this.connect(peerIdStr);
+        await c.send(frame);
+        return;
+      } catch (err) {
+        // Evict the dead connection so the next connect() opens a fresh one.
+        const stale = this.conns.get(peerIdStr);
+        if (stale) {
+          this.conns.delete(peerIdStr);
+          void stale.close().catch(() => undefined);
+        }
+        if (attempt === 1) throw err;
+      }
+    }
   }
 
   private async connect(peerIdStr: string): Promise<ConnState> {
@@ -210,10 +224,14 @@ export class ImService {
       // running over a relay is acceptable as a fallback.
       runOnTransientConnection: true,
     });
-    return this.attach(peerIdStr, stream);
+    return this.attachOutbound(peerIdStr, stream);
   }
 
   private attach(peerIdStr: string, stream: Stream): ConnState {
+    return this.attachOutbound(peerIdStr, stream);
+  }
+
+  private attachOutbound(peerIdStr: string, stream: Stream): ConnState {
     // Outgoing queue → length-prefixed bytes.
     const outQueue: Uint8Array[] = [];
     let resolveWaiter: (() => void) | null = null;

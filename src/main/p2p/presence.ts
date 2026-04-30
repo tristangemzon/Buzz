@@ -19,6 +19,15 @@ import type { ImService } from './im.js';
 import type { Profile, Status, SelectableStatus, SelfPresence } from '@shared/schemas.js';
 
 const IDLE_POLL_MS = 30_000;
+// How long (ms) to wait after a peer:disconnect before broadcasting "offline"
+// to the renderer. libp2p frequently closes/reopens connections during relay
+// negotiation or connection-manager pruning — a brief debounce prevents the
+// buddy-list from flickering while the two sides are actually still reachable.
+const OFFLINE_DEBOUNCE_MS = 6_000;
+// Interval at which we re-announce our own presence to every connected peer.
+// Catches the case where the initial sendProfileTo after peer:connect was
+// dropped (stream not yet open, relay not yet usable, etc.).
+const REANNOUNCE_INTERVAL_MS = 30_000;
 
 export type BroadcastFn = (peerId: string, status: Status, awayMessage?: string) => void;
 export type PrefsBridge = {
@@ -34,9 +43,12 @@ export class PresenceManager {
   private effective: Status = 'online';
   private awayMessage: string | undefined;
   private timer: NodeJS.Timeout | null = null;
+  private reannounceTimer: NodeJS.Timeout | null = null;
   private started = false;
   // Track peers we have an active connection with so we can target broadcasts.
   private readonly connected = new Set<string>();
+  // Pending debounced "offline" timers keyed by peerId.
+  private readonly offlineTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly node: Libp2p,
@@ -44,6 +56,10 @@ export class PresenceManager {
     private readonly screenName: () => string,
     private readonly prefs: PrefsBridge,
     private readonly broadcastToRenderer: BroadcastFn,
+    // Optional: returns true when a peer is currently in a voice/video call.
+    // When set, the offline debounce is extended for active-call peers so a
+    // brief transport hiccup doesn't interrupt a call in progress.
+    private readonly isInActiveCall: (peerId: string) => boolean = () => false,
   ) {}
 
   start(): void {
@@ -58,6 +74,7 @@ export class PresenceManager {
     this.node.addEventListener('peer:disconnect', this.onPeerDisconnect);
 
     this.timer = setInterval(() => this.tickIdle(), IDLE_POLL_MS);
+    this.reannounceTimer = setInterval(() => void this.broadcastToConnected(), REANNOUNCE_INTERVAL_MS);
   }
 
   async stop(): Promise<void> {
@@ -67,6 +84,13 @@ export class PresenceManager {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.reannounceTimer) {
+      clearInterval(this.reannounceTimer);
+      this.reannounceTimer = null;
+    }
+    // Cancel any pending offline debounce timers — we're shutting down.
+    for (const t of this.offlineTimers.values()) clearTimeout(t);
+    this.offlineTimers.clear();
     this.node.removeEventListener('peer:connect', this.onPeerConnect);
     this.node.removeEventListener('peer:disconnect', this.onPeerDisconnect);
     // Best-effort: announce going offline to any connected peer.
@@ -129,6 +153,12 @@ export class PresenceManager {
   private readonly onPeerConnect = (evt: Event): void => {
     const peerId = peerIdFromEvent(evt);
     if (!peerId) return;
+    // Cancel any pending "offline" signal for this peer — they're back.
+    const existing = this.offlineTimers.get(peerId);
+    if (existing) {
+      clearTimeout(existing);
+      this.offlineTimers.delete(peerId);
+    }
     this.connected.add(peerId);
     // Send our profile after connect (lazy: don't fail the event loop).
     void this.sendProfileTo(peerId, this.wireStatus()).catch(() => undefined);
@@ -138,8 +168,22 @@ export class PresenceManager {
     const peerId = peerIdFromEvent(evt);
     if (!peerId) return;
     this.connected.delete(peerId);
-    // Inform UI that this peer is now offline (they may flip status flags).
-    this.broadcastToRenderer(peerId, 'offline');
+    // Debounce: libp2p can fire a disconnect immediately before re-establishing
+    // the connection via a different transport (relay → direct, etc.). Only
+    // inform the renderer after a grace period to avoid flickering.
+    // Use a longer grace period if we have an active call with this peer.
+    if (this.offlineTimers.has(peerId)) return; // already pending
+    const gracePeriod = this.isInActiveCall(peerId)
+      ? OFFLINE_DEBOUNCE_MS * 3   // ~18 s during active calls
+      : OFFLINE_DEBOUNCE_MS;      // ~6 s otherwise
+    const t = setTimeout(() => {
+      this.offlineTimers.delete(peerId);
+      // Only fire if the peer is still not connected after the grace period.
+      if (!this.connected.has(peerId)) {
+        this.broadcastToRenderer(peerId, 'offline');
+      }
+    }, gracePeriod);
+    this.offlineTimers.set(peerId, t);
   };
 
   private async tickIdle(): Promise<void> {
