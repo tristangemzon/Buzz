@@ -133,6 +133,10 @@ function App(): JSX.Element {
         void window.buzzWindows.openIm(e.peerId);
       }
     });
+    const offGameInvite = window.buzz.onGameInvite((e) => {
+      // Open game window as acceptor (initiator=false) so recipient sees invite dialog
+      void window.buzzWindows.openGame(e.fromPeerId, e.kind ?? 'checkers', false);
+    });
     const offUpdateStatus = window.buzz.onUpdateStatus((s: UpdateStatus) => setUpdateStatus(s));
     void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
     void window.buzz.updatesGetVersion().then(setAppVersion).catch(() => undefined);
@@ -145,6 +149,7 @@ function App(): JSX.Element {
       offBuddyResolved();
       offUnread();
       offTalkInvite();
+      offGameInvite();
       offUpdateStatus();
     };
   }, []);
