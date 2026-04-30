@@ -241,6 +241,52 @@ button:disabled {
 }
 
 /* Buddy List split layout: buddies on top, chat rooms pinned below. */
+.bl-selfbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--c-panel);
+  border-bottom: 1px solid #c0bfb1;
+  min-height: 28px;
+}
+.bl-screenname {
+  font-weight: bold;
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bl-status-select {
+  font-size: 11px;
+  padding: 1px 2px;
+  background: var(--c-input-bg);
+  border: 1px inset #aaa;
+}
+.bl-actionbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  background: var(--c-panel);
+  border-top: 1px solid #c0bfb1;
+}
+.bl-actionbar-spacer {
+  flex: 1;
+}
+.bl-action-btn {
+  padding: 2px 5px;
+  min-width: 26px;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.bl-signoff {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 .buddylist-split {
   display: flex;
   flex-direction: column;

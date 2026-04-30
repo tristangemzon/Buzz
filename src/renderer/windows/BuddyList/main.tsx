@@ -280,34 +280,15 @@ function App(): JSX.Element {
   return (
     <div className="window">
       <WindowChrome
-        title={
-          <>
-            Buddy List — {me?.screenName ?? '…'}
-            {self ? <span className="muted"> ({self.status})</span> : null}
-          </>
-        }
+        title="Buzz — Buddy List"
       />
-      <div className="toolbar">
-        <button onClick={() => setShowAdd(true)}>Add Buddy</button>
-        <button onClick={() => setShowInfo(true)}>My Info</button>
-        <button onClick={() => setShowProfile(true)}>My Profile</button>
-        <button onClick={() => setShowThemes(true)}>Themes</button>
-        <button
-          onClick={async () => {
-            try {
-              const s = await window.buzz.mailboxStats();
-              setMailbox(s);
-            } catch {
-              setMailbox(null);
-            }
-            setRelayInput('');
-            setShowMailbox(true);
-          }}
-        >
-          Mailbox
-        </button>
-        <span className="spacer" />
+
+      {/* ── Self / status bar ─────────────────────────────────────────── */}
+      <div className="bl-selfbar">
+        <span className={`status ${self?.status ?? 'offline'}`} style={{ flexShrink: 0 }} />
+        <span className="bl-screenname">{me?.screenName ?? '…'}</span>
         <select
+          className="bl-status-select"
           value={self?.baseStatus ?? 'online'}
           onChange={(e) => {
             const v = e.target.value as SelectableStatus;
@@ -320,10 +301,6 @@ function App(): JSX.Element {
           <option value="away">Away…</option>
           <option value="invisible">Invisible</option>
         </select>
-        <button onClick={toggleSounds} title="Toggle sounds">
-          {soundsOn ? '🔊' : '🔇'}
-        </button>
-        <button onClick={signOff}>Sign Off</button>
       </div>
 
       <div className="buddylist-split">
@@ -410,7 +387,7 @@ function App(): JSX.Element {
           )}
           {Object.keys(grouped).length === 0 ? (
             <div className="row muted" style={{ padding: 10 }}>
-              No buddies yet. Click <b>Add Buddy</b> and paste a buddy code.
+              No buddies yet. Use the 👤+ button below to add one.
             </div>
           ) : (
             Object.entries(grouped).map(([g, arr]) => (
@@ -492,6 +469,45 @@ function App(): JSX.Element {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── Bottom action bar ─────────────────────────────────────────── */}
+      <div className="bl-actionbar">
+        <button className="bl-action-btn" title="Add Buddy" onClick={() => setShowAdd(true)}>
+          👤+
+        </button>
+        <button className="bl-action-btn" title="My Info" onClick={() => setShowInfo(true)}>
+          🪪
+        </button>
+        <button className="bl-action-btn" title="My Profile" onClick={() => setShowProfile(true)}>
+          ✏️
+        </button>
+        <button className="bl-action-btn" title="Themes" onClick={() => setShowThemes(true)}>
+          🎨
+        </button>
+        <button
+          className="bl-action-btn"
+          title="Offline Mailbox"
+          onClick={async () => {
+            try {
+              const s = await window.buzz.mailboxStats();
+              setMailbox(s);
+            } catch {
+              setMailbox(null);
+            }
+            setRelayInput('');
+            setShowMailbox(true);
+          }}
+        >
+          📬
+        </button>
+        <button className="bl-action-btn" title="Toggle sounds" onClick={toggleSounds}>
+          {soundsOn ? '🔊' : '🔇'}
+        </button>
+        <span className="bl-actionbar-spacer" />
+        <button className="bl-action-btn bl-signoff" title="Sign Off" onClick={signOff}>
+          Sign Off
+        </button>
       </div>
 
       {showAdd && (
