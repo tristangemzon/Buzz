@@ -287,9 +287,11 @@ function chessReducer(s: ChessState, a: ChessAction): ChessState {
 // ── Board Component ───────────────────────────────────────────────────────────
 
 function ChessBoard({ state, onSquare }: { state: ChessState; onSquare: (i: number) => void }) {
+  const flipped = state.myColor === 'b';
   const kingIdx = state.check ? state.board.findIndex(p => p === state.myColor + 'K') : -1;
   const cells = [];
-  for (let i = 0; i < 64; i++) {
+  for (let s = 0; s < 64; s++) {
+    const i = flipped ? 63 - s : s;
     const row = Math.floor(i / 8), col = i % 8;
     const isLight = (row + col) % 2 === 0;
     const piece = state.board[i];
