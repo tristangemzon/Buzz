@@ -454,6 +454,29 @@ button:disabled {
   min-height: 64px;
 }
 
+/* WYSIWYG contentEditable compose box */
+.rich-editor-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.rich-editor {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  cursor: text;
+  width: 100%;
+  box-sizing: border-box;
+}
+.rich-editor:focus {
+  outline: none;
+}
+.rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #999;
+  pointer-events: none;
+  display: block;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;

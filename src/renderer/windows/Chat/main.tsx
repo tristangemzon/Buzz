@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
-import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
+import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useRoomVoice } from '../../components/useRoomVoice';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
@@ -41,7 +41,7 @@ function App(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichEditorHandle>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
   // (registered once on mount) always reads the latest value.
   const activeChannelIdRef = useRef<string>('');
@@ -159,7 +159,7 @@ function App(): JSX.Element {
   }, [messages]);
 
   async function send(): Promise<void> {
-    const body = draft.trim();
+    const body = (editorRef.current?.getMarkup() ?? '').trim();
     if (!body || busy || !activeChannelId) return;
     setBusy(true);
     setErr('');
@@ -170,6 +170,7 @@ function App(): JSX.Element {
         body,
       });
       setMessages((prev) => [...prev, stored]);
+      editorRef.current?.clear();
       setDraft('');
     } catch (e) {
       setErr(String((e as Error).message ?? e));
@@ -368,31 +369,14 @@ function App(): JSX.Element {
           {err && <div style={{ color: '#a00', padding: '4px 8px', fontSize: 11 }}>{err}</div>}
 
           <div className="im-composer" style={{ display: 'flex', flexDirection: 'column', padding: 8, gap: 6 }}>
-            <FormatToolbar
-              textareaRef={inputRef}
-              value={draft}
-              onChange={setDraft}
+            <RichEditor
+              ref={editorRef}
+              placeholder={activeChannel ? `Message #${activeChannel.name}…` : 'Select a channel…'}
               disabled={!activeChannelId}
+              onMarkupChange={setDraft}
+              onEnter={() => void send()}
             />
-            <div style={{ display: 'flex', gap: 6 }}>
-              <textarea
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (handleFormatShortcut(e, inputRef, draft, setDraft)) return;
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                rows={2}
-                style={{ flex: 1, resize: 'none' }}
-                placeholder={
-                  activeChannel ? `Message #${activeChannel.name}\u2026` : 'Select a channel\u2026'
-                }
-                disabled={!activeChannelId}
-              />
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button onClick={() => void send()} disabled={busy || !draft.trim() || !activeChannelId}>
                 Send
               </button>

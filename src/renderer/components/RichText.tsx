@@ -1,4 +1,4 @@
-// Tiny safe-subset HTML renderer + textarea formatting toolbar used by both
+// Tiny safe-subset HTML renderer + WYSIWYG compose editor used by both
 // the 1:1 IM window and the chat-room window. The "rich text" supported on
 // the wire is a deliberately small set of HTML-ish tags so the body remains
 // a normal plain-string IM and old clients still see something readable.
@@ -6,7 +6,7 @@
 // Allowed tags: <b>, <i>, <u>, <mark>, <small>, <big>, <a href="...">.
 // Anything else is rendered as escaped text.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 type Token =
   | { t: 'text'; v: string }
@@ -148,7 +148,10 @@ export type FormatToolbarProps = {
 export function FormatToolbar(props: FormatToolbarProps): JSX.Element {
   const { textareaRef, value, onChange, disabled } = props;
   const [showEmoji, setShowEmoji] = useState(false);
-  const emojiBtnRef = useRef<HTMLButtonElement>(null);
+  // Ref on the WRAPPER span (not just the button) so the outside-click check
+  // covers both the toggle button and the emoji grid — clicking an emoji cell
+  // no longer closes the popup before the click handler fires.
+  const emojiWrapRef = useRef<HTMLSpanElement>(null);
 
   function applyWrap(kind: keyof typeof WRAPS): void {
     const ta = textareaRef.current;
@@ -223,7 +226,7 @@ export function FormatToolbar(props: FormatToolbarProps): JSX.Element {
   useEffect(() => {
     if (!showEmoji) return;
     const onDoc = (e: MouseEvent): void => {
-      if (emojiBtnRef.current?.contains(e.target as Node)) return;
+      if (emojiWrapRef.current?.contains(e.target as Node)) return;
       setShowEmoji(false);
     };
     document.addEventListener('mousedown', onDoc);
@@ -317,10 +320,9 @@ export function FormatToolbar(props: FormatToolbarProps): JSX.Element {
       >
         🔗
       </button>
-      <span className="fmt-emoji-wrap">
+      <span ref={emojiWrapRef} className="fmt-emoji-wrap">
         <button
           type="button"
-          ref={emojiBtnRef}
           className="fmt-btn fmt-emoji"
           title="Insert emoji"
           onMouseDown={(e) => e.preventDefault()}
@@ -382,3 +384,232 @@ export function handleFormatShortcut(
   });
   return true;
 }
+
+// ── RichEditor (WYSIWYG contentEditable compose box) ─────────────────────
+//
+// Replaces the textarea + FormatToolbar combo in the IM and Chat compose
+// areas. Formatting buttons apply visual effects directly (bold looks bold,
+// highlight looks highlighted) instead of inserting raw tag text.
+//
+// Wire serialisation: the DOM is walked on every change and converted back to
+// the same <b>/<i>/... tag format the server/peers expect, so the rest of the
+// codebase is unchanged.
+
+export type RichEditorHandle = {
+  /** Serialise current content to our wire tag format. */
+  getMarkup(): string;
+  /** Clear the editor and fire onMarkupChange('') */
+  clear(): void;
+  focus(): void;
+};
+
+export type RichEditorProps = {
+  placeholder?: string;
+  disabled?: boolean;
+  /** If true, Enter inserts a newline; otherwise Enter fires onEnter(). */
+  multiLine?: boolean;
+  onMarkupChange?: (markup: string) => void;
+  onEnter?: () => void;
+  style?: React.CSSProperties;
+};
+
+// Escape helpers for building HTML strings inserted via execCommand.
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Serialise a contentEditable element's DOM back to our wire tag format.
+function serializeContentEditable(el: HTMLElement | null): string {
+  if (!el) return '';
+  return serChildren(el).trim();
+}
+
+function serChildren(node: Node): string {
+  return Array.from(node.childNodes).map(serNode).join('');
+}
+
+function serNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  const el = node as HTMLElement;
+  const inner = serChildren(el);
+  switch (el.tagName) {
+    case 'B':
+    case 'STRONG':
+      return `<b>${inner}</b>`;
+    case 'I':
+    case 'EM':
+      return `<i>${inner}</i>`;
+    case 'U':
+      return `<u>${inner}</u>`;
+    case 'MARK':
+      return `<mark>${inner}</mark>`;
+    case 'SMALL':
+      return `<small>${inner}</small>`;
+    case 'BIG':
+      return `<big>${inner}</big>`;
+    case 'A': {
+      const href = el.getAttribute('href') ?? '';
+      if (URL_RE.test(href)) return `<a href="${escAttr(href)}">${inner}</a>`;
+      return inner;
+    }
+    case 'BR':
+      return '\n';
+    case 'DIV':
+    case 'P':
+      // Chromium wraps each new paragraph in <div> when Enter is pressed.
+      return inner + (el.nextSibling ? '\n' : '');
+    case 'SPAN': {
+      // execCommand may produce <span style="..."> in some Chromium versions.
+      const fw = el.style.fontWeight;
+      const fs = el.style.fontStyle;
+      const td = el.style.textDecoration;
+      let r = inner;
+      if (td.includes('underline')) r = `<u>${r}</u>`;
+      if (fs === 'italic') r = `<i>${r}</i>`;
+      if (fw === 'bold' || fw === '700') r = `<b>${r}</b>`;
+      return r;
+    }
+    default:
+      return inner;
+  }
+}
+
+export const RichEditor = React.forwardRef<RichEditorHandle, RichEditorProps>(
+  function RichEditor({ placeholder, disabled, multiLine, onMarkupChange, onEnter, style }, ref) {
+    const divRef = useRef<HTMLDivElement>(null);
+    const [showEmoji, setShowEmoji] = useState(false);
+    const emojiWrapRef = useRef<HTMLSpanElement>(null);
+
+    useImperativeHandle(ref, () => ({
+      getMarkup: () => serializeContentEditable(divRef.current),
+      clear: () => {
+        if (divRef.current) divRef.current.innerHTML = '';
+        onMarkupChange?.('');
+      },
+      focus: () => divRef.current?.focus(),
+    }));
+
+    function notify(): void {
+      onMarkupChange?.(serializeContentEditable(divRef.current));
+    }
+
+    // Bold/italic/underline use execCommand which handles toggle + selection.
+    function execFmt(cmd: string): void {
+      divRef.current?.focus();
+      document.execCommand(cmd);
+      notify();
+    }
+
+    // For mark/small/big: wrap the current selection in the given tags.
+    function wrapSel(tagOpen: string, tagClose: string): void {
+      const el = divRef.current;
+      if (!el) return;
+      el.focus();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!el.contains(range.commonAncestorContainer)) return;
+      const selectedText = range.toString();
+      if (!selectedText) return; // nothing selected — do nothing
+      document.execCommand('insertHTML', false, `${tagOpen}${escHtml(selectedText)}${tagClose}`);
+      notify();
+    }
+
+    function insertLink(): void {
+      const el = divRef.current;
+      if (!el) return;
+      el.focus();
+      const sel = window.getSelection();
+      const selectedText = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).toString() : '';
+      const url = window.prompt('Link URL (https://… or mailto:…):', 'https://');
+      if (!url) return;
+      if (!URL_RE.test(url)) {
+        window.alert('Only http(s):// and mailto: links are allowed.');
+        return;
+      }
+      const text = selectedText || window.prompt('Link text:', url) || url;
+      document.execCommand('insertHTML', false, `<a href="${escAttr(url)}">${escHtml(text)}</a>`);
+      notify();
+    }
+
+    function insertEmoji(emoji: string): void {
+      const el = divRef.current;
+      if (!el) return;
+      el.focus();
+      document.execCommand('insertText', false, emoji);
+      setShowEmoji(false);
+      notify();
+    }
+
+    // Close the emoji popover on outside click.
+    useEffect(() => {
+      if (!showEmoji) return;
+      const onDoc = (e: MouseEvent): void => {
+        if (emojiWrapRef.current?.contains(e.target as Node)) return;
+        setShowEmoji(false);
+      };
+      document.addEventListener('mousedown', onDoc);
+      return () => document.removeEventListener('mousedown', onDoc);
+    }, [showEmoji]);
+
+    return (
+      <div className="rich-editor-wrap">
+        <div className="format-toolbar" aria-disabled={disabled}>
+          <button type="button" className="fmt-btn fmt-bold" title="Bold (Ctrl/Cmd+B)"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => execFmt('bold')} disabled={disabled}>B</button>
+          <button type="button" className="fmt-btn fmt-italic" title="Italic (Ctrl/Cmd+I)"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => execFmt('italic')} disabled={disabled}>I</button>
+          <button type="button" className="fmt-btn fmt-underline" title="Underline (Ctrl/Cmd+U)"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => execFmt('underline')} disabled={disabled}>U</button>
+          <button type="button" className="fmt-btn fmt-highlight" title="Highlight"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => wrapSel('<mark>', '</mark>')} disabled={disabled}>H</button>
+          <span className="fmt-sep" />
+          <button type="button" className="fmt-btn fmt-size-sm" title="Smaller text"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => wrapSel('<small>', '</small>')} disabled={disabled}>A-</button>
+          <button type="button" className="fmt-btn fmt-size-md" title="Normal size"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => divRef.current?.focus()} disabled={disabled}>A</button>
+          <button type="button" className="fmt-btn fmt-size-lg" title="Bigger text"
+            onMouseDown={(e) => e.preventDefault()} onClick={() => wrapSel('<big>', '</big>')} disabled={disabled}>A+</button>
+          <span className="fmt-sep" />
+          <button type="button" className="fmt-btn fmt-link" title="Insert link"
+            onMouseDown={(e) => e.preventDefault()} onClick={insertLink} disabled={disabled}>🔗</button>
+          <span ref={emojiWrapRef} className="fmt-emoji-wrap">
+            <button type="button" className="fmt-btn fmt-emoji" title="Insert emoji"
+              onMouseDown={(e) => e.preventDefault()} onClick={() => setShowEmoji((v) => !v)} disabled={disabled}>😀</button>
+            {showEmoji && (
+              <div className="emoji-pop" role="menu">
+                {EMOJI.map((em) => (
+                  <button key={em} type="button" className="emoji-cell"
+                    onMouseDown={(ev) => ev.preventDefault()} onClick={() => insertEmoji(em)}>{em}</button>
+                ))}
+              </div>
+            )}
+          </span>
+        </div>
+        <div
+          ref={divRef}
+          className="chat-input rich-editor"
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          data-placeholder={placeholder}
+          style={style}
+          onInput={notify}
+          onKeyDown={(e) => {
+            if (!multiLine && e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onEnter?.();
+            }
+          }}
+        />
+      </div>
+    );
+  },
+);

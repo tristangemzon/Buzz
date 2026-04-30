@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileViewer } from '../../components/ProfilePanes';
-import { FormatToolbar, RichText, handleFormatShortcut } from '../../components/RichText';
+import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
 import { playSound, setSoundsEnabled } from '../../sounds/synth';
@@ -50,6 +50,7 @@ function App(): JSX.Element {
   const [messages, setMessages] = useState<ImMessage[]>([]);
   const [xfers, setXfers] = useState<XferCard[]>([]);
   const [draft, setDraft] = useState('');
+  const editorRef = useRef<RichEditorHandle>(null);
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
   const [awayMessage, setAwayMessage] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -61,7 +62,6 @@ function App(): JSX.Element {
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
   const logRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const talk = useTalk(peerId, { kind: 'voice' });
 
   function upsertXfer(updater: (list: XferCard[]) => XferCard[]): void {
@@ -208,12 +208,13 @@ function App(): JSX.Element {
       setErr('You have blocked this user. Unblock to send messages.');
       return;
     }
-    const body = draft.trim();
+    const body = (editorRef.current?.getMarkup() ?? '').trim();
     if (!body) return;
     setBusy(true);
     try {
       const m = await window.buzz.sendIm({ toPeerId: peerId, body });
       setMessages((prev) => [...prev, m]);
+      editorRef.current?.clear();
       setDraft('');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to send.');
@@ -274,14 +275,6 @@ function App(): JSX.Element {
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed.');
-    }
-  }
-
-  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    if (handleFormatShortcut(e, inputRef, draft, setDraft)) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void send();
     }
   }
 
@@ -367,20 +360,12 @@ function App(): JSX.Element {
       </div>
 
       <div className="bevel-in" style={{ margin: 6 }}>
-        <FormatToolbar
-          textareaRef={inputRef}
-          value={draft}
-          onChange={setDraft}
-          disabled={busy || blocked}
-        />
-        <textarea
-          ref={inputRef}
-          className="chat-input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKey}
+        <RichEditor
+          ref={editorRef}
           placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
           disabled={busy || blocked}
+          onMarkupChange={setDraft}
+          onEnter={() => void send()}
           style={{ width: '100%' }}
         />
       </div>
