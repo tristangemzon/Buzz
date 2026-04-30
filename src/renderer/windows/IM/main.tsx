@@ -370,18 +370,50 @@ function App(): JSX.Element {
         />
       </div>
 
-      <div className="toolbar">
-        <button onClick={() => void sendFile()} disabled={blocked} title="Send a file">
-          Send File
+      {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}
+
+      {/* ── AIM-style action bar ─────────────────────────────────────── */}
+      <div className="im-actionbar">
+        {/* Left: moderation */}
+        <button className="im-action-btn" onClick={() => void warn()} disabled={blocked} title="Raise warning level by 10%">
+          <span className="im-action-btn-icon">⚡</span>
+          <span className="im-action-btn-label">Warn</span>
+        </button>
+        <button className="im-action-btn" onClick={() => void toggleBlock()} title={blocked ? 'Unblock this user' : 'Block this user'}>
+          <span className="im-action-btn-icon">🚫</span>
+          <span className="im-action-btn-label">{blocked ? 'Unblock' : 'Block'}</span>
+        </button>
+
+        <span className="im-actionbar-sep" />
+
+        {/* Center: actions */}
+        <button className="im-action-btn" onClick={() => void sendFile()} disabled={blocked} title="Send a file">
+          <span className="im-action-btn-icon">📎</span>
+          <span className="im-action-btn-label">Send File</span>
+        </button>
+        <button className="im-action-btn" onClick={() => setShowProfile(true)} title="View profile">
+          <span className="im-action-btn-icon">👤</span>
+          <span className="im-action-btn-label">Profile</span>
+        </button>
+        <button className="im-action-btn" onClick={() => editorRef.current?.openEmojiPicker()} disabled={blocked} title="Expressions / Emoji">
+          <span className="im-action-btn-icon">🎭</span>
+          <span className="im-action-btn-label">Expressions</span>
+        </button>
+        <button className="im-action-btn" disabled title="Games (coming soon)">
+          <span className="im-action-btn-icon">🎲</span>
+          <span className="im-action-btn-label">Games</span>
         </button>
         <button
+          className="im-action-btn"
           onClick={() => void talk.startCall('voice')}
           disabled={blocked || (talk.call !== null && talk.call.state !== 'ended')}
           title="Start a voice call"
         >
-          Talk
+          <span className="im-action-btn-icon">🎙️</span>
+          <span className="im-action-btn-label">Talk</span>
         </button>
         <button
+          className="im-action-btn"
           onClick={async () => {
             await window.buzzWindows.openVideoCall(peerId);
             await window.buzz.talkInvite(peerId, 'video').catch(() => undefined);
@@ -389,21 +421,21 @@ function App(): JSX.Element {
           disabled={blocked}
           title="Start a video chat"
         >
-          Video
+          <span className="im-action-btn-icon">📹</span>
+          <span className="im-action-btn-label">Video</span>
         </button>
-        <button onClick={() => setShowProfile(true)} title="View profile">
-          Profile
-        </button>
-        <button onClick={() => void warn()} disabled={blocked} title="Raise warning level by 10%">
-          Warn
-        </button>
-        <button onClick={() => void toggleBlock()} title={blocked ? 'Unblock' : 'Block'}>
-          {blocked ? 'Unblock' : 'Block'}
-        </button>
-        <span className="error">{err}</span>
-        <span className="spacer" />
-        <button onClick={send} disabled={busy || blocked || draft.trim().length === 0}>
-          Send
+
+        <span className="im-actionbar-spacer" />
+
+        {/* Right: send */}
+        <button
+          className="im-action-btn send"
+          onClick={() => void send()}
+          disabled={busy || blocked || draft.trim().length === 0}
+          title="Send message"
+        >
+          <span className="im-action-btn-icon">📨</span>
+          <span className="im-action-btn-label">Send</span>
         </button>
       </div>
 

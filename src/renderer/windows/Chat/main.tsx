@@ -368,7 +368,7 @@ function App(): JSX.Element {
 
           {err && <div style={{ color: '#a00', padding: '4px 8px', fontSize: 11 }}>{err}</div>}
 
-          <div className="im-composer" style={{ display: 'flex', flexDirection: 'column', padding: 8, gap: 6 }}>
+          <div className="im-composer" style={{ display: 'flex', flexDirection: 'column', padding: '8px 8px 0' }}>
             <RichEditor
               ref={editorRef}
               placeholder={activeChannel ? `Message #${activeChannel.name}…` : 'Select a channel…'}
@@ -376,11 +376,33 @@ function App(): JSX.Element {
               onMarkupChange={setDraft}
               onEnter={() => void send()}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => void send()} disabled={busy || !draft.trim() || !activeChannelId}>
-                Send
-              </button>
-            </div>
+          </div>
+
+          {/* AIM-style action bar */}
+          <div className="im-actionbar">
+            <button
+              className="im-action-btn"
+              onClick={() => editorRef.current?.openEmojiPicker()}
+              disabled={!activeChannelId}
+              title="Expressions / Emoji"
+            >
+              <span className="im-action-btn-icon">🎭</span>
+              <span className="im-action-btn-label">Expressions</span>
+            </button>
+            <button className="im-action-btn" disabled title="Games (coming soon)">
+              <span className="im-action-btn-icon">🎲</span>
+              <span className="im-action-btn-label">Games</span>
+            </button>
+            <span className="im-actionbar-spacer" />
+            <button
+              className="im-action-btn send"
+              onClick={() => void send()}
+              disabled={busy || !draft.trim() || !activeChannelId}
+              title="Send message"
+            >
+              <span className="im-action-btn-icon">📨</span>
+              <span className="im-action-btn-label">Send</span>
+            </button>
           </div>
             </>
           )}

@@ -401,6 +401,8 @@ export type RichEditorHandle = {
   /** Clear the editor and fire onMarkupChange('') */
   clear(): void;
   focus(): void;
+  /** Open the emoji picker (can be called from a parent action bar). */
+  openEmojiPicker(): void;
 };
 
 export type RichEditorProps = {
@@ -495,6 +497,7 @@ export const RichEditor = React.forwardRef<RichEditorHandle, RichEditorProps>(
         onMarkupChange?.('');
       },
       focus: () => divRef.current?.focus(),
+      openEmojiPicker: () => setShowEmoji(true),
     }));
 
     function notify(): void {
