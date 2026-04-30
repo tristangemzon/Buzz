@@ -61,6 +61,15 @@ import type {
 
 export type Platform = 'mac' | 'windows' | 'linux';
 
+export type UpdateStatus =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'not-available'; currentVersion: string }
+  | { phase: 'available'; version: string }
+  | { phase: 'downloading'; percent: number }
+  | { phase: 'downloaded'; version: string }
+  | { phase: 'error'; message: string };
+
 export type AppApi = {
   // auth
   hasIdentity(): Promise<boolean>;
@@ -181,6 +190,14 @@ export type AppApi = {
   onTalkAudio(cb: (e: TalkAudioEvent) => void): () => void;
   onTalkVideo(cb: (e: TalkVideoEvent) => void): () => void;
   onTalkVideoState(cb: (e: TalkVideoStateEvent) => void): () => void;
+
+  // auto-updates
+  updatesCheck(): Promise<UpdateStatus>;
+  updatesDownload(): Promise<void>;
+  updatesInstall(): Promise<void>;
+  updatesGetStatus(): Promise<UpdateStatus>;
+  updatesGetVersion(): Promise<string>;
+  onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;
 };
 
 declare global {

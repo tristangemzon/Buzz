@@ -20,6 +20,7 @@ import type {
   SelfPresence,
   UnreadCounts,
 } from '@shared/schemas';
+import type { UpdateStatus } from '@shared/types';
 
 function App(): JSX.Element {
   const [me, setMe] = useState<{ peerId: string; buddyCode: string; screenName: string } | null>(
@@ -47,6 +48,9 @@ function App(): JSX.Element {
   const [showMailbox, setShowMailbox] = useState(false);
   const [mailbox, setMailbox] = useState<MailboxStats | null>(null);
   const [relayInput, setRelayInput] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: 'idle' });
+  const [appVersion, setAppVersion] = useState('');
   const [viewProfile, setViewProfile] = useState<{ peerId: string; alias: string } | null>(null);
   const [ctx, setCtx] = useState<{ peerId: string; x: number; y: number } | null>(null);
   // Auto-discovered LAN peers that aren't in the buddy list yet.
@@ -125,6 +129,9 @@ function App(): JSX.Element {
         void window.buzzWindows.openIm(e.peerId);
       }
     });
+    const offUpdateStatus = window.buzz.onUpdateStatus((s: UpdateStatus) => setUpdateStatus(s));
+    void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
+    void window.buzz.updatesGetVersion().then(setAppVersion).catch(() => undefined);
     return () => {
       off();
       offInvited();
@@ -134,6 +141,7 @@ function App(): JSX.Element {
       offBuddyResolved();
       offUnread();
       offTalkInvite();
+      offUpdateStatus();
     };
   }, []);
 
@@ -504,6 +512,16 @@ function App(): JSX.Element {
         <button className="bl-action-btn" title="Toggle sounds" onClick={toggleSounds}>
           {soundsOn ? '🔊' : '🔇'}
         </button>
+        <button
+          className="bl-action-btn"
+          title="Settings"
+          onClick={() => {
+            void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
+            setShowSettings(true);
+          }}
+        >
+          ⚙️
+        </button>
         <span className="bl-actionbar-spacer" />
         <button className="bl-action-btn bl-signoff" title="Sign Off" onClick={signOff}>
           Sign Off
@@ -734,6 +752,25 @@ function App(): JSX.Element {
         </Modal>
       )}
 
+      {showSettings && (
+        <Modal title="Settings" onClose={() => setShowSettings(false)}>
+          <SettingsPanel
+            updateStatus={updateStatus}
+            appVersion={appVersion}
+            onCheckNow={async () => {
+              const s = await window.buzz.updatesCheck();
+              setUpdateStatus(s);
+            }}
+            onDownload={async () => {
+              await window.buzz.updatesDownload();
+            }}
+            onInstall={() => {
+              void window.buzz.updatesInstall();
+            }}
+          />
+        </Modal>
+      )}
+
       {ctx && (() => {
         const b = buddies.find((x) => x.peerId === ctx.peerId);
         if (!b) return null;
@@ -767,6 +804,62 @@ function App(): JSX.Element {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+function SettingsPanel(props: {
+  updateStatus: UpdateStatus;
+  appVersion: string;
+  onCheckNow: () => Promise<void>;
+  onDownload: () => Promise<void>;
+  onInstall: () => void;
+}): JSX.Element {
+  const { updateStatus, appVersion, onCheckNow, onDownload, onInstall } = props;
+
+  function statusLine(): string {
+    switch (updateStatus.phase) {
+      case 'idle': return appVersion ? `Version ${appVersion}` : 'Up to date';
+      case 'checking': return 'Checking for updates…';
+      case 'not-available': return `Up to date (${updateStatus.currentVersion})`;
+      case 'available': return `Update available: v${updateStatus.version}`;
+      case 'downloading': return `Downloading… ${updateStatus.percent}%`;
+      case 'downloaded': return `v${updateStatus.version} ready to install`;
+      case 'error': return `Error: ${updateStatus.message}`;
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* ── Auto-updates ── */}
+      <div className="settings-section">
+        <div className="settings-section-title">Auto-Updates</div>
+        <div className="settings-status-line">{statusLine()}</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+          {(updateStatus.phase === 'idle' ||
+            updateStatus.phase === 'not-available' ||
+            updateStatus.phase === 'error') && (
+            <button onClick={() => void onCheckNow()}>Check Now</button>
+          )}
+          {updateStatus.phase === 'available' && (
+            <button onClick={() => void onDownload()}>Download Update</button>
+          )}
+          {updateStatus.phase === 'downloaded' && (
+            <button onClick={onInstall}>Install &amp; Restart</button>
+          )}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 6 }}>
+          Updates are downloaded from the official{' '}
+          <a
+            href="https://github.com/tristangemzon/Buzz/releases"
+            onClick={(e) => { e.preventDefault(); }}
+            style={{ color: 'inherit' }}
+          >
+            GitHub Releases
+          </a>{' '}
+          page and verified by a cryptographic hash before install.
+        </div>
+      </div>
     </div>
   );
 }

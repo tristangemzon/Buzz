@@ -111,6 +111,13 @@ const api: AppApi = {
   onTalkAudio: (cb) => on(IPC.EvtTalkAudio, cb),
   onTalkVideo: (cb) => on(IPC.EvtTalkVideo, cb),
   onTalkVideoState: (cb) => on(IPC.EvtTalkVideoState, cb),
+
+  updatesCheck: () => ipcRenderer.invoke(IPC.UpdatesCheck),
+  updatesDownload: () => ipcRenderer.invoke(IPC.UpdatesDownload),
+  updatesInstall: () => ipcRenderer.invoke(IPC.UpdatesInstall),
+  updatesGetStatus: () => ipcRenderer.invoke(IPC.UpdatesGetStatus),
+  updatesGetVersion: () => ipcRenderer.invoke(IPC.UpdatesGetVersion),
+  onUpdateStatus: (cb) => on(IPC.EvtUpdateStatus, cb),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

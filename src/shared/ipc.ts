@@ -115,6 +115,14 @@ export const IPC = {
   EvtTalkAudio: 'evt:talkAudio',
   EvtTalkVideo: 'evt:talkVideo',
   EvtTalkVideoState: 'evt:talkVideoState',
+
+  // auto-update (electron-updater / GitHub Releases)
+  UpdatesCheck: 'updates:check',
+  UpdatesDownload: 'updates:download',
+  UpdatesInstall: 'updates:install',
+  UpdatesGetStatus: 'updates:getStatus',
+  UpdatesGetVersion: 'updates:getVersion',
+  EvtUpdateStatus: 'evt:updateStatus',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

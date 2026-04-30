@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc/handlers.js';
 import { Session } from './session.js';
 import { migrateLegacy } from './profiles.js';
+import { initUpdater, registerUpdaterIpc } from './updater.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -295,6 +296,16 @@ app.whenReady().then(() => {
   });
 
   openSignOn();
+
+  // Auto-updater: set up IPC handles and broadcast update events to all
+  // open renderer windows. The initUpdater callback fires on every status
+  // change (checking / available / downloading / downloaded / error).
+  registerUpdaterIpc();
+  initUpdater((status) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('evt:updateStatus', status);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {

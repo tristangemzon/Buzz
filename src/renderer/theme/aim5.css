@@ -287,6 +287,26 @@ button:disabled {
   padding: 2px 8px;
 }
 
+/* ── Settings panel ────────────────────────────────────────────────── */
+.settings-section {
+  border: 1px solid var(--c-border, #b0aead);
+  border-radius: 2px;
+  padding: 8px;
+  background: var(--c-input-bg, #fff);
+}
+.settings-section-title {
+  font-weight: bold;
+  font-size: 11px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+.settings-status-line {
+  font-size: 12px;
+  min-height: 16px;
+}
+
 .buddylist-split {
   display: flex;
   flex-direction: column;
