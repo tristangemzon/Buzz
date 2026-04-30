@@ -19,6 +19,7 @@ import { XferService } from './p2p/xfer.js';
 import { TalkService } from './p2p/talk.js';
 import { buddyCodeFor, createNode } from './p2p/node.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
+import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
 import { IPC } from '@shared/ipc.js';
 import type {
   ImAckEvent,
@@ -62,6 +63,7 @@ export class Session {
   rooms: RoomService | null = null;
   mailbox: MailboxService | null = null;
   talk: TalkService | null = null;
+  hiveClient: HiveClient | null = null;
   // Single active voice call. MVP: at most one call at a time across the app.
   private currentCall: TalkCallState | null = null;
   // Decoded room keys keyed by roomId. Populated on bringUp from DB and on
@@ -202,6 +204,10 @@ export class Session {
     if (this.mailbox) await this.mailbox.stop().catch(() => undefined);
     this.mailbox = null;
     this.talk = null;
+    if (this.hiveClient) {
+      this.hiveClient.disconnect();
+      this.hiveClient = null;
+    }
     this.currentCall = null;
     this.roomKeys.clear();
     this.roomMembers.clear();
@@ -212,11 +218,13 @@ export class Session {
   }
 
   buddyCode(): string {
+    if (this.hiveClient) return this.hiveClient.getPeerId();
     if (!this.node) throw new Error('Locked');
     return buddyCodeFor(this.node.peerId);
   }
 
   peerIdStr(): string {
+    if (this.hiveClient) return this.hiveClient.getPeerId();
     if (!this.node) throw new Error('Locked');
     return this.node.peerId.toString();
   }
@@ -233,6 +241,13 @@ export class Session {
 
     // Establish identity row in DB.
     const network = loadNetworkConfig();
+
+    // ── Server mode: use HiveClient instead of libp2p ──────────────────────
+    if (network.mode === 'server' && network.serverUrl) {
+      await this.bringUpHive(id, network.serverUrl, screenNameIfNew);
+      return;
+    }
+
     const node = await createNode({ identity: id, network });
     this.node = node;
     const peerIdStr = node.peerId.toString();
@@ -699,6 +714,202 @@ export class Session {
     // Best-effort initial poll. Don't block bringUp on it — relays may be
     // unreachable; the periodic timer will retry.
     void this.mailbox.pollAll().catch(() => undefined);
+
+    this.state = 'unlocked';
+  }
+
+  /**
+   * Server-mode bringUp: use HiveClient instead of the entire libp2p stack.
+   * libp2p node, ImService, PresenceManager, XferService, TalkService,
+   * MailboxService are all NOT started.
+   */
+  private async bringUpHive(
+    id: IdentityMaterial,
+    serverUrl: string,
+    screenNameIfNew: string,
+  ): Promise<void> {
+    const db = this.db!;
+
+    // Resolve identity from DB (no node.peerId yet — client sets it after auth).
+    const existing = repos.getIdentity(db);
+    if (existing) {
+      this.screenName = existing.screenName;
+    } else {
+      this.screenName = screenNameIfNew || 'Buddy';
+    }
+    if (screenNameIfNew && existing) {
+      this.screenName = screenNameIfNew;
+    }
+
+    const prefs = repos.getPrefs(db);
+    const cbs: HiveCallbacks = {
+      onAuthed: (peerId, buddies, pendingRequests, pubKeys) => {
+        // Now we know our peerId — store identity row in DB.
+        if (!repos.getIdentity(db)) {
+          repos.setIdentity(db, peerId, this.screenName);
+        } else if (screenNameIfNew) {
+          repos.setIdentity(db, peerId, this.screenName);
+        }
+        // Emit buddy list to renderers.
+        for (const b of buddies) {
+          const ev: BuddyStatusEvent = { peerId: b.peerId, status: b.status, awayMessage: b.awayMessage };
+          this.peerStatuses.set(b.peerId, ev);
+          this.broadcast(IPC.EvtBuddyStatus, ev);
+        }
+        // Emit any pending buddy requests as BuddyRequestEvent so the buddy-list
+        // renderer can show them.
+        for (const req of pendingRequests) {
+          if (req.direction === 'in') {
+            this.broadcast(IPC.EvtBuddyRequest, {
+              kind: 'incoming',
+              request: { peerId: req.peerId, screenName: req.screenName, direction: 'in', ts: req.createdAt },
+            } satisfies BuddyRequestEvent);
+          }
+        }
+      },
+      onConnected: () => {
+        // Send our current status to the server.
+        this.hiveClient?.setStatus(prefs.lastStatus === 'invisible' ? 'invisible' : 'online', prefs.awayMessage || undefined);
+      },
+      onDisconnected: () => {
+        // Notify renderers that the server connection dropped.
+        this.broadcast(IPC.EvtError, { message: 'Disconnected from Hive server. Reconnecting…' });
+      },
+      onError: (err) => {
+        console.error('[hive-client]', err.message);
+      },
+      onBuddyStatus: (peerId, status, awayMessage) => {
+        const ev: BuddyStatusEvent = { peerId, status, awayMessage };
+        this.peerStatuses.set(peerId, ev);
+        this.broadcast(IPC.EvtBuddyStatus, ev);
+      },
+      onBuddyList: (buddies, _pubKeys) => {
+        for (const b of buddies) {
+          const ev: BuddyStatusEvent = { peerId: b.peerId, status: b.status, awayMessage: b.awayMessage };
+          this.peerStatuses.set(b.peerId, ev);
+          this.broadcast(IPC.EvtBuddyStatus, ev);
+        }
+      },
+      onBuddyRequest: (peerId, screenName) => {
+        this.broadcast(IPC.EvtBuddyRequest, {
+          kind: 'incoming',
+          request: { peerId, screenName, direction: 'in', ts: Date.now() },
+        } satisfies BuddyRequestEvent);
+      },
+      onBuddyResponse: (peerId, accepted, _screenName) => {
+        this.broadcast(IPC.EvtBuddyRequestResolved, { peerId, accepted } satisfies BuddyRequestResolvedEvent);
+      },
+      onMessage: (fromPeerId, msgId, ts, cipherB64) => {
+        if (!this.hiveClient) return;
+        if (repos.isBlocked(db, fromPeerId)) {
+          this.hiveClient.sendAck(msgId);
+          return;
+        }
+        // Decrypt sealed_box.
+        const body = this.hiveClient.openMessage(cipherB64);
+        if (!body) return;
+        const networkCfg = loadNetworkConfig();
+        const shouldCache = networkCfg.serverCacheEnabled;
+        const msg: ImReceivedEvent = {
+          id: msgId,
+          peerId: fromPeerId,
+          direction: 'in',
+          ts,
+          body,
+          status: 'delivered',
+        };
+        if (shouldCache) {
+          repos.insertMessage(db, msg);
+        }
+        this.hiveClient.sendAck(msgId);
+        this.broadcast(IPC.EvtImReceived, msg);
+        this.broadcastUnread();
+      },
+      onAck: (msgId) => {
+        repos.setMessageStatus(db, msgId, 'delivered');
+        this.broadcast(IPC.EvtImAck, { id: msgId, status: 'delivered' } satisfies ImAckEvent);
+      },
+      onRoomInvite: (invite) => {
+        repos.upsertRoom(db, {
+          id: invite.id,
+          name: invite.name,
+          keyB64: invite.keyEnvelopeB64,
+          createdAt: Date.now(),
+        });
+        repos.setRoomMembers(db, invite.id, invite.members);
+        for (const ch of invite.channels) {
+          repos.upsertRoomChannel(db, {
+            id: ch.id,
+            roomId: invite.id,
+            name: ch.name,
+            kind: ch.kind ?? 'text',
+            isDefault: ch.name === 'general',
+            createdAt: Date.now(),
+          });
+        }
+        this.roomMembers.set(invite.id, [...invite.members]);
+        this.broadcast(IPC.EvtRoomInvited, {
+          roomId: invite.id,
+          name: invite.name,
+          fromPeerId: invite.from,
+          members: invite.members,
+        } satisfies RoomInvitedEvent);
+      },
+      onRoomMsg: (roomId, channelId, fromPeerId, msgId, ts, cipherB64) => {
+        // Room messages are secretbox-encrypted; the body IS the ciphertext from our perspective.
+        // For Hive server mode, store cipher and surface as-is — renderers decrypt using room key.
+        const networkCfg = loadNetworkConfig();
+        if (networkCfg.serverCacheEnabled) {
+          const stored: RoomMessage = {
+            id: msgId,
+            roomId,
+            channelId,
+            fromPeerId,
+            fromName: '',
+            direction: fromPeerId === (this.hiveClient?.getPeerId() ?? '') ? 'out' : 'in',
+            ts,
+            body: cipherB64,
+          };
+          repos.insertRoomMessage(db, stored);
+          this.broadcast(IPC.EvtRoomMessage, stored);
+        } else {
+          this.broadcast(IPC.EvtRoomMessage, {
+            id: msgId, roomId, channelId, fromPeerId, fromName: '',
+            direction: 'in', ts, body: cipherB64,
+          } satisfies RoomMessage);
+        }
+        this.broadcastUnread();
+      },
+      onRoomMemberJoin: (roomId, peerId, screenName) => {
+        const members = [...(this.roomMembers.get(roomId) ?? [])];
+        if (!members.includes(peerId)) members.push(peerId);
+        this.roomMembers.set(roomId, members);
+        repos.setRoomMembers(db, roomId, members);
+        this.broadcast(IPC.EvtRoomMembers, { roomId, members } satisfies RoomMembersEvent);
+        // Also synthesize a presence event so they show as online in buddy list.
+        this.broadcast(IPC.EvtBuddyStatus, { peerId, status: 'online' } satisfies BuddyStatusEvent);
+        void screenName; // suppress unused-var warning
+      },
+      onRoomMemberLeave: (roomId, peerId) => {
+        const members = (this.roomMembers.get(roomId) ?? []).filter((id) => id !== peerId);
+        this.roomMembers.set(roomId, members);
+        repos.setRoomMembers(db, roomId, members);
+        this.broadcast(IPC.EvtRoomMembers, { roomId, members } satisfies RoomMembersEvent);
+      },
+      onTalkSignal: (from, callId, signal, payload) => {
+        // Re-use the same talk signal IPC so renderers don't need to know about Hive.
+        this.broadcast(IPC.EvtTalkState, { from, callId, signal, payload });
+      },
+      onTalkAudio: (from, callId, buf) => {
+        this.handleTalkAudio(from, callId, 0, buf);
+      },
+      onTalkVideo: (from, callId, buf) => {
+        this.handleTalkVideo(from, callId, 0, buf);
+      },
+    };
+
+    this.hiveClient = new HiveClient(id, serverUrl, this.screenName, cbs);
+    await this.hiveClient.connect();
 
     this.state = 'unlocked';
   }
