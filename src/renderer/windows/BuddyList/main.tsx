@@ -53,6 +53,10 @@ function App(): JSX.Element {
   const [appVersion, setAppVersion] = useState('');
   const [viewProfile, setViewProfile] = useState<{ peerId: string; alias: string } | null>(null);
   const [ctx, setCtx] = useState<{ peerId: string; x: number; y: number } | null>(null);
+  const [roomCtx, setRoomCtx] = useState<{ roomId: string; x: number; y: number } | null>(null);
+  // Invite-to-room sub-flow: which room we're inviting into.
+  const [roomCtxInvite, setRoomCtxInvite] = useState<{ roomId: string; roomName: string } | null>(null);
+  const [roomInvitePeerId, setRoomInvitePeerId] = useState('');
   // Auto-discovered LAN peers that aren't in the buddy list yet.
   const [nearby, setNearby] = useState<DiscoveredPeer[]>([]);
   // Pending buddy add requests (both directions).
@@ -285,6 +289,36 @@ function App(): JSX.Element {
     await refreshBuddies();
   }
 
+  function openRoomCtx(e: React.MouseEvent, roomId: string): void {
+    e.preventDefault();
+    setRoomCtx({ roomId, x: e.clientX, y: e.clientY });
+  }
+
+  async function ctxLeaveRoom(roomId: string): Promise<void> {
+    setRoomCtx(null);
+    if (!confirm('Leave this chat room? It will be removed from your list.')) return;
+    await window.buzz.leaveRoom({ roomId });
+    setRooms((prev) => prev.filter((r) => r.id !== roomId));
+  }
+
+  function ctxOpenInviteRoom(roomId: string): void {
+    setRoomCtx(null);
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    setRoomInvitePeerId('');
+    setRoomCtxInvite({ roomId, roomName: room.name });
+  }
+
+  async function commitRoomInvite(): Promise<void> {
+    if (!roomCtxInvite || !roomInvitePeerId) return;
+    try {
+      await window.buzz.inviteToRoom({ roomId: roomCtxInvite.roomId, peerId: roomInvitePeerId });
+      setRoomCtxInvite(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to invite.');
+    }
+  }
+
   return (
     <div className="window">
       <WindowChrome
@@ -460,7 +494,8 @@ function App(): JSX.Element {
                   className="row"
                   key={r.id}
                   onDoubleClick={() => void window.buzzWindows.openChat(r.id)}
-                  title={`${r.members.length} member(s)`}
+                  onContextMenu={(e) => openRoomCtx(e, r.id)}
+                  title={`${r.members.length} member(s) — right-click for options`}
                 >
                   <span className="room-glyph">#</span>
                   {r.name}
@@ -769,6 +804,60 @@ function App(): JSX.Element {
             }}
           />
         </Modal>
+      )}
+
+      {/* ── Room context menu ────────────────────────────────────────── */}
+      {roomCtx && (() => {
+        const room = rooms.find((r) => r.id === roomCtx.roomId);
+        if (!room) return null;
+        return (
+          <>
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+              onClick={() => setRoomCtx(null)}
+              onContextMenu={(e) => { e.preventDefault(); setRoomCtx(null); }}
+            />
+            <div className="ctx-menu" style={{ left: roomCtx.x, top: roomCtx.y }}>
+              <button onClick={() => { setRoomCtx(null); void window.buzzWindows.openChat(room.id); }}>Open</button>
+              <button onClick={() => ctxOpenInviteRoom(room.id)}>Invite Buddy…</button>
+              <div className="sep" />
+              <button onClick={() => void ctxLeaveRoom(room.id)}>Leave Room</button>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* ── Invite-to-room picker ─────────────────────────────────────── */}
+      {roomCtxInvite && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+            onClick={() => setRoomCtxInvite(null)}
+            onContextMenu={(e) => { e.preventDefault(); setRoomCtxInvite(null); }}
+          />
+          <div className="ctx-menu" style={{ minWidth: 200, padding: 8, zIndex: 1000 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 6, fontSize: 11 }}>
+              Invite to #{roomCtxInvite.roomName}
+            </div>
+            <select
+              style={{ width: '100%', marginBottom: 6 }}
+              value={roomInvitePeerId}
+              onChange={(e) => setRoomInvitePeerId(e.target.value)}
+              size={Math.min(buddies.length + 1, 8)}
+            >
+              <option value="">— select a buddy —</option>
+              {buddies
+                .filter((b) => !rooms.find((r) => r.id === roomCtxInvite.roomId)?.members.includes(b.peerId))
+                .map((b) => (
+                  <option key={b.peerId} value={b.peerId}>{b.alias}</option>
+                ))}
+            </select>
+            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+              <button onClick={() => setRoomCtxInvite(null)}>Cancel</button>
+              <button disabled={!roomInvitePeerId} onClick={() => void commitRoomInvite()}>Invite</button>
+            </div>
+          </div>
+        </>
       )}
 
       {ctx && (() => {
