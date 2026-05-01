@@ -93,6 +93,8 @@ function App(): JSX.Element {
     });
 
     playSound('door-open');
+    function handleBeforeUnload(): void { playSound('door-close'); }
+    window.addEventListener('beforeunload', handleBeforeUnload);
     // Mark room as read on open.
     void window.buzz.markRoomRead(roomId).catch(() => undefined);
 
@@ -138,7 +140,7 @@ function App(): JSX.Element {
       offMembers();
       offInvited();
       offChannel();
-      playSound('door-close');
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);

@@ -66,6 +66,7 @@ function App(): JSX.Element {
   const [requests, setRequests] = useState<BuddyRequest[]>([]);
   // Unread message counters per peer / per room.
   const [unread, setUnread] = useState<UnreadCounts>({ peers: {}, rooms: {} });
+  const [signingOff, setSigningOff] = useState(false);
   // Track last seen status per peer so we can play buddy-in / buddy-out
   // only on actual transitions (not on every duplicate broadcast).
   const prevStatusRef = useRef<Record<string, Status>>({});
@@ -244,9 +245,16 @@ function App(): JSX.Element {
   }
 
   async function signOff(): Promise<void> {
+    if (signingOff) return;
+    setSigningOff(true);
     logoutSoundPlayedRef.current = true;
     playSound('logout');
-    await window.buzz.lock();
+    try {
+      await window.buzz.lock();
+    } catch {
+      setSigningOff(false);
+      return;
+    }
     window.close();
   }
 
@@ -598,7 +606,7 @@ function App(): JSX.Element {
           ⚙️
         </button>
         <span className="bl-actionbar-spacer" />
-        <button className="bl-action-btn bl-signoff" title="Sign Off" onClick={signOff}>
+        <button className="bl-action-btn bl-signoff" title="Sign Off" onClick={signOff} disabled={signingOff}>
           Sign Off
         </button>
       </div>

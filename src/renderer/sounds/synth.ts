@@ -126,64 +126,73 @@ export function playSound(cue: Cue): void {
   // Buzz scheme: synthesized tones via Web Audio
   const c = ensureCtx();
   if (!c) return;
-  // Resuming is required if the context was suspended (some browsers
-  // suspend until a user gesture). Tolerate failure silently.
-  if (c.state === 'suspended') void c.resume().catch(() => undefined);
 
-  const t = c.currentTime + 0.005;
-  switch (cue) {
-    case 'login':
-      // Three rising welcome chimes.
-      beep(c, 660, t, 0.14, 'sine');
-      beep(c, 880, t + 0.13, 0.14, 'sine');
-      beep(c, 1175, t + 0.26, 0.24, 'sine');
-      break;
-    case 'logout':
-      // Three descending farewell notes.
-      beep(c, 988, t, 0.14, 'sine');
-      beep(c, 784, t + 0.13, 0.14, 'sine');
-      beep(c, 523, t + 0.26, 0.24, 'sine');
-      break;
-    case 'door-open':
-      // Two ascending notes — a friendly "ding".
-      beep(c, 660, t, 0.12, 'sine');
-      beep(c, 988, t + 0.10, 0.18, 'sine');
-      break;
-    case 'door-close':
-      // Two descending notes — softer.
-      beep(c, 660, t, 0.12, 'sine');
-      beep(c, 440, t + 0.10, 0.20, 'sine');
-      break;
-    case 'buddy-in':
-      // Quick double-beep, ascending.
-      beep(c, 880, t, 0.08, 'square', 0.12);
-      beep(c, 1175, t + 0.09, 0.10, 'square', 0.12);
-      break;
-    case 'buddy-out':
-      // Quick double-beep, descending.
-      beep(c, 880, t, 0.08, 'square', 0.12);
-      beep(c, 587, t + 0.09, 0.10, 'square', 0.12);
-      break;
-    case 'im-receive':
-      // Single short "boop" reminiscent of AIM's IM tone.
-      beep(c, 988, t, 0.10, 'triangle', 0.16);
-      beep(c, 1320, t + 0.08, 0.10, 'triangle', 0.14);
-      break;
-    case 'mail':
-      // Three rising chimes — for the future offline-mail cue.
-      beep(c, 784, t, 0.18, 'sine');
-      beep(c, 988, t + 0.16, 0.18, 'sine');
-      beep(c, 1175, t + 0.32, 0.30, 'sine');
-      break;
-    case 'ring':
-      // Classic two‑tone phone ring: a pair of beeps repeated.
-      beep(c, 480, t, 0.4, 'sine', 0.18);
-      beep(c, 620, t, 0.4, 'sine', 0.18);
-      beep(c, 480, t + 0.5, 0.4, 'sine', 0.18);
-      beep(c, 620, t + 0.5, 0.4, 'sine', 0.18);
-      break;
-    case 'error':
-      glide(c, 440, 220, t, 0.18, 'sawtooth', 0.14);
-      break;
+  // Schedule all oscillators for this cue at c.currentTime + 0.005.
+  // Must be called only when the context is running so currentTime is live.
+  function schedule(): void {
+    const t = c!.currentTime + 0.005;
+    switch (cue) {
+      case 'login':
+        // Three rising welcome chimes.
+        beep(c!, 660, t, 0.14, 'sine');
+        beep(c!, 880, t + 0.13, 0.14, 'sine');
+        beep(c!, 1175, t + 0.26, 0.24, 'sine');
+        break;
+      case 'logout':
+        // Three descending farewell notes.
+        beep(c!, 988, t, 0.14, 'sine');
+        beep(c!, 784, t + 0.13, 0.14, 'sine');
+        beep(c!, 523, t + 0.26, 0.24, 'sine');
+        break;
+      case 'door-open':
+        // Two ascending notes — a friendly "ding".
+        beep(c!, 660, t, 0.12, 'sine');
+        beep(c!, 988, t + 0.10, 0.18, 'sine');
+        break;
+      case 'door-close':
+        // Two descending notes — softer.
+        beep(c!, 660, t, 0.12, 'sine');
+        beep(c!, 440, t + 0.10, 0.20, 'sine');
+        break;
+      case 'buddy-in':
+        // Quick double-beep, ascending.
+        beep(c!, 880, t, 0.08, 'square', 0.12);
+        beep(c!, 1175, t + 0.09, 0.10, 'square', 0.12);
+        break;
+      case 'buddy-out':
+        // Quick double-beep, descending.
+        beep(c!, 880, t, 0.08, 'square', 0.12);
+        beep(c!, 587, t + 0.09, 0.10, 'square', 0.12);
+        break;
+      case 'im-receive':
+        // Single short "boop" reminiscent of AIM's IM tone.
+        beep(c!, 988, t, 0.10, 'triangle', 0.16);
+        beep(c!, 1320, t + 0.08, 0.10, 'triangle', 0.14);
+        break;
+      case 'mail':
+        // Three rising chimes — for the future offline-mail cue.
+        beep(c!, 784, t, 0.18, 'sine');
+        beep(c!, 988, t + 0.16, 0.18, 'sine');
+        beep(c!, 1175, t + 0.32, 0.30, 'sine');
+        break;
+      case 'ring':
+        // Classic two‑tone phone ring: a pair of beeps repeated.
+        beep(c!, 480, t, 0.4, 'sine', 0.18);
+        beep(c!, 620, t, 0.4, 'sine', 0.18);
+        beep(c!, 480, t + 0.5, 0.4, 'sine', 0.18);
+        beep(c!, 620, t + 0.5, 0.4, 'sine', 0.18);
+        break;
+      case 'error':
+        glide(c!, 440, 220, t, 0.18, 'sawtooth', 0.14);
+        break;
+    }
+  }
+
+  // If the context is suspended (no prior user gesture in this window),
+  // resume it first so that currentTime is live when we schedule.
+  if (c.state === 'suspended') {
+    void c.resume().then(schedule).catch(() => undefined);
+  } else {
+    schedule();
   }
 }

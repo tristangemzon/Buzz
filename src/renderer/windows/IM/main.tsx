@@ -159,8 +159,12 @@ function App(): JSX.Element {
       })
       .catch(() => undefined);
 
-    // Door open on conversation focus; close on unmount.
+    // Door open when this conversation window comes alive; door close when
+    // it is torn down.  We use beforeunload instead of the React cleanup
+    // return because Electron destroys the renderer before React can unmount.
     playSound('door-open');
+    function handleBeforeUnload(): void { playSound('door-close'); }
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     const offRecv = window.buzz.onImReceived((m) => {
       if (m.peerId !== peerId) return;
@@ -241,7 +245,7 @@ function App(): JSX.Element {
       offDone();
       offPeerProfile();
       offGameInvite();
-      playSound('door-close');
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);
 
