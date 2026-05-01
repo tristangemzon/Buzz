@@ -984,12 +984,22 @@ html[data-chat-theme='balloons'] .chat-log {
   flex: 0 0 28px;
   background: #ddd;
 }
+/* Wrapper that takes the remaining row width after the avatar. */
+.bubble-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.bubble-row.out .bubble-content {
+  align-items: flex-end;
+}
 .bubble {
   position: relative;
   padding: 6px 10px;
   border-radius: 14px;
   max-width: 80%;
-  flex-shrink: 0;
   word-wrap: break-word;
   white-space: pre-wrap;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);

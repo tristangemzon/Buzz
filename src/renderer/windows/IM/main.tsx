@@ -372,7 +372,7 @@ function App(): JSX.Element {
                     <div className="bubble-avatar" />
                   );
                 })()}
-              <div>
+              <div className="bubble-content">
                 <div className="bubble-name" style={{ textAlign: m.direction === 'out' ? 'right' : 'left' }}>
                   {m.direction === 'out' ? myName : alias}
                 </div>
