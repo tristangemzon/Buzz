@@ -2,6 +2,7 @@
 // default; unlock() / create() bring it online.
 
 import path from 'node:path';
+import fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { app, BrowserWindow } from 'electron';
@@ -237,7 +238,20 @@ export class Session {
     this.identity = id;
     this.profileId = profileId;
     const dbFile = path.join(profiles.profileDir(profileId), 'buzz.sqlite');
-    this.db = openDb(dbFile, id.dbKey);
+    try {
+      this.db = openDb(dbFile, id.dbKey);
+    } catch (err: unknown) {
+      // Legacy databases created with bsmc v11 used a broken raw-key
+      // derivation (SQLite3MultipleCiphers bug #218, fixed in 2.2.5). They
+      // cannot be migrated — delete and start fresh.
+      const code = (err as { code?: string }).code;
+      if (code === 'SQLITE_NOTADB' || code === 'SQLITE_ERROR') {
+        fs.rmSync(dbFile, { force: true });
+        this.db = openDb(dbFile, id.dbKey);
+      } else {
+        throw err;
+      }
+    }
 
     // Establish identity row in DB.
     const network = loadNetworkConfig();

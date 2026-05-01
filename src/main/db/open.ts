@@ -8,10 +8,8 @@ export type Db = Database.Database;
 
 export function openDb(file: string, key: Uint8Array): Db {
   const db = new Database(file);
-  // Databases created with bsmc v11 used SQLCipher 3 defaults. This pragma
-  // must come BEFORE key= so the header is decrypted with the right settings.
-  db.pragma('cipher_compatibility = 3');
-  // Apply SQLCipher key as a hex blob via raw key syntax.
+  // Apply raw key (bypasses KDF). SQLite3MultipleCiphers 2.2.5+ correctly
+  // handles the x'hex' notation as raw bytes.
   const hex = Buffer.from(key).toString('hex');
   db.pragma(`key="x'${hex}'"`);
   db.pragma('journal_mode = WAL');
