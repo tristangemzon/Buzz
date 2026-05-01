@@ -242,12 +242,6 @@ function App(): JSX.Element {
       // Open the game window as acceptor (no initiator flag)
       void window.buzzWindows.openGame(peerId, ev.kind ?? 'checkers');
     });
-    const offPrefsChanged = window.buzz.onPrefsChanged((p) => {
-      setSoundsEnabled(p.soundsEnabled);
-      setSoundScheme(p.soundScheme);
-      setTheme(p.theme);
-      applyThemeAttributes(p.theme);
-    });
     return () => {
       offRecv();
       offAck();
@@ -257,7 +251,6 @@ function App(): JSX.Element {
       offDone();
       offPeerProfile();
       offGameInvite();
-      offPrefsChanged();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);

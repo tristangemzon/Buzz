@@ -118,7 +118,6 @@ const api: AppApi = {
   updatesGetStatus: () => ipcRenderer.invoke(IPC.UpdatesGetStatus),
   updatesGetVersion: () => ipcRenderer.invoke(IPC.UpdatesGetVersion),
   onUpdateStatus: (cb) => on(IPC.EvtUpdateStatus, cb),
-  onPrefsChanged: (cb) => on(IPC.EvtPrefsChanged, cb),
 
   // games
   gameInvite: (req) => ipcRenderer.invoke(IPC.GameInvite, req),

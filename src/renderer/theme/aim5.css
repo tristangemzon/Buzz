@@ -498,8 +498,6 @@ button:disabled {
   flex: 1;
   white-space: pre-wrap;
   word-wrap: break-word;
-  display: flex;
-  flex-direction: column;
 }
 .chat-log .me {
   color: #b00000;
@@ -1250,10 +1248,8 @@ html[data-chat-theme='compact'] .chat-log > div {
   border-color: #6a90c0;
 }
 
-/* ── IM status banner (sticky bottom of chat log) ──────────────────────── */
+/* ── IM status banner (bottom of chat log) ──────────────────────────────── */
 .im-status-banner {
-  position: sticky;
-  bottom: 0;
   font-weight: bold;
   font-size: 11px;
   color: #000;
@@ -1261,8 +1257,7 @@ html[data-chat-theme='compact'] .chat-log > div {
   border-top: 1px solid var(--c-bevel-dark, #888);
   padding: 3px 8px;
   text-align: center;
-  /* Push messages above the banner when scrolled to bottom */
-  margin-top: auto;
+  margin-top: 6px;
 }
 
 /* ── IM / Chat window AIM-style action bar ─────────────────────────────── */
