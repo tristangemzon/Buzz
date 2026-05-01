@@ -7,3 +7,9 @@ dist
 .env.local
 release
 
+# buzz-mesh sidecar — compiled binaries (run `make all` to regenerate)
+buzz-mesh/dist/
+
+# Cloudflare Worker local deps
+mesh-key-worker/node_modules/
+

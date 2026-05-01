@@ -28,6 +28,7 @@ export const ProfileSummary = z.object({
   id: Uuid,
   screenName: z.string().min(1).max(64),
   createdAt: z.number().int().nonnegative(),
+  mesh: z.boolean().default(false),
 });
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
@@ -174,7 +175,7 @@ const WssUrl = z
 
 export const NetworkConfig = z
   .object({
-    mode: z.enum(['p2p', 'server']).default('p2p'),
+    mode: z.enum(['p2p', 'server', 'exp-p2p']).default('p2p'),
     // Legacy libp2p multiaddr (kept for backward compat, unused in server mode).
     serverAddr: z.string().max(512).default(''),
     // Hive server mode: WSS URL (e.g. wss://localhost:7700)

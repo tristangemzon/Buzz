@@ -17,6 +17,7 @@ export const ProfileSummary = z.object({
   id: z.string().uuid(),
   screenName: z.string().min(1).max(64),
   createdAt: z.number().int().nonnegative(),
+  mesh: z.boolean().default(false),
 });
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
@@ -64,12 +65,13 @@ export function getProfile(id: string): ProfileSummary | null {
   return readIndex().profiles.find((p) => p.id === id) ?? null;
 }
 
-export function addProfile(screenName: string): ProfileSummary {
+export function addProfile(screenName: string, mesh = false): ProfileSummary {
   const idx = readIndex();
   const profile: ProfileSummary = {
     id: randomUUID(),
     screenName,
     createdAt: Date.now(),
+    mesh,
   };
   idx.profiles.push(profile);
   writeIndex(idx);

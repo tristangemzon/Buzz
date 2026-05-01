@@ -18,7 +18,7 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
   const [section, setSection] = useState<Section>('network');
 
   // Network mode state.
-  const [mode, setMode] = useState<'p2p' | 'server'>('p2p');
+  const [mode, setMode] = useState<'p2p' | 'server' | 'exp-p2p'>('p2p');
   const [serverUrl, setServerUrl] = useState('');
   const [serverCacheEnabled, setServerCacheEnabled] = useState(true);
   const [netErr, setNetErr] = useState('');
@@ -42,7 +42,7 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
     window.buzz
       .getNetworkConfig()
       .then((cfg) => {
-        setMode(cfg.mode);
+        setMode(cfg.mode as 'p2p' | 'server' | 'exp-p2p');
         setServerUrl(cfg.serverUrl ?? '');
         setServerCacheEnabled(cfg.serverCacheEnabled ?? true);
       })
@@ -184,6 +184,31 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
                           <div className="muted small" style={{ marginTop: 4 }}>
                             When enabled, messages are stored in your encrypted local database in addition to the server.
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="row">
+                      <label className="radio">
+                        <input
+                          type="radio"
+                          name="netmode"
+                          checked={mode === 'exp-p2p'}
+                          onChange={() => setMode('exp-p2p')}
+                        />
+                        <span>
+                          <strong>Experimental P2P</strong> — Buzz Mesh{' '}
+                          <span className="tag-beta">Beta</span>
+                        </span>
+                      </label>
+                      <div className="muted small">
+                        Join the Buzz Mesh — a private VPN shared by all Experimental users.
+                        Works through any NAT or firewall. Requires internet. No extra software
+                        needed.
+                      </div>
+                      {mode === 'exp-p2p' && (
+                        <div className="muted small indent" style={{ marginTop: 4, color: 'var(--c-accent, #c77)' }}>
+                          ⚠️ This mode is experimental. Performance and availability may vary.
                         </div>
                       )}
                     </div>

@@ -738,6 +738,20 @@ button:disabled {
   font-size: 10px;
   margin-left: 22px;
 }
+.tag-beta {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #c77;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+  margin-left: 4px;
+  line-height: 1.4;
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;

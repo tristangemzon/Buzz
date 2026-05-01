@@ -19,6 +19,7 @@ import { RoomService } from './p2p/rooms.js';
 import { XferService } from './p2p/xfer.js';
 import { TalkService } from './p2p/talk.js';
 import { buddyCodeFor, createNode } from './p2p/node.js';
+import { MeshNode } from './p2p/mesh.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
 import { IPC } from '@shared/ipc.js';
@@ -111,7 +112,8 @@ export class Session {
     screenName: string,
     passphrase: string,
   ): Promise<{ profileId: string; buddyCode: string }> {
-    const profile = profiles.addProfile(screenName);
+    const isMesh = loadNetworkConfig().mode === 'exp-p2p';
+    const profile = profiles.addProfile(screenName, isMesh);
     try {
       const ks = new Keystore(path.join(profiles.profileDir(profile.id), 'keystore.bin'));
       const id = await ks.create(passphrase);
@@ -274,6 +276,8 @@ export class Session {
       this.hiveClient.disconnect();
       this.hiveClient = null;
     }
+    // Stop the Buzz Mesh sidecar if it was running in exp-p2p mode.
+    await MeshNode.instance.stop().catch(() => undefined);
     this.currentCall = null;
     this.roomKeys.clear();
     this.roomMembers.clear();
@@ -324,7 +328,13 @@ export class Session {
       return;
     }
 
-    const node = await createNode({ identity: id, network });
+    // ── Experimental P2P: join the Buzz Mesh (Tailscale tsnet sidecar) ──────
+    let meshIp: string | undefined;
+    if (network.mode === 'exp-p2p') {
+      meshIp = await MeshNode.instance.start();
+    }
+
+    const node = await createNode({ identity: id, network, listenIp: meshIp });
     this.node = node;
     const peerIdStr = node.peerId.toString();
     const existing = repos.getIdentity(this.db);

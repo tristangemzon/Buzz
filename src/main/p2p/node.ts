@@ -34,39 +34,59 @@ export type NodeOptions = {
   listen?: string[];
   bootstrap?: string[];
   // When provided, takes precedence over the default bootstrap list:
-  //   - 'p2p'    → use DEFAULT_BOOTSTRAP (public DHT)
-  //   - 'server' → use [serverAddr] only (custom Buzz server)
+  //   - 'p2p'     → use DEFAULT_BOOTSTRAP (public DHT)
+  //   - 'server'  → use [serverAddr] only (custom Buzz server)
+  //   - 'exp-p2p' → no bootstrap, listen only on the Tailscale VPN IP
   network?: NetworkConfig;
+  // Explicit IP to bind to (used in 'exp-p2p' mode — the Tailscale 100.x.x.x address).
+  // Overrides the default 0.0.0.0 listen addresses.
+  listenIp?: string;
 };
 
 export async function createNode(opts: NodeOptions): Promise<Libp2p> {
   const privKey = await generateKeyPairFromSeed('Ed25519', opts.identity.seed);
   const peerId: PeerId = await peerIdFromKeys(privKey.public.bytes, privKey.bytes);
 
+  const isMesh = opts.network?.mode === 'exp-p2p';
+
   // Resolve bootstrap list: explicit `bootstrap` wins, else network mode, else default.
+  // In exp-p2p (mesh) mode we skip public bootstrap entirely — the Tailscale mesh
+  // provides full connectivity and the IPFS bootstrappers are not needed.
   const bootstrapList =
     opts.bootstrap ??
-    (opts.network?.mode === 'server' && opts.network.serverAddr
-      ? [opts.network.serverAddr]
-      : DEFAULT_BOOTSTRAP);
+    (isMesh
+      ? []
+      : opts.network?.mode === 'server' && opts.network.serverAddr
+        ? [opts.network.serverAddr]
+        : DEFAULT_BOOTSTRAP);
 
-  // Local-network discovery via mDNS. Only enabled in pure p2p mode — in
-  // server mode the configured server is the rendezvous point and we don't
-  // want to leak presence on the LAN. The default broadcast interval keeps
-  // chatter low.
-  const peerDiscovery: Array<ReturnType<typeof bootstrap> | ReturnType<typeof mdns>> = [
-    bootstrap({ list: bootstrapList }),
-  ];
+  // Local-network discovery via mDNS. Enabled in pure p2p mode and in
+  // exp-p2p mode (all tailnet peers appear "local" to libp2p).
+  // Disabled in server mode — the Hive server is the rendezvous point.
+  const peerDiscovery: Array<ReturnType<typeof bootstrap> | ReturnType<typeof mdns>> = [];
+  if (bootstrapList.length > 0) {
+    peerDiscovery.push(bootstrap({ list: bootstrapList }));
+  }
   if (opts.network?.mode !== 'server') {
     peerDiscovery.push(mdns({ interval: 5_000 }));
   }
 
+  // In exp-p2p mode, bind only to the Tailscale VPN IP so we don't expose
+  // ports on public interfaces. Circuit relay is not needed — the tailnet
+  // provides direct routing for all peers.
+  const listenAddresses: string[] = opts.listen ??
+    (isMesh && opts.listenIp
+      ? [`/ip4/${opts.listenIp}/tcp/0`, `/ip4/${opts.listenIp}/tcp/0/ws`]
+      : ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws']);
+
   const node = await createLibp2p({
     peerId,
     addresses: {
-      listen: opts.listen ?? ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws'],
+      listen: listenAddresses,
     },
-    transports: [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })],
+    transports: isMesh
+      ? [tcp(), webSockets()]  // No circuit relay on mesh — tailnet is fully routable
+      : [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })],
     connectionEncryption: [noise()],
     streamMuxers: [yamux()],
     peerDiscovery,

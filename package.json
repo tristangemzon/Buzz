@@ -1,7 +1,7 @@
 {
   "name": "buzz",
   "productName": "Buzz",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Buzz — secure, AIM/AOL-flavoured P2P chat client (Electron + libp2p + SQLCipher).",
   "main": "out/main/index.js",
   "type": "module",
@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:mesh": "cd buzz-mesh && make all",
+    "build:all": "npm run build:mesh && electron-vite build",
     "start": "electron-vite preview",
     "pack:win": "npm run build && electron-builder --win --x64 --publish always",
     "pack:mac": "npm run build && electron-builder --mac --arm64 --publish always",
@@ -86,12 +88,18 @@
       "**/node_modules/better-sqlite3-multiple-ciphers/**",
       "**/node_modules/argon2/**",
       "**/node_modules/keytar/**",
-      "**/*.node"
+      "**/*.node",
+      "**/buzz-mesh-*"
     ],
     "extraResources": [
       {
         "from": "resources",
         "to": "resources"
+      },
+      {
+        "from": "buzz-mesh/dist",
+        "to": ".",
+        "filter": ["buzz-mesh-*"]
       }
     ],
     "mac": {

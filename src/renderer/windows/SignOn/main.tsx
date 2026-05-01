@@ -10,6 +10,7 @@ type Mode = 'signin' | 'create' | 'migrate';
 
 function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
+  const [isMesh, setIsMesh] = useState(false);
   const [mode, setMode] = useState<Mode>('signin');
   const [selectedId, setSelectedId] = useState<string>('');
   const [screenName, setScreenName] = useState('');
@@ -21,15 +22,21 @@ function App(): JSX.Element {
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
-    window.buzz.listProfiles().then((list) => {
-      setProfiles(list);
-      if (list.length === 0) {
-        setMode('create');
-      } else {
-        setMode('signin');
-        setSelectedId(list[0]!.id);
-      }
-    });
+    Promise.all([window.buzz.listProfiles(), window.buzz.getNetworkConfig()]).then(
+      ([list, netCfg]) => {
+        const mesh = netCfg.mode === 'exp-p2p';
+        setIsMesh(mesh);
+        // Only show profiles that match the current network mode.
+        const filtered = list.filter((p) => (p.mesh ?? false) === mesh);
+        setProfiles(filtered);
+        if (filtered.length === 0) {
+          setMode('create');
+        } else {
+          setMode('signin');
+          setSelectedId(filtered[0]!.id);
+        }
+      },
+    );
   }, []);
 
   async function submit(): Promise<void> {
@@ -109,7 +116,7 @@ function App(): JSX.Element {
             >
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.screenName}
+                  {p.mesh ? `${p.screenName} (EM)` : p.screenName}
                 </option>
               ))}
             </select>
