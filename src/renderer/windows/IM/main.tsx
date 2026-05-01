@@ -359,6 +359,23 @@ function App(): JSX.Element {
         }
       />
 
+      {/* Classic-mode AIM avatar sidebar: recipient top, self bottom */}
+      <div className="im-body">
+        {theme.chatTheme !== 'balloons' && (
+          <div className="im-avatar-sidebar">
+            <div className="im-avatar-top">
+              {theirAvatar
+                ? <img src={theirAvatar} alt={alias} className="im-avatar-img" />
+                : <div className="im-avatar-img im-avatar-placeholder" />}
+            </div>
+            <div className="im-avatar-bottom">
+              {myAvatar
+                ? <img src={myAvatar} alt={myName} className="im-avatar-img" />
+                : <div className="im-avatar-img im-avatar-placeholder" />}
+            </div>
+          </div>
+        )}
+        <div className="im-body-main">
       <div ref={logRef} className="bevel-in chat-log">
         {messages.map((m) =>
           theme.chatTheme === 'balloons' ? (
@@ -416,7 +433,7 @@ function App(): JSX.Element {
         ))}
       </div>
 
-      <div className="bevel-in" style={{ margin: 6 }}>
+      <div className="bevel-in" style={{ margin: '0 6px 6px' }}>
         <RichEditor
           ref={editorRef}
           placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
@@ -426,6 +443,8 @@ function App(): JSX.Element {
           style={{ width: '100%' }}
         />
       </div>
+        </div>{/* im-body-main */}
+      </div>{/* im-body */}
 
       {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}
 

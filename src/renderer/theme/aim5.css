@@ -1041,6 +1041,61 @@ html[data-chat-theme='compact'] .chat-log > div {
   flex-direction: column;
   height: 100vh;
 }
+
+/* Classic AIM avatar sidebar + main chat area side-by-side. */
+.im-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.im-body-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.im-body-main .chat-log {
+  flex: 1;
+  margin: 6px 6px 0;
+}
+.im-avatar-sidebar {
+  width: 80px;
+  flex: 0 0 80px;
+  display: flex;
+  flex-direction: column;
+  background: #b4cde3;
+  border-right: 1px solid #7a9ab8;
+}
+.im-avatar-top {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4px;
+  border-bottom: 1px solid #7a9ab8;
+  background: #c6ddf0;
+}
+.im-avatar-bottom {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 4px;
+  background: #a8c0d8;
+  min-height: 90px;
+}
+.im-avatar-img {
+  width: 68px;
+  height: 68px;
+  object-fit: cover;
+  border: 1px solid #5a7a9a;
+  display: block;
+}
+.im-avatar-placeholder {
+  background: #8aabca;
+}
+
 .chat-body {
   display: flex;
   flex: 1;
