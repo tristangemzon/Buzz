@@ -446,19 +446,20 @@ function App(): JSX.Element {
         ))}
       </div>
 
-      {statusNotice && (
-        <div className="im-status-banner">{statusNotice}</div>
-      )}
-
-      <div className="bevel-in im-compose-wrap">
-        <RichEditor
-          ref={editorRef}
-          placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
-          disabled={busy || blocked}
-          onMarkupChange={setDraft}
-          onEnter={() => void send()}
-          style={{ width: '100%', minHeight: 100 }}
-        />
+      <div className="im-compose-col">
+        {statusNotice && (
+          <div className="im-status-banner">{statusNotice}</div>
+        )}
+        <div className="bevel-in im-compose-wrap">
+          <RichEditor
+            ref={editorRef}
+            placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
+            disabled={busy || blocked}
+            onMarkupChange={setDraft}
+            onEnter={() => void send()}
+            style={{ width: '100%', minHeight: 100 }}
+          />
+        </div>
       </div>
       </div>{/* im-body */}
 

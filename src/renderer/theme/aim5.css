@@ -1062,17 +1062,16 @@ html[data-chat-theme='compact'] .chat-log > div {
   margin: 0 6px 6px;
 }
 
-/* 2-column, 3-row grid for classic sidebar mode */
+/* 2-column, 2-row grid for classic sidebar mode */
 .im-body-sidebar {
   display: grid;
   grid-template-columns: 80px 1fr;
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: 1fr auto;
 }
-.im-body-sidebar .im-avatar-top    { grid-column: 1; grid-row: 1 / -1; align-self: start; }
-.im-body-sidebar .im-avatar-bottom { grid-column: 1; grid-row: 1 / -1; align-self: end; }
+.im-body-sidebar .im-avatar-top    { grid-column: 1; grid-row: 1; }
+.im-body-sidebar .im-avatar-bottom { grid-column: 1; grid-row: 2; }
 .im-body-sidebar .chat-log         { grid-column: 2; grid-row: 1; margin: 6px 6px 0; }
-.im-body-sidebar .im-status-banner { grid-column: 2; grid-row: 2; margin: 0 6px; }
-.im-body-sidebar .im-compose-wrap  { grid-column: 2; grid-row: 3; margin: 0 6px 6px; }
+.im-body-sidebar .im-compose-col   { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
 
 .im-avatar-top {
   display: flex;
