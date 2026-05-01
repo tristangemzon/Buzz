@@ -359,16 +359,26 @@ function App(): JSX.Element {
         }
       />
 
-      {/* im-body: CSS grid so sidebar divider aligns with chat/compose boundary */}
-      <div className={`im-body${theme.chatTheme !== 'balloons' ? ' im-body-classic' : ''}`}>
+      {/* Classic-mode AIM avatar sidebar: recipient top, self bottom.
+           im-body uses a 2×2 CSS grid in sidebar mode so the divider
+           between the two avatar cells is a grid row boundary that
+           always aligns with the chat-log / compose area boundary. */}
+      <div className={`im-body${theme.chatTheme !== 'balloons' ? ' im-body-sidebar' : ''}`}>
         {theme.chatTheme !== 'balloons' && (
-          <div className="im-avatar-top">
-            {theirAvatar
-              ? <img src={theirAvatar} alt={alias} className="im-avatar-img" />
-              : <div className="im-avatar-img im-avatar-placeholder" />}
-          </div>
+          <>
+            <div className="im-avatar-top">
+              {theirAvatar
+                ? <img src={theirAvatar} alt={alias} className="im-avatar-img" />
+                : <div className="im-avatar-img im-avatar-placeholder" />}
+            </div>
+            <div className="im-avatar-bottom">
+              {myAvatar
+                ? <img src={myAvatar} alt={myName} className="im-avatar-img" />
+                : <div className="im-avatar-img im-avatar-placeholder" />}
+            </div>
+          </>
         )}
-        <div ref={logRef} className="bevel-in chat-log">
+      <div ref={logRef} className="bevel-in chat-log">
         {messages.map((m) =>
           theme.chatTheme === 'balloons' ? (
             <div key={m.id} className={`bubble-row ${m.direction}`}>
@@ -423,27 +433,18 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
-        </div>
+      </div>
 
-        {theme.chatTheme !== 'balloons' && (
-          <div className="im-avatar-bottom">
-            {myAvatar
-              ? <img src={myAvatar} alt={myName} className="im-avatar-img" />
-              : <div className="im-avatar-img im-avatar-placeholder" />}
-          </div>
-        )}
-        <div className="im-compose-wrap">
-          <div className="bevel-in" style={{ margin: '0 6px 6px' }}>
-            <RichEditor
-              ref={editorRef}
-              placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
-              disabled={busy || blocked}
-              onMarkupChange={setDraft}
-              onEnter={() => void send()}
-              style={{ width: '100%', minHeight: 100 }}
-            />
-          </div>
-        </div>
+      <div className="bevel-in im-compose-wrap">
+        <RichEditor
+          ref={editorRef}
+          placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
+          disabled={busy || blocked}
+          onMarkupChange={setDraft}
+          onEnter={() => void send()}
+          style={{ width: '100%', minHeight: 100 }}
+        />
+      </div>
       </div>{/* im-body */}
 
       {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}

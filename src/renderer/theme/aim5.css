@@ -1042,30 +1042,36 @@ html[data-chat-theme='compact'] .chat-log > div {
   height: 100vh;
 }
 
-/* Classic AIM avatar sidebar + main chat area side-by-side. */
+/* Classic AIM avatar sidebar + main chat area.
+   Default (balloons): single flex-column, no sidebar.
+   Sidebar mode (.im-body-sidebar): 2×2 CSS grid so the divider between
+   the two avatar cells is a grid row boundary that exactly aligns with
+   the bottom of the chat log / top of the compose area. */
 .im-body {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
-/* Classic mode: 2-col × 2-row grid so the sidebar divider aligns with
-   the chat-log / compose boundary automatically. */
-.im-body.im-body-classic {
+.im-body .chat-log {
+  flex: 1;
+  margin: 6px 6px 0;
+}
+.im-body .im-compose-wrap {
+  margin: 0 6px 6px;
+}
+
+/* 2-column, 2-row grid for classic sidebar mode */
+.im-body-sidebar {
   display: grid;
   grid-template-columns: 80px 1fr;
   grid-template-rows: 1fr auto;
-  grid-template-areas:
-    "avatar-top  chat"
-    "avatar-bottom compose";
 }
-.im-body-classic .im-avatar-top    { grid-area: avatar-top; }
-.im-body-classic .im-avatar-bottom { grid-area: avatar-bottom; }
-.im-body-classic .chat-log { grid-area: chat; margin: 4px 4px 4px 0; }
-.im-body-classic .im-compose-wrap  { grid-area: compose; }
-/* Non-classic (balloons): compose wrapper is full-width, no sidebar. */
-.im-body:not(.im-body-classic) .im-compose-wrap { flex: 0 0 auto; }
-.im-body:not(.im-body-classic) .chat-log        { flex: 1; }
+.im-body-sidebar .im-avatar-top    { grid-column: 1; grid-row: 1; }
+.im-body-sidebar .im-avatar-bottom { grid-column: 1; grid-row: 2; }
+.im-body-sidebar .chat-log         { grid-column: 2; grid-row: 1; margin: 6px 6px 0; }
+.im-body-sidebar .im-compose-wrap  { grid-column: 2; grid-row: 2; margin: 0 6px 6px; }
+
 .im-avatar-top {
   display: flex;
   align-items: flex-start;
@@ -1078,7 +1084,7 @@ html[data-chat-theme='compact'] .chat-log > div {
 }
 .im-avatar-bottom {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
   padding: 4px;
   border-right: 1px solid #7a9ab8;
@@ -1094,10 +1100,6 @@ html[data-chat-theme='compact'] .chat-log > div {
 }
 .im-avatar-placeholder {
   background: #8aabca;
-}
-.im-compose-wrap {
-  display: flex;
-  flex-direction: column;
 }
 
 .chat-body {
