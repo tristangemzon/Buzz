@@ -6,7 +6,10 @@
   "main": "out/main/index.js",
   "type": "module",
   "private": true,
-  "author": "",
+  "author": {
+    "name": "Tristan Gemzon",
+    "email": "tristangemzon@gmail.com"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
