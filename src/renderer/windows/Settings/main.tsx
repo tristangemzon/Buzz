@@ -17,7 +17,7 @@ function App(): JSX.Element {
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div className="aim-window" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <WindowChrome title="Settings" canMaximize={false} />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* ── Left nav ── */}
