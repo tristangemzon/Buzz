@@ -91,6 +91,7 @@ function App(): JSX.Element {
   const [draft, setDraft] = useState('');
   const editorRef = useRef<RichEditorHandle>(null);
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
+  const [peerWentOffline, setPeerWentOffline] = useState(false);
   const [awayMessage, setAwayMessage] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -178,7 +179,11 @@ function App(): JSX.Element {
     });
     const offStatus = window.buzz.onBuddyStatus((e) => {
       if (e.peerId === peerId) {
-        setStatus(e.status === 'invisible' ? 'offline' : (e.status as typeof status));
+        const next = e.status === 'invisible' ? 'offline' : (e.status as 'online' | 'offline' | 'away' | 'idle');
+        setStatus((prev) => {
+          if (next === 'offline' && prev !== 'offline') setPeerWentOffline(true);
+          return next;
+        });
         setAwayMessage(e.awayMessage);
       }
     });
@@ -433,6 +438,9 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
+        {peerWentOffline && (
+          <div className="im-system-notice">{alias} has gone offline.</div>
+        )}
       </div>
 
       <div className="bevel-in im-compose-wrap">
@@ -448,10 +456,6 @@ function App(): JSX.Element {
       </div>{/* im-body */}
 
       {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}
-
-      {status === 'offline' && (
-        <div className="im-offline-notice">{alias} is offline.</div>
-      )}
 
       {/* ── AIM-style action bar ─────────────────────────────────────── */}
       <div className="im-actionbar">
