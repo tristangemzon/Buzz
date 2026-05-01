@@ -87,6 +87,14 @@ export class Session {
   private onPeerIdentify: ((evt: Event) => void) | null = null;
   // Interval timer that polls the buzz-mesh sidecar for new tailnet peers (exp-p2p mode).
   private _meshPollTimer: ReturnType<typeof setInterval> | null = null;
+  // Burst timeouts fired shortly after login in mesh mode (analogous to loginBurst for presence).
+  private _meshBurstTimers: ReturnType<typeof setTimeout>[] = [];
+  // Rolling buffer of the last 20 dial error messages — surfaced in Mesh Debug window.
+  _meshDialErrors: string[] = [];
+
+  get meshDialErrors(): string[] {
+    return this._meshDialErrors;
+  }
   screenName = '';
   // Active profile id (set on create/unlock, cleared on lock).
   profileId: string | null = null;
@@ -279,10 +287,13 @@ export class Session {
       this.hiveClient = null;
     }
     // Stop the Buzz Mesh sidecar if it was running in exp-p2p mode.
+    for (const t of this._meshBurstTimers) clearTimeout(t);
+    this._meshBurstTimers = [];
     if (this._meshPollTimer != null) {
       clearInterval(this._meshPollTimer);
       this._meshPollTimer = null;
     }
+    this._meshDialErrors = [];
     await MeshNode.instance.stop().catch(() => undefined);
     this.currentCall = null;
     this.roomKeys.clear();
@@ -587,10 +598,31 @@ export class Session {
           try {
             const { multiaddr } = await import('@multiformats/multiaddr');
             const conn = await node.dial(multiaddr(ma));
-            // After a successful dial, retry any pending outgoing buddy request
-            // to this peer — the first send may have failed because the
-            // connection wasn't up yet when the user clicked Add Buddy.
             const connectedPeerId = conn.remotePeer.toString();
+
+            // Proactively surface this peer in the Nearby section right away
+            // rather than waiting for peer:identify (which may lag in mesh mode).
+            if (this.db && connectedPeerId !== node.peerId.toString()) {
+              const isBuddy = !!this.db
+                .prepare('SELECT 1 FROM buddies WHERE peer_id=?')
+                .get(connectedPeerId);
+              if (!isBuddy) {
+                const prev = this.discovered.get(connectedPeerId);
+                const dp: DiscoveredPeer = {
+                  peerId: connectedPeerId,
+                  screenName: prev?.screenName,
+                  source: 'mdns', // 'tailscale' conceptually
+                  lastSeen: Date.now(),
+                };
+                this.discovered.set(connectedPeerId, dp);
+                if (!prev) {
+                  this.broadcast(IPC.EvtDiscovered, { kind: 'added', peer: dp } satisfies DiscoveredEvent);
+                }
+              }
+            }
+
+            // Retry any pending outgoing buddy request to this newly-connected
+            // peer — the first send may have fired before the connection existed.
             if (this.db && this.im) {
               const pending = this.db
                 .prepare(
@@ -607,14 +639,21 @@ export class Session {
                   .catch(() => {});
               }
             }
-          } catch {
-            // Peer may not have Buzz running on that port — ignore.
+          } catch (err) {
+            const msg = `[mesh] dial ${ip}:${MESH_LIBP2P_PORT} failed: ${err instanceof Error ? err.message : String(err)}`;
+            console.error(msg);
+            this._meshDialErrors = [msg, ...this._meshDialErrors].slice(0, 20);
           }
         }
       };
-      // Initial dial attempt shortly after startup, then every 30 s.
-      setTimeout(() => { void dialMeshPeers(); }, 3_000);
-      this._meshPollTimer = setInterval(() => { void dialMeshPeers(); }, 30_000);
+
+      // Initial burst of dial attempts (catches the case where both peers sign
+      // on at roughly the same time and one side's Go forwarder isn't up yet).
+      const MESH_DIAL_BURST_MS = [2_000, 5_000, 10_000, 20_000, 40_000];
+      this._meshBurstTimers = MESH_DIAL_BURST_MS.map((delay) =>
+        setTimeout(() => { void dialMeshPeers(); }, delay),
+      );
+      this._meshPollTimer = setInterval(() => { void dialMeshPeers(); }, 60_000);
     }
 
     // Multi-party chat rooms. Decode all known room keys into RAM so the

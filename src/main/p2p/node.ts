@@ -23,6 +23,24 @@ import type { IdentityMaterial } from '../crypto/keystore.js';
 import type { NetworkConfig } from '@shared/schemas.js';
 import { meshTcpTransport } from './mesh-transport.js';
 
+// Tailscale 100.x.x.x addresses are only reachable through the buzz-mesh
+// SOCKS5 proxy (tsnet is a userspace VPN; 100.x.x.x is NOT on the host OS
+// network stack). Wrapping @libp2p/tcp to exclude these addresses prevents
+// libp2p from trying a direct OS-socket dial that would always fail, ensuring
+// meshTcpTransport is the sole handler for Tailscale peer addresses.
+const TAILSCALE_ADDR_RE = /^\/ip4\/100\./;
+
+function tcpExcludingTailscale() {
+  const inner = tcp();
+  return (components: Parameters<typeof inner>[0]) => {
+    const t = inner(components);
+    const origDialFilter = t.dialFilter.bind(t);
+    t.dialFilter = (addrs) =>
+      origDialFilter(addrs.filter((ma) => !TAILSCALE_ADDR_RE.test(ma.toString())));
+    return t;
+  };
+}
+
 // Default bootstrap nodes. In production you'd run your own — these are public
 // IPFS bootstrappers and are fine for a dev build.
 const DEFAULT_BOOTSTRAP = [
@@ -92,11 +110,14 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
       : undefined;
 
   // Transports: in mesh mode add meshTcpTransport (routes 100.x.x.x through
-  // SOCKS5) alongside regular tcp() (handles inbound from Go forwarder + mDNS).
+  // SOCKS5) alongside tcpExcludingTailscale (handles inbound from Go forwarder
+  // + mDNS LAN peers, but explicitly refuses to dial 100.x.x.x so that only
+  // meshTcpTransport handles Tailscale addresses — tsnet is a userspace VPN
+  // and 100.x.x.x is not reachable from OS sockets).
   const transports = isMesh && opts.socksPort != null
-    ? [meshTcpTransport(opts.socksPort), tcp(), webSockets()]
+    ? [meshTcpTransport(opts.socksPort), tcpExcludingTailscale(), webSockets()]
     : isMesh
-      ? [tcp(), webSockets()]
+      ? [tcpExcludingTailscale(), webSockets()]
       : [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })];
 
   const node = await createLibp2p({

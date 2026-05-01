@@ -585,6 +585,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       tailnetPeers,
       libp2pPeers: Array.from(peerMap.entries()).map(([peerId, addrs]) => ({ peerId, addrs })),
       pendingOutRequests: pending,
+      dialErrors: session.meshDialErrors,
     };
   });
 }

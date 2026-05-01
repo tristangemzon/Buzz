@@ -97,6 +97,7 @@ export type MeshDebugInfo = {
   tailnetPeers: string[];
   libp2pPeers: Array<{ peerId: string; addrs: string[] }>;
   pendingOutRequests: number;
+  dialErrors: string[];
 };
 
 export type UpdateStatus =

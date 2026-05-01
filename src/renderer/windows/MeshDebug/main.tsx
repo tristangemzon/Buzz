@@ -111,6 +111,22 @@ function App(): JSX.Element {
               )}
             </div>
 
+            {/* ── Dial errors ── */}
+            {info.dialErrors.length > 0 && (
+              <>
+                <div style={{ marginBottom: 6, fontWeight: 'bold', color: '#cc0000' }}>
+                  Recent dial errors ({info.dialErrors.length})
+                </div>
+                <div className="bevel-in" style={{ padding: '6px 8px', marginBottom: 8, maxHeight: 100, overflowY: 'auto' }}>
+                  {info.dialErrors.map((e, i) => (
+                    <div key={i} style={{ fontFamily: 'monospace', fontSize: 10, color: '#cc0000', wordBreak: 'break-all', marginBottom: 2 }}>
+                      {e}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {/* ── Tailnet peers ── */}
             <div style={{ marginBottom: 6, fontWeight: 'bold' }}>
               Tailnet peers ({info.tailnetPeers.length})
