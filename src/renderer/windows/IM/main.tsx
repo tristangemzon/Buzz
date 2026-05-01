@@ -440,7 +440,7 @@ function App(): JSX.Element {
           disabled={busy || blocked}
           onMarkupChange={setDraft}
           onEnter={() => void send()}
-          style={{ width: '100%' }}
+          style={{ width: '100%', minHeight: 100 }}
         />
       </div>
         </div>{/* im-body-main */}
