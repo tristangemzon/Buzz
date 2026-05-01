@@ -190,7 +190,13 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     if (!session.db) return Prefs.parse({});
     return repos.getPrefs(session.db);
   });
-  handle(IPC.PrefsSet, SetPrefsReq, (patch) => repos.setPrefs(requireDb(session), patch));
+  handle(IPC.PrefsSet, SetPrefsReq, (patch) => {
+    const result = repos.setPrefs(requireDb(session), patch);
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(IPC.EvtPrefsChanged, result);
+    }
+    return result;
+  });
 
   // ── network mode (pre-unlock readable) ───────────────────────────────────
   handle(IPC.NetworkGet, null, () => loadNetworkConfig());

@@ -152,6 +152,12 @@ function App(): JSX.Element {
     function handleBeforeUnload() {
       if (!logoutSoundPlayedRef.current) { logoutSoundPlayedRef.current = true; playSound('logout'); }
     }
+    const offPrefsChanged = window.buzz.onPrefsChanged((p) => {
+      setSoundsOn(p.soundsEnabled);
+      setSoundsEnabled(p.soundsEnabled);
+      setSoundSchemeState(p.soundScheme);
+      setSoundScheme(p.soundScheme);
+    });
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
@@ -164,6 +170,7 @@ function App(): JSX.Element {
       offUnread();
       offTalkInvite();
       offGameInvite();
+      offPrefsChanged();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);

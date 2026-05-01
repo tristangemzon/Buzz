@@ -33,6 +33,7 @@ export const IPC = {
   // prefs
   PrefsGet: 'prefs:get',
   PrefsSet: 'prefs:set',
+  EvtPrefsChanged: 'evt:prefsChanged',
 
   // network mode (readable while locked)
   NetworkGet: 'network:get',

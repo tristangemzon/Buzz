@@ -224,6 +224,7 @@ export type AppApi = {
   updatesGetStatus(): Promise<UpdateStatus>;
   updatesGetVersion(): Promise<string>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;
+  onPrefsChanged(cb: (p: Prefs) => void): () => void;
 
   // games
   gameInvite(req: GameInviteReq): Promise<void>;

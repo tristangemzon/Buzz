@@ -135,11 +135,19 @@ function App(): JSX.Element {
       }
     });
 
+    const offPrefsChanged = window.buzz.onPrefsChanged((p) => {
+      setSoundsEnabled(p.soundsEnabled);
+      setSoundScheme(p.soundScheme);
+      setTheme(p.theme);
+      applyThemeAttributes(p.theme);
+    });
+
     return () => {
       offMsg();
       offMembers();
       offInvited();
       offChannel();
+      offPrefsChanged();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
