@@ -173,16 +173,32 @@ export function ProfileEditor(props: { onClose: () => void }): JSX.Element {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {['20001','20003','20004','20006','2000a','2000b','2000c'].map((name) => {
               const url = `defaultpics/${name}.png`;
-              const selected = p.avatarDataUrl === url;
+              async function pickStock(): Promise<void> {
+                setErr('');
+                try {
+                  const resp = await fetch(url);
+                  if (!resp.ok) throw new Error('Failed to load image.');
+                  const blob = await resp.blob();
+                  const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => reject(new Error('Read failed'));
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.readAsDataURL(blob);
+                  });
+                  update('avatarDataUrl', dataUrl);
+                } catch (e) {
+                  setErr(e instanceof Error ? e.message : 'Could not load image.');
+                }
+              }
               return (
                 <img
                   key={name}
                   src={url}
                   alt={name}
-                  onClick={() => update('avatarDataUrl', url)}
+                  onClick={() => void pickStock()}
                   style={{
                     width: 40, height: 40, objectFit: 'cover', cursor: 'pointer',
-                    border: selected ? '2px solid #0000cc' : '1px solid #888',
+                    border: '1px solid #888',
                     boxSizing: 'border-box',
                   }}
                 />
