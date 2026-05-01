@@ -257,7 +257,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, statusNotice]);
 
   async function send(): Promise<void> {
     setErr('');
