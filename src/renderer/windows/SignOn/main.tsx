@@ -232,7 +232,7 @@ function App(): JSX.Element {
           </button>
         </div>
 
-        <div className="signon-version">Version: 0.2.1</div>
+        <div className="signon-version">Version: {import.meta.env.VITE_APP_VERSION}</div>
 
         {showSettings && (
           <SignOnSettings

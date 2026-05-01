@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { createReadStream, existsSync } from 'fs';
 import { chmod } from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { app } from 'electron';
 
 // Auth key endpoint — Cloudflare Worker that issues ephemeral 24h Tailscale
@@ -48,9 +49,11 @@ function binaryPath(): string {
   if (existsSync(prodPath)) return prodPath;
 
   // Development path: built by `make all` in buzz-mesh/.
+  // import.meta.url resolves to out/main/index.js, so go up 2 levels to reach the project root.
+  // Use fileURLToPath to decode %20 and other URL-encoded characters in the path.
   const devPath = path.join(
-    path.dirname(new URL(import.meta.url).pathname),
-    '../../../../buzz-mesh/dist',
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../buzz-mesh/dist',
     name,
   );
   return devPath;

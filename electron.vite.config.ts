@@ -1,6 +1,7 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import { version } from './package.json';
 
 export default defineConfig({
   main: {
@@ -30,6 +31,9 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),

@@ -71,18 +71,23 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
     peerDiscovery.push(mdns({ interval: 5_000 }));
   }
 
-  // In exp-p2p mode, bind only to the Tailscale VPN IP so we don't expose
-  // ports on public interfaces. Circuit relay is not needed — the tailnet
-  // provides direct routing for all peers.
+  // In exp-p2p (mesh) mode, tsnet is a userspace Go-only network stack — the
+  // Tailscale 100.x.x.x IP is not bindable by Node.js OS sockets. libp2p must
+  // listen on 0.0.0.0 and use the Tailscale IP only as an announced address so
+  // that tailnet peers know where to reach us (via the Go sidecar proxy, once
+  // that bridge layer is implemented). For now 0.0.0.0 lets account creation
+  // and the libp2p node start without error.
   const listenAddresses: string[] = opts.listen ??
-    (isMesh && opts.listenIp
-      ? [`/ip4/${opts.listenIp}/tcp/0`, `/ip4/${opts.listenIp}/tcp/0/ws`]
-      : ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws']);
+    ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws'];
+
+  const announceAddresses: string[] | undefined =
+    isMesh && opts.listenIp ? undefined : undefined; // TODO: set to Tailscale IP once proxy bridge is ready
 
   const node = await createLibp2p({
     peerId,
     addresses: {
       listen: listenAddresses,
+      ...(announceAddresses ? { announce: announceAddresses } : {}),
     },
     transports: isMesh
       ? [tcp(), webSockets()]  // No circuit relay on mesh — tailnet is fully routable

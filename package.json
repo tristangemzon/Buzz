@@ -1,7 +1,7 @@
 {
   "name": "buzz",
   "productName": "Buzz",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Buzz — secure, AIM/AOL-flavoured P2P chat client (Electron + libp2p + SQLCipher).",
   "main": "out/main/index.js",
   "type": "module",
@@ -145,7 +145,17 @@
     },
     "linux": {
       "icon": "resources/icon.png",
-      "category": "Network"
+      "category": "Network",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ]
     },
     "publish": {
       "provider": "github",
