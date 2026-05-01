@@ -155,7 +155,9 @@ function App(): JSX.Element {
       .getPeerStatus(peerId)
       .then((s) => {
         if (!s) return;
-        setStatus(s.status === 'invisible' ? 'offline' : (s.status as typeof status));
+        const resolved = s.status === 'invisible' ? 'offline' : (s.status as typeof status);
+        setStatus(resolved);
+        if (resolved === 'offline') setPeerWentOffline(true);
         setAwayMessage(s.awayMessage);
       })
       .catch(() => undefined);
