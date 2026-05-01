@@ -4,6 +4,8 @@
 // renderer has had at least one interaction.
 
 export type Cue =
+  | 'login'
+  | 'logout'
   | 'door-open'
   | 'door-close'
   | 'buddy-in'
@@ -17,8 +19,10 @@ export type SoundScheme = 'buzz' | 'classic';
 
 // Classic (AIM) scheme: maps each Cue to a .wav file in public/aim/
 const CLASSIC_MAP: Record<Cue, string> = {
-  'door-open':  'aim/welcome.wav',
-  'door-close': 'aim/goodbye.wav',
+  'login':      'aim/welcome.wav',
+  'logout':     'aim/goodbye.wav',
+  'door-open':  'aim/PanelIn.wav',
+  'door-close': 'aim/PanelOut.wav',
   'buddy-in':   'aim/buddyin.wav',
   'buddy-out':  'aim/buddyout.wav',
   'im-receive': 'aim/im.wav',
@@ -128,6 +132,18 @@ export function playSound(cue: Cue): void {
 
   const t = c.currentTime + 0.005;
   switch (cue) {
+    case 'login':
+      // Three rising welcome chimes.
+      beep(c, 660, t, 0.14, 'sine');
+      beep(c, 880, t + 0.13, 0.14, 'sine');
+      beep(c, 1175, t + 0.26, 0.24, 'sine');
+      break;
+    case 'logout':
+      // Three descending farewell notes.
+      beep(c, 988, t, 0.14, 'sine');
+      beep(c, 784, t + 0.13, 0.14, 'sine');
+      beep(c, 523, t + 0.26, 0.24, 'sine');
+      break;
     case 'door-open':
       // Two ascending notes — a friendly "ding".
       beep(c, 660, t, 0.12, 'sine');

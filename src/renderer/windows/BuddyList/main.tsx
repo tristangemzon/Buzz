@@ -41,6 +41,7 @@ function App(): JSX.Element {
   const [err, setErr] = useState('');
   const [soundsOn, setSoundsOn] = useState(true);
   const [soundScheme, setSoundSchemeState] = useState<SoundScheme>(getSoundScheme());
+  const logoutSoundPlayedRef = useRef(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -72,7 +73,15 @@ function App(): JSX.Element {
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
     void window.buzz.getMyId().then(setMe);
-    void window.buzz.listBuddies().then(setBuddies);
+    void window.buzz.listBuddies().then((list) => {
+      setBuddies(list);
+      // Pre-populate prevStatusRef with the current buddy statuses so that
+      // the initial burst of onBuddyStatus events on login doesn't trigger
+      // buddy-in sounds for buddies who were already online.
+      for (const b of list) {
+        prevStatusRef.current[b.peerId] = b.status ?? 'offline';
+      }
+    });
     void window.buzz.getSelfPresence().then(setSelf).catch(() => undefined);
     void window.buzz
       .getPrefs()
@@ -81,6 +90,7 @@ function App(): JSX.Element {
         setSoundsEnabled(p.soundsEnabled);
         setSoundSchemeState(p.soundScheme);
         setSoundScheme(p.soundScheme);
+        playSound('login');
       })
       .catch(() => undefined);
     const off = window.buzz.onBuddyStatus((e: BuddyStatusEvent) => {
@@ -144,6 +154,14 @@ function App(): JSX.Element {
     const offUpdateStatus = window.buzz.onUpdateStatus((s: UpdateStatus) => setUpdateStatus(s));
     void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
     void window.buzz.updatesGetVersion().then(setAppVersion).catch(() => undefined);
+
+    // Play goodbye when the buddy list window is closed directly (X button).
+    // signOff() plays it before lock(), so we guard against a double-play.
+    function handleBeforeUnload() {
+      if (!logoutSoundPlayedRef.current) { logoutSoundPlayedRef.current = true; playSound('logout'); }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
       off();
       offInvited();
@@ -155,6 +173,7 @@ function App(): JSX.Element {
       offTalkInvite();
       offGameInvite();
       offUpdateStatus();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
@@ -225,6 +244,8 @@ function App(): JSX.Element {
   }
 
   async function signOff(): Promise<void> {
+    logoutSoundPlayedRef.current = true;
+    playSound('logout');
     await window.buzz.lock();
     window.close();
   }
