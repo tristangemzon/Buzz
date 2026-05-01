@@ -174,7 +174,7 @@ function App(): JSX.Element {
           </button>
         </div>
 
-        <div className="signon-version">Version: 0.1.5</div>
+        <div className="signon-version">Version: 0.2.0</div>
 
         {showSettings && (
           <SignOnSettings
