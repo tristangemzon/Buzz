@@ -1045,45 +1045,45 @@ html[data-chat-theme='compact'] .chat-log > div {
 /* Classic AIM avatar sidebar + main chat area side-by-side. */
 .im-body {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }
-.im-body-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
+/* Classic mode: 2-col × 2-row grid so the sidebar divider aligns with
+   the chat-log / compose boundary automatically. */
+.im-body.im-body-classic {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "avatar-top  chat"
+    "avatar-bottom compose";
 }
-.im-body-main .chat-log {
-  flex: 1;
-  margin: 6px 6px 0;
-}
-.im-avatar-sidebar {
-  width: 80px;
-  flex: 0 0 80px;
-  display: flex;
-  flex-direction: column;
-  background: #b4cde3;
-  border-right: 1px solid #7a9ab8;
-}
+.im-body-classic .im-avatar-top    { grid-area: avatar-top; }
+.im-body-classic .im-avatar-bottom { grid-area: avatar-bottom; }
+.im-body-classic .chat-log { grid-area: chat; margin: 4px 4px 4px 0; }
+.im-body-classic .im-compose-wrap  { grid-area: compose; }
+/* Non-classic (balloons): compose wrapper is full-width, no sidebar. */
+.im-body:not(.im-body-classic) .im-compose-wrap { flex: 0 0 auto; }
+.im-body:not(.im-body-classic) .chat-log        { flex: 1; }
 .im-avatar-top {
-  flex: 1;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 4px;
+  border-right: 1px solid #7a9ab8;
   border-bottom: 1px solid #7a9ab8;
   background: #c6ddf0;
+  overflow: hidden;
 }
 .im-avatar-bottom {
-  flex: 0 0 auto;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 4px;
+  border-right: 1px solid #7a9ab8;
   background: #a8c0d8;
-  min-height: 90px;
+  overflow: hidden;
 }
 .im-avatar-img {
   width: 68px;
@@ -1094,6 +1094,10 @@ html[data-chat-theme='compact'] .chat-log > div {
 }
 .im-avatar-placeholder {
   background: #8aabca;
+}
+.im-compose-wrap {
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-body {

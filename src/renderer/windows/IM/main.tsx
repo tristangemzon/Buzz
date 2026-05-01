@@ -359,24 +359,16 @@ function App(): JSX.Element {
         }
       />
 
-      {/* Classic-mode AIM avatar sidebar: recipient top, self bottom */}
-      <div className="im-body">
+      {/* im-body: CSS grid so sidebar divider aligns with chat/compose boundary */}
+      <div className={`im-body${theme.chatTheme !== 'balloons' ? ' im-body-classic' : ''}`}>
         {theme.chatTheme !== 'balloons' && (
-          <div className="im-avatar-sidebar">
-            <div className="im-avatar-top">
-              {theirAvatar
-                ? <img src={theirAvatar} alt={alias} className="im-avatar-img" />
-                : <div className="im-avatar-img im-avatar-placeholder" />}
-            </div>
-            <div className="im-avatar-bottom">
-              {myAvatar
-                ? <img src={myAvatar} alt={myName} className="im-avatar-img" />
-                : <div className="im-avatar-img im-avatar-placeholder" />}
-            </div>
+          <div className="im-avatar-top">
+            {theirAvatar
+              ? <img src={theirAvatar} alt={alias} className="im-avatar-img" />
+              : <div className="im-avatar-img im-avatar-placeholder" />}
           </div>
         )}
-        <div className="im-body-main">
-      <div ref={logRef} className="bevel-in chat-log">
+        <div ref={logRef} className="bevel-in chat-log">
         {messages.map((m) =>
           theme.chatTheme === 'balloons' ? (
             <div key={m.id} className={`bubble-row ${m.direction}`}>
@@ -431,19 +423,27 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
-      </div>
+        </div>
 
-      <div className="bevel-in" style={{ margin: '0 6px 6px' }}>
-        <RichEditor
-          ref={editorRef}
-          placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
-          disabled={busy || blocked}
-          onMarkupChange={setDraft}
-          onEnter={() => void send()}
-          style={{ width: '100%', minHeight: 100 }}
-        />
-      </div>
-        </div>{/* im-body-main */}
+        {theme.chatTheme !== 'balloons' && (
+          <div className="im-avatar-bottom">
+            {myAvatar
+              ? <img src={myAvatar} alt={myName} className="im-avatar-img" />
+              : <div className="im-avatar-img im-avatar-placeholder" />}
+          </div>
+        )}
+        <div className="im-compose-wrap">
+          <div className="bevel-in" style={{ margin: '0 6px 6px' }}>
+            <RichEditor
+              ref={editorRef}
+              placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
+              disabled={busy || blocked}
+              onMarkupChange={setDraft}
+              onEnter={() => void send()}
+              style={{ width: '100%', minHeight: 100 }}
+            />
+          </div>
+        </div>
       </div>{/* im-body */}
 
       {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}
