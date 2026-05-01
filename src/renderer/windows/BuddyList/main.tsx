@@ -62,12 +62,14 @@ function App(): JSX.Element {
   // Unread message counters per peer / per room.
   const [unread, setUnread] = useState<UnreadCounts>({ peers: {}, rooms: {} });
   const [signingOff, setSigningOff] = useState(false);
+  const [isMesh, setIsMesh] = useState(false);
   // Track last seen status per peer so we can play buddy-in / buddy-out
   // only on actual transitions (not on every duplicate broadcast).
   const prevStatusRef = useRef<Record<string, Status>>({});
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
+    void window.buzz.getNetworkConfig().then((cfg) => setIsMesh(cfg.mode === 'exp-p2p'));
     void window.buzz.getMyId().then(setMe);
     void window.buzz.listBuddies().then((list) => {
       setBuddies(list);
@@ -589,6 +591,15 @@ function App(): JSX.Element {
         >
           ⚙️
         </button>
+        {isMesh && (
+          <button
+            className="bl-action-btn"
+            title="Mesh Debug"
+            onClick={() => void window.buzzWindows.openMeshDebug()}
+          >
+            📡
+          </button>
+        )}
         <span className="bl-actionbar-spacer" />
         <button className="bl-action-btn bl-signoff" title="Sign Off" onClick={signOff} disabled={signingOff}>
           Sign Off

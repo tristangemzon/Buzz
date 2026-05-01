@@ -51,6 +51,7 @@ export default defineConfig({
           videocall: resolve('src/renderer/videocall.html'),
           game: resolve('src/renderer/game.html'),
           settings: resolve('src/renderer/settings.html'),
+          meshdebug: resolve('src/renderer/meshdebug.html'),
         },
       },
     },

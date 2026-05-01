@@ -554,6 +554,39 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   handle(IPC.GameResign, z.string(), async (toPeerId) => {
     await session.sendGameFrame(toPeerId, 'resign', 'checkers');
   });
+
+  // ── Buzz Mesh debug ───────────────────────────────────────────────────────
+  handle(IPC.MeshDebugGet, null, async () => {
+    const { MeshNode } = await import('../p2p/mesh.js');
+    const netCfg = loadNetworkConfig();
+    const status = MeshNode.instance.status;
+    const tailnetPeers = await MeshNode.instance.fetchTailnetPeers().catch(() => [] as string[]);
+    const conns = session.node ? session.node.getConnections() : [];
+    const peerMap = new Map<string, string[]>();
+    for (const c of conns) {
+      const id = c.remotePeer.toString();
+      const list = peerMap.get(id) ?? [];
+      list.push(c.remoteAddr.toString());
+      peerMap.set(id, list);
+    }
+    const pending = session.db
+      ? (
+          session.db
+            .prepare("SELECT COUNT(*) as c FROM buddy_requests WHERE direction='out'")
+            .get() as { c: number }
+        ).c
+      : 0;
+    return {
+      mode: netCfg.mode,
+      meshState: status.state,
+      meshIp: status.state === 'connected' ? (status as { ip: string }).ip : null,
+      meshError: status.state === 'error' ? (status as { message: string }).message : null,
+      socksPort: MeshNode.instance.socksPort,
+      tailnetPeers,
+      libp2pPeers: Array.from(peerMap.entries()).map(([peerId, addrs]) => ({ peerId, addrs })),
+      pendingOutRequests: pending,
+    };
+  });
 }
 
 function requireDb(s: Session) {

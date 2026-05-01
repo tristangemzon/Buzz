@@ -128,6 +128,9 @@ export const IPC = {
   UpdatesGetVersion: 'updates:getVersion',
   EvtUpdateStatus: 'evt:updateStatus',
 
+  // Buzz Mesh debug info
+  MeshDebugGet: 'mesh:debugGet',
+
   // peer-to-peer games
   GameInvite: 'game:invite',
   GameAccept: 'game:accept',

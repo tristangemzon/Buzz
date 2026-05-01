@@ -586,7 +586,27 @@ export class Session {
           const ma = `/ip4/${ip}/tcp/${MESH_LIBP2P_PORT}`;
           try {
             const { multiaddr } = await import('@multiformats/multiaddr');
-            await node.dial(multiaddr(ma));
+            const conn = await node.dial(multiaddr(ma));
+            // After a successful dial, retry any pending outgoing buddy request
+            // to this peer — the first send may have failed because the
+            // connection wasn't up yet when the user clicked Add Buddy.
+            const connectedPeerId = conn.remotePeer.toString();
+            if (this.db && this.im) {
+              const pending = this.db
+                .prepare(
+                  "SELECT screen_name as screenName, ts FROM buddy_requests WHERE peer_id=? AND direction='out'",
+                )
+                .get(connectedPeerId) as { screenName: string; ts: number } | undefined;
+              if (pending) {
+                void this.im
+                  .send(connectedPeerId, {
+                    type: 'buddy-req',
+                    screenName: this.screenName,
+                    ts: pending.ts,
+                  })
+                  .catch(() => {});
+              }
+            }
           } catch {
             // Peer may not have Buzz running on that port — ignore.
           }

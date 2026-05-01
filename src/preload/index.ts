@@ -87,6 +87,8 @@ const api: AppApi = {
   mailboxRemoveRelay: (req) => ipcRenderer.invoke(IPC.MailboxRemoveRelay, req),
   mailboxPoll: () => ipcRenderer.invoke(IPC.MailboxPoll),
 
+  getMeshDebug: () => ipcRenderer.invoke(IPC.MeshDebugGet),
+
   listDiscovered: () => ipcRenderer.invoke(IPC.DiscoveryList),
 
   onBuddyStatus: (cb) => on(IPC.EvtBuddyStatus, cb),
@@ -146,6 +148,7 @@ const windows = {
   openChat: (roomId: string) => ipcRenderer.invoke('windows:openChat', roomId),
   openGame: (peerId: string, kind: string, initiator?: boolean) => ipcRenderer.invoke('windows:openGame', peerId, kind, initiator),
   openSettings: () => ipcRenderer.invoke('windows:openSettings'),
+  openMeshDebug: () => ipcRenderer.invoke('windows:openMeshDebug'),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   toggleMax: () => ipcRenderer.invoke('window:toggleMax'),
   close: () => ipcRenderer.invoke('window:close'),

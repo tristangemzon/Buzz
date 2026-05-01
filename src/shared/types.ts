@@ -88,6 +88,17 @@ export type GameDeclinedEvent = { fromPeerId: string; kind: GameKind };
 export type GameMoveEvent   = { fromPeerId: string; kind: GameKind; path: number[] };
 export type GameResignedEvent = { fromPeerId: string; kind: GameKind };
 
+export type MeshDebugInfo = {
+  mode: string;
+  meshState: 'stopped' | 'connecting' | 'connected' | 'error';
+  meshIp: string | null;
+  meshError: string | null;
+  socksPort: number | null;
+  tailnetPeers: string[];
+  libp2pPeers: Array<{ peerId: string; addrs: string[] }>;
+  pendingOutRequests: number;
+};
+
 export type UpdateStatus =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -192,6 +203,9 @@ export type AppApi = {
   mailboxAddRelay(req: MailboxAddRelayReq): Promise<MailboxStats>;
   mailboxRemoveRelay(req: MailboxRemoveRelayReq): Promise<MailboxStats>;
   mailboxPoll(): Promise<{ relay: string; delivered: number }[]>;
+
+  // Buzz Mesh debug info
+  getMeshDebug(): Promise<MeshDebugInfo>;
 
   // automatic peer discovery (mDNS in p2p mode)
   listDiscovered(): Promise<DiscoveredPeer[]>;

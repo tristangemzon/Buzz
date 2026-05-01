@@ -62,7 +62,7 @@ function installCsp(): void {
 }
 
 // Resolve the renderer URL/file for a given page id (matches Vite multi-entry).
-function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings'): {
+function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings' | 'meshdebug'): {
   url?: string;
   file?: string;
 } {
@@ -80,6 +80,7 @@ const chatWindows = new Map<string, BrowserWindow>();
 const videoCallWindows = new Map<string, BrowserWindow>();
 const gameWindows = new Map<string, BrowserWindow>();
 let settingsWin: BrowserWindow | null = null;
+let meshDebugWin: BrowserWindow | null = null;
 
 function commonWebPrefs() {
   return {
@@ -92,7 +93,7 @@ function commonWebPrefs() {
   } as const;
 }
 
-function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings', hash = ''): void {
+function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings' | 'meshdebug', hash = ''): void {
   const t = rendererTarget(page);
   const suffix = hash ? `#${encodeURIComponent(hash)}` : '';
   if (t.url) void win.loadURL(t.url + suffix);
@@ -169,6 +170,30 @@ function openSettingsWindow(): BrowserWindow {
     if (settingsWin === win) settingsWin = null;
   });
   settingsWin = win;
+  return win;
+}
+
+function openMeshDebugWindow(): BrowserWindow {
+  if (meshDebugWin && !meshDebugWin.isDestroyed()) {
+    meshDebugWin.focus();
+    return meshDebugWin;
+  }
+  const win = new BrowserWindow({
+    width: 620,
+    height: 480,
+    minWidth: 500,
+    minHeight: 360,
+    frame: false,
+    title: 'Buzz Mesh Debug',
+    transparent: true,
+    icon: APP_ICON,
+    webPreferences: commonWebPrefs(),
+  });
+  loadInto(win, 'meshdebug');
+  win.on('closed', () => {
+    if (meshDebugWin === win) meshDebugWin = null;
+  });
+  meshDebugWin = win;
   return win;
 }
 
@@ -322,6 +347,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('windows:openSettings', () => {
     openSettingsWindow();
+  });
+  ipcMain.handle('windows:openMeshDebug', () => {
+    openMeshDebugWindow();
   });
   ipcMain.handle('windows:openChat', (_e, roomId: string) => {
     if (typeof roomId !== 'string') throw new Error('bad roomId');
