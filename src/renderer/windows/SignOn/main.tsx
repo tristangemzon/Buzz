@@ -11,6 +11,7 @@ type Mode = 'signin' | 'create' | 'migrate';
 function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
   const [isMesh, setIsMesh] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
   const [mode, setMode] = useState<Mode>('signin');
   const [selectedId, setSelectedId] = useState<string>('');
   const [screenName, setScreenName] = useState('');
@@ -22,6 +23,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
+    void window.buzz.getAppVersion().then(setAppVersion);
     Promise.all([window.buzz.listProfiles(), window.buzz.getNetworkConfig()]).then(
       ([list, netCfg]) => {
         const mesh = netCfg.mode === 'exp-p2p';
@@ -232,7 +234,7 @@ function App(): JSX.Element {
           </button>
         </div>
 
-        <div className="signon-version">Version: {import.meta.env.VITE_APP_VERSION}</div>
+        <div className="signon-version">Version: {appVersion}</div>
 
         {showSettings && (
           <SignOnSettings

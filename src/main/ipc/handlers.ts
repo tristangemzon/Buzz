@@ -1,4 +1,4 @@
-import { dialog, ipcMain, BrowserWindow } from 'electron';
+import { app, dialog, ipcMain, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, type ZodTypeAny } from 'zod';
@@ -84,6 +84,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     z.object({ profileId: z.string(), passphrase: z.string() }),
     ({ profileId, passphrase }) => session.migrateDb(profileId, passphrase),
   );
+  handle(IPC.AppGetVersion, null, () => app.getVersion());
   handle(IPC.AuthGetPlatform, null, () => platform());
   handle(IPC.AuthGetMyId, null, () => ({
     peerId: session.peerIdStr(),

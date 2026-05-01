@@ -98,6 +98,9 @@ export type UpdateStatus =
   | { phase: 'error'; message: string };
 
 export type AppApi = {
+  // app
+  getAppVersion(): Promise<string>;
+
   // auth
   hasIdentity(): Promise<boolean>;
   listProfiles(): Promise<ProfileSummary[]>;

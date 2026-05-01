@@ -1,5 +1,8 @@
 // Stable identifiers for IPC channels. Keep in one place.
 export const IPC = {
+  // app
+  AppGetVersion: 'app:getVersion',
+
   // auth / identity
   AuthHasIdentity: 'auth:hasIdentity',
   AuthListProfiles: 'auth:listProfiles',
