@@ -178,14 +178,12 @@ export class MeshNode {
           // First line: Tailscale IP (100.x.x.x)
           if (!ip && /^100\.\d+\.\d+\.\d+$/.test(trimmed)) {
             ip = trimmed;
-          }
           // Second line: local HTTP API port
-          if (!apiPort && ip && /^\d+$/.test(trimmed)) {
+          } else if (!apiPort && ip && /^\d+$/.test(trimmed)) {
             apiPort = parseInt(trimmed, 10);
             this._apiPort = apiPort;
-          }
           // Third line: local SOCKS5 proxy port
-          if (!socksPort && apiPort && /^\d+$/.test(trimmed)) {
+          } else if (!socksPort && apiPort && /^\d+$/.test(trimmed)) {
             socksPort = parseInt(trimmed, 10);
             this._socksPort = socksPort;
           }
