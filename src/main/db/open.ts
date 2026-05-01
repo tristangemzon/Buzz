@@ -8,16 +8,12 @@ export type Db = Database.Database;
 
 export function openDb(file: string, key: Uint8Array): Db {
   const db = new Database(file);
+  // Databases created with bsmc v11 used SQLCipher 3 defaults. This pragma
+  // must come BEFORE key= so the header is decrypted with the right settings.
+  db.pragma('cipher_compatibility = 3');
   // Apply SQLCipher key as a hex blob via raw key syntax.
   const hex = Buffer.from(key).toString('hex');
   db.pragma(`key="x'${hex}'"`);
-  // Databases created with better-sqlite3-multiple-ciphers v11 (SQLCipher 3
-  // defaults) need these compatibility pragmas so v12 (SQLCipher 4 defaults)
-  // can still open them. Must be set immediately after key=, before any reads.
-  db.pragma('cipher_page_size = 1024');
-  db.pragma('kdf_iter = 64000');
-  db.pragma('cipher_hmac_algorithm = HMAC_SHA1');
-  db.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA1');
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
