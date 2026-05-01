@@ -13,8 +13,36 @@ export type Cue =
   | 'ring'
   | 'error';
 
+export type SoundScheme = 'buzz' | 'classic';
+
+// Classic (AIM) scheme: maps each Cue to a .wav file in public/aim/
+const CLASSIC_MAP: Record<Cue, string> = {
+  'door-open':  'aim/welcome.wav',
+  'door-close': 'aim/goodbye.wav',
+  'buddy-in':   'aim/buddyin.wav',
+  'buddy-out':  'aim/buddyout.wav',
+  'im-receive': 'aim/im.wav',
+  'mail':       'aim/gotmail.wav',
+  'ring':       'aim/phonecall.wav',
+  'error':      'aim/alert.wav',
+};
+
 let ctx: AudioContext | null = null;
 let enabled = true;
+
+// Initialise scheme from localStorage so it survives across windows/sessions
+// without requiring an authenticated DB read.
+let scheme: SoundScheme =
+  (typeof localStorage !== 'undefined' && localStorage.getItem('buzz_soundScheme') === 'classic')
+    ? 'classic'
+    : 'buzz';
+
+export function setSoundScheme(s: SoundScheme): void {
+  scheme = s;
+  try { localStorage.setItem('buzz_soundScheme', s); } catch { /* ignore */ }
+}
+
+export function getSoundScheme(): SoundScheme { return scheme; }
 
 function ensureCtx(): AudioContext | null {
   if (ctx) return ctx;
@@ -80,6 +108,18 @@ function glide(
 
 export function playSound(cue: Cue): void {
   if (!enabled) return;
+
+  // Classic scheme: play the corresponding AIM .wav file
+  if (scheme === 'classic') {
+    const file = CLASSIC_MAP[cue];
+    if (file) {
+      const a = new Audio(file);
+      a.play().catch(() => undefined);
+    }
+    return;
+  }
+
+  // Buzz scheme: synthesized tones via Web Audio
   const c = ensureCtx();
   if (!c) return;
   // Resuming is required if the context was suspended (some browsers

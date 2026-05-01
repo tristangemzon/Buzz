@@ -119,6 +119,7 @@ export const Prefs = z.object({
   awayMessage: z.string().max(1024).default(''),
   idleMinutes: z.number().int().min(1).max(180).default(10),
   soundsEnabled: z.boolean().default(true),
+  soundScheme: z.enum(['buzz', 'classic']).default('buzz'),
   // Persisted base status across sessions. Only 'online' or 'invisible'
   // are persisted; 'away'/'idle' are derived/transient.
   lastStatus: z.enum(['online', 'invisible']).default('online'),

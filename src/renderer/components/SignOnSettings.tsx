@@ -8,7 +8,7 @@ type Props = {
   onClose(): void;
 };
 
-type Section = 'network' | 'reset';
+type Section = 'network' | 'sounds' | 'reset';
 
 // Pre-login settings dialog. Replaces the old single-purpose NetworkSettings
 // modal with a sectioned layout so we can host several knobs (currently:
@@ -24,6 +24,14 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
   const [netErr, setNetErr] = useState('');
   const [netBusy, setNetBusy] = useState(false);
   const [netLoaded, setNetLoaded] = useState(false);
+
+  // Sound scheme state — stored in localStorage so it's accessible pre-auth.
+  const [soundScheme, setSoundSchemeLocal] = useState<'buzz' | 'classic'>(
+    () =>
+      (typeof localStorage !== 'undefined' && localStorage.getItem('buzz_soundScheme') === 'classic')
+        ? 'classic'
+        : 'buzz',
+  );
 
   // Reset state.
   const [confirmText, setConfirmText] = useState('');
@@ -41,6 +49,13 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
       .catch(() => undefined)
       .finally(() => setNetLoaded(true));
   }, []);
+
+  function handleSoundSchemeChange(s: 'buzz' | 'classic'): void {
+    setSoundSchemeLocal(s);
+    try { localStorage.setItem('buzz_soundScheme', s); } catch { /* ignore */ }
+    // Also persist to prefs if the session is already unlocked (best-effort).
+    void window.buzz.setPrefs({ soundScheme: s }).catch(() => undefined);
+  }
 
   async function saveNetwork(): Promise<void> {
     setNetErr('');
@@ -92,6 +107,12 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
               onClick={() => setSection('network')}
             >
               Network
+            </button>
+            <button
+              className={`settings-nav-item${section === 'sounds' ? ' active' : ''}`}
+              onClick={() => setSection('sounds')}
+            >
+              Sounds
             </button>
             <button
               className={`settings-nav-item${section === 'reset' ? ' active' : ''}`}
@@ -170,6 +191,43 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
                     <div className="error">{netErr}</div>
                   </>
                 )}
+              </div>
+            )}
+
+            {section === 'sounds' && (
+              <div className="modal-body">
+                <div className="row">
+                  <label className="radio">
+                    <input
+                      type="radio"
+                      name="soundscheme"
+                      checked={soundScheme === 'buzz'}
+                      onChange={() => handleSoundSchemeChange('buzz')}
+                    />
+                    <span>
+                      <strong>Buzz</strong> — synthesized tones
+                    </span>
+                  </label>
+                  <div className="muted small">
+                    Clean, original sounds generated in-app. No extra files.
+                  </div>
+                </div>
+                <div className="row">
+                  <label className="radio">
+                    <input
+                      type="radio"
+                      name="soundscheme"
+                      checked={soundScheme === 'classic'}
+                      onChange={() => handleSoundSchemeChange('classic')}
+                    />
+                    <span>
+                      <strong>Classic</strong> — authentic AIM sounds
+                    </span>
+                  </label>
+                  <div className="muted small">
+                    The original AIM door, IM, and buddy sounds.
+                  </div>
+                </div>
               </div>
             )}
 

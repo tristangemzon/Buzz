@@ -4,7 +4,8 @@ import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
 import { ThemeSettings } from '../../components/ThemeSettings';
-import { playSound, setSoundsEnabled } from '../../sounds/synth';
+import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme } from '../../sounds/synth';
+import type { SoundScheme } from '../../sounds/synth';
 import type {
   Buddy,
   BuddyRequest,
@@ -39,6 +40,7 @@ function App(): JSX.Element {
   const [group, setGroup] = useState('Buddies');
   const [err, setErr] = useState('');
   const [soundsOn, setSoundsOn] = useState(true);
+  const [soundScheme, setSoundSchemeState] = useState<SoundScheme>(getSoundScheme());
   const [showProfile, setShowProfile] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -77,6 +79,8 @@ function App(): JSX.Element {
       .then((p) => {
         setSoundsOn(p.soundsEnabled);
         setSoundsEnabled(p.soundsEnabled);
+        setSoundSchemeState(p.soundScheme);
+        setSoundScheme(p.soundScheme);
       })
       .catch(() => undefined);
     const off = window.buzz.onBuddyStatus((e: BuddyStatusEvent) => {
@@ -260,6 +264,16 @@ function App(): JSX.Element {
     setSoundsEnabled(next);
     try {
       await window.buzz.setPrefs({ soundsEnabled: next });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  async function changeSoundScheme(s: SoundScheme): Promise<void> {
+    setSoundSchemeState(s);
+    setSoundScheme(s);
+    try {
+      await window.buzz.setPrefs({ soundScheme: s });
     } catch {
       /* best-effort */
     }
@@ -797,6 +811,8 @@ function App(): JSX.Element {
           <SettingsPanel
             updateStatus={updateStatus}
             appVersion={appVersion}
+            soundScheme={soundScheme}
+            onSoundSchemeChange={(s) => void changeSoundScheme(s)}
             onCheckNow={async () => {
               const s = await window.buzz.updatesCheck();
               setUpdateStatus(s);
@@ -905,11 +921,13 @@ function App(): JSX.Element {
 function SettingsPanel(props: {
   updateStatus: UpdateStatus;
   appVersion: string;
+  soundScheme: SoundScheme;
+  onSoundSchemeChange: (s: SoundScheme) => void;
   onCheckNow: () => Promise<void>;
   onDownload: () => Promise<void>;
   onInstall: () => void;
 }): JSX.Element {
-  const { updateStatus, appVersion, onCheckNow, onDownload, onInstall } = props;
+  const { updateStatus, appVersion, soundScheme, onSoundSchemeChange, onCheckNow, onDownload, onInstall } = props;
 
   function statusLine(): string {
     switch (updateStatus.phase) {
@@ -925,6 +943,30 @@ function SettingsPanel(props: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* ── Sound scheme ── */}
+      <div className="settings-section">
+        <div className="settings-section-title">Sound Scheme</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <input
+              type="radio"
+              name="soundscheme-bl"
+              checked={soundScheme === 'buzz'}
+              onChange={() => onSoundSchemeChange('buzz')}
+            />
+            <span><strong>Buzz</strong> — synthesized tones</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <input
+              type="radio"
+              name="soundscheme-bl"
+              checked={soundScheme === 'classic'}
+              onChange={() => onSoundSchemeChange('classic')}
+            />
+            <span><strong>Classic</strong> — authentic AIM sounds</span>
+          </label>
+        </div>
+      </div>
       {/* ── Auto-updates ── */}
       <div className="settings-section">
         <div className="settings-section-title">Auto-Updates</div>

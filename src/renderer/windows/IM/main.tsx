@@ -6,7 +6,7 @@ import { ProfileViewer } from '../../components/ProfilePanes';
 import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
-import { playSound, setSoundsEnabled } from '../../sounds/synth';
+import { playSound, setSoundsEnabled, setSoundScheme } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
 const DEFAULT_THEME: Theme = {
@@ -125,6 +125,7 @@ function App(): JSX.Element {
       .getPrefs()
       .then((p) => {
         setSoundsEnabled(p.soundsEnabled);
+        setSoundScheme(p.soundScheme);
         setTheme(p.theme);
         applyThemeAttributes(p.theme);
         setMyAvatar(p.profile.avatarDataUrl || '');
