@@ -449,6 +449,10 @@ function App(): JSX.Element {
 
       {err && <div className="error" style={{ padding: '0 8px 2px', fontSize: 11 }}>{err}</div>}
 
+      {status === 'offline' && (
+        <div className="im-offline-notice">{alias} is offline.</div>
+      )}
+
       {/* ── AIM-style action bar ─────────────────────────────────────── */}
       <div className="im-actionbar">
         {/* Left: moderation */}

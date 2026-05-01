@@ -1248,6 +1248,18 @@ html[data-chat-theme='compact'] .chat-log > div {
   border-color: #6a90c0;
 }
 
+/* ── IM offline notice ─────────────────────────────────────────────────── */
+.im-offline-notice {
+  font-weight: bold;
+  font-size: 11px;
+  color: #000;
+  background: var(--c-panel);
+  border-top: 1px solid var(--c-bevel-dark, #888);
+  padding: 3px 8px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 /* ── IM / Chat window AIM-style action bar ─────────────────────────────── */
 .im-actionbar {
   display: flex;
