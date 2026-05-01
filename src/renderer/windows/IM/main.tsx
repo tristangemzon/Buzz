@@ -139,26 +139,20 @@ function App(): JSX.Element {
       .listBuddies()
       .then((bs) => {
         const b = bs.find((x) => x.peerId === peerId);
+        const resolvedAlias = b?.alias ?? (peerId.slice(0, 12) + '\u2026');
         if (b) {
           setAlias(b.alias);
           setBlocked(b.blocked);
           setWarnLevel(b.warnLevel);
         }
-      });
-    void window.buzz.history({ peerId, limit: 100 }).then(setMessages);
-    // Mark all delivered messages from this peer as read since the IM
-    // window is now open and visible.
-    void window.buzz.markImRead(peerId).catch(() => undefined);
-    // Seed the header status from the session's last-known snapshot in case
-    // the buddy went online before this window was opened.
-    void window.buzz
-      .getPeerStatus(peerId)
-      .then((s) => {
-        const resolved = !s || s.status === 'invisible' ? 'offline' : (s.status as typeof status);
-        setStatus(resolved);
-        if (resolved === 'offline') setStatusNotice(`${alias} is offline.`);
-        else if (resolved === 'away') setStatusNotice(`${alias} is away.`);
-        if (s) setAwayMessage(s.awayMessage);
+        // Chain status lookup so we have the correct alias available.
+        return window.buzz.getPeerStatus(peerId).then((s) => {
+          const resolved = !s || s.status === 'invisible' ? 'offline' : (s.status as typeof status);
+          setStatus(resolved);
+          if (resolved === 'offline') setStatusNotice(`${resolvedAlias} is offline.`);
+          else if (resolved === 'away') setStatusNotice(`${resolvedAlias} is away.`);
+          if (s) setAwayMessage(s.awayMessage);
+        });
       })
       .catch(() => undefined);
 
