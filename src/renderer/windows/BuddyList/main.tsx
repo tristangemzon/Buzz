@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { applyPlatformTheme } from '../../theme/applyPlatform';
+import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
 import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme } from '../../sounds/synth';
@@ -154,6 +154,8 @@ function App(): JSX.Element {
     }
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    const offTheme = window.buzz.onThemeChanged((theme) => applyThemeAttributes(theme));
+
     return () => {
       off();
       offInvited();
@@ -164,6 +166,7 @@ function App(): JSX.Element {
       offUnread();
       offTalkInvite();
       offGameInvite();
+      offTheme();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);

@@ -190,7 +190,16 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     if (!session.db) return Prefs.parse({});
     return repos.getPrefs(session.db);
   });
-  handle(IPC.PrefsSet, SetPrefsReq, (patch) => repos.setPrefs(requireDb(session), patch));
+  handle(IPC.PrefsSet, SetPrefsReq, (patch) => {
+    const updated = repos.setPrefs(requireDb(session), patch);
+    // Broadcast theme changes to all open windows so they re-apply live.
+    if (patch.theme) {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('evt:themeChanged', updated.theme);
+      }
+    }
+    return updated;
+  });
 
   // ── network mode (pre-unlock readable) ───────────────────────────────────
   handle(IPC.NetworkGet, null, () => loadNetworkConfig());

@@ -135,11 +135,17 @@ function App(): JSX.Element {
       }
     });
 
+    const offTheme = window.buzz.onThemeChanged((t) => {
+      setTheme(t);
+      applyThemeAttributes(t);
+    });
+
     return () => {
       offMsg();
       offMembers();
       offInvited();
       offChannel();
+      offTheme();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

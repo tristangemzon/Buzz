@@ -57,6 +57,7 @@ import type {
   TalkAudioEvent,
   TalkVideoEvent,
   TalkVideoStateEvent,
+  Theme,
 } from './schemas.js';
 
 export type Platform = 'mac' | 'windows' | 'linux';
@@ -224,6 +225,7 @@ export type AppApi = {
   updatesGetStatus(): Promise<UpdateStatus>;
   updatesGetVersion(): Promise<string>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;
+  onThemeChanged(cb: (t: Theme) => void): () => void;
 
   // games
   gameInvite(req: GameInviteReq): Promise<void>;

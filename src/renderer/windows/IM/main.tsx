@@ -242,6 +242,10 @@ function App(): JSX.Element {
       // Open the game window as acceptor (no initiator flag)
       void window.buzzWindows.openGame(peerId, ev.kind ?? 'checkers');
     });
+    const offTheme = window.buzz.onThemeChanged((theme) => {
+      setTheme(theme);
+      applyThemeAttributes(theme);
+    });
     return () => {
       offRecv();
       offAck();
@@ -251,6 +255,7 @@ function App(): JSX.Element {
       offDone();
       offPeerProfile();
       offGameInvite();
+      offTheme();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);

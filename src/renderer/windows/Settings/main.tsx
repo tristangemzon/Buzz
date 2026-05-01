@@ -47,37 +47,22 @@ function App(): JSX.Element {
 
 function ThemesPane(): JSX.Element {
   const [t, setT] = useState<Theme | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     void window.buzz.getPrefs().then((p) => setT(p.theme));
   }, []);
 
   useEffect(() => {
-    if (t) applyThemeAttributes(t);
+    if (t) {
+      applyThemeAttributes(t);
+      void window.buzz.setPrefs({ theme: t }).catch(() => undefined);
+    }
   }, [t]);
 
   if (!t) return <div className="muted">Loading…</div>;
 
   function update<K extends keyof Theme>(k: K, v: Theme[K]): void {
     setT((prev) => (prev ? { ...prev, [k]: v } : prev));
-    setSaved(false);
-  }
-
-  async function save(): Promise<void> {
-    if (!t) return;
-    setBusy(true);
-    setErr('');
-    try {
-      await window.buzz.setPrefs({ theme: t });
-      setSaved(true);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -153,11 +138,6 @@ function ThemesPane(): JSX.Element {
         </div>
       </div>
 
-      {err && <div className="error">{err}</div>}
-      <div className="actions">
-        <button onClick={() => void save()} disabled={busy}>Save</button>
-        {saved && <span style={{ fontSize: 11, color: 'green' }}>Saved!</span>}
-      </div>
     </div>
   );
 }
