@@ -140,6 +140,11 @@ func main() {
 		}
 		var ips []string
 		for _, peer := range st.Peer {
+			// Only include peers that Tailscale considers online/reachable.
+			// This avoids wasting libp2p dial attempts on offline tailnet members.
+			if !peer.Online {
+				continue
+			}
 			for _, addr := range peer.TailscaleIPs {
 				if addr.Is4() {
 					ips = append(ips, addr.String())

@@ -129,11 +129,14 @@ function App(): JSX.Element {
 
             {/* ── Tailnet peers ── */}
             <div style={{ marginBottom: 6, fontWeight: 'bold' }}>
-              Tailnet peers ({info.tailnetPeers.length})
+              Online tailnet peers ({info.tailnetPeers.length})
+              <span style={{ fontWeight: 'normal', color: '#888', fontSize: 10, marginLeft: 6 }}>
+                (Tailscale-reachable only)
+              </span>
             </div>
             <div className="bevel-in" style={{ padding: '6px 8px', marginBottom: 8, maxHeight: 90, overflowY: 'auto' }}>
               {info.tailnetPeers.length === 0 ? (
-                <span style={{ color: '#888' }}>No tailnet peers visible yet.</span>
+                <span style={{ color: '#888' }}>No online tailnet peers.</span>
               ) : (
                 info.tailnetPeers.map((ip) => (
                   <div key={ip} style={{ fontFamily: 'monospace', fontSize: 11 }}>{ip}</div>

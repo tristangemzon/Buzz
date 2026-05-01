@@ -94,7 +94,7 @@ export type MeshDebugInfo = {
   meshIp: string | null;
   meshError: string | null;
   socksPort: number | null;
-  tailnetPeers: string[];
+  tailnetPeers: string[];        // online (reachable) tailnet peers
   libp2pPeers: Array<{ peerId: string; addrs: string[] }>;
   pendingOutRequests: number;
   dialErrors: string[];
