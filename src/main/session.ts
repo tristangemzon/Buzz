@@ -18,7 +18,7 @@ import { PresenceManager } from './p2p/presence.js';
 import { RoomService } from './p2p/rooms.js';
 import { XferService } from './p2p/xfer.js';
 import { TalkService } from './p2p/talk.js';
-import { buddyCodeFor, createNode } from './p2p/node.js';
+import { buddyCodeFor, createNode, MESH_LIBP2P_PORT } from './p2p/node.js';
 import { MeshNode } from './p2p/mesh.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
@@ -85,6 +85,8 @@ export class Session {
   // catch up. Cleared on lock.
   private peerStatuses = new Map<string, BuddyStatusEvent>();
   private onPeerIdentify: ((evt: Event) => void) | null = null;
+  // Interval timer that polls the buzz-mesh sidecar for new tailnet peers (exp-p2p mode).
+  private _meshPollTimer: ReturnType<typeof setInterval> | null = null;
   screenName = '';
   // Active profile id (set on create/unlock, cleared on lock).
   profileId: string | null = null;
@@ -277,6 +279,10 @@ export class Session {
       this.hiveClient = null;
     }
     // Stop the Buzz Mesh sidecar if it was running in exp-p2p mode.
+    if (this._meshPollTimer != null) {
+      clearInterval(this._meshPollTimer);
+      this._meshPollTimer = null;
+    }
     await MeshNode.instance.stop().catch(() => undefined);
     this.currentCall = null;
     this.roomKeys.clear();
@@ -330,11 +336,13 @@ export class Session {
 
     // ── Experimental P2P: join the Buzz Mesh (Tailscale tsnet sidecar) ──────
     let meshIp: string | undefined;
+    let socksPort: number | undefined;
     if (network.mode === 'exp-p2p') {
       meshIp = await MeshNode.instance.start();
+      socksPort = MeshNode.instance.socksPort ?? undefined;
     }
 
-    const node = await createNode({ identity: id, network, listenIp: meshIp });
+    const node = await createNode({ identity: id, network, listenIp: meshIp, socksPort });
     this.node = node;
     const peerIdStr = node.peerId.toString();
     const existing = repos.getIdentity(this.db);
@@ -567,6 +575,27 @@ export class Session {
     );
     this.presence.start();
     this.presence.loginBurst();
+
+    // In Buzz Mesh mode, periodically fetch tailnet peer IPs from the Go
+    // sidecar and dial any we haven't connected to yet. mDNS handles same-
+    // network peers automatically; this covers cross-network Tailscale peers.
+    if (network.mode === 'exp-p2p') {
+      const dialMeshPeers = async () => {
+        const ips = await MeshNode.instance.fetchTailnetPeers();
+        for (const ip of ips) {
+          const ma = `/ip4/${ip}/tcp/${MESH_LIBP2P_PORT}`;
+          try {
+            const { multiaddr } = await import('@multiformats/multiaddr');
+            await node.dial(multiaddr(ma));
+          } catch {
+            // Peer may not have Buzz running on that port — ignore.
+          }
+        }
+      };
+      // Initial dial attempt shortly after startup, then every 30 s.
+      setTimeout(() => { void dialMeshPeers(); }, 3_000);
+      this._meshPollTimer = setInterval(() => { void dialMeshPeers(); }, 30_000);
+    }
 
     // Multi-party chat rooms. Decode all known room keys into RAM so the
     // RoomBridge can return them synchronously when encrypting/decrypting.

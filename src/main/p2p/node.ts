@@ -21,6 +21,7 @@ import { peerIdFromKeys } from '@libp2p/peer-id';
 
 import type { IdentityMaterial } from '../crypto/keystore.js';
 import type { NetworkConfig } from '@shared/schemas.js';
+import { meshTcpTransport } from './mesh-transport.js';
 
 // Default bootstrap nodes. In production you'd run your own — these are public
 // IPFS bootstrappers and are fine for a dev build.
@@ -29,6 +30,10 @@ const DEFAULT_BOOTSTRAP = [
   '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
 ];
 
+// Fixed TCP port used by libp2p in Buzz Mesh mode. The Go sidecar's Tailscale
+// forwarder listens on `:meshLibp2pPort` and forwards to this local port.
+export const MESH_LIBP2P_PORT = 14001;
+
 export type NodeOptions = {
   identity: IdentityMaterial;
   listen?: string[];
@@ -36,11 +41,12 @@ export type NodeOptions = {
   // When provided, takes precedence over the default bootstrap list:
   //   - 'p2p'     → use DEFAULT_BOOTSTRAP (public DHT)
   //   - 'server'  → use [serverAddr] only (custom Buzz server)
-  //   - 'exp-p2p' → no bootstrap, listen only on the Tailscale VPN IP
+  //   - 'exp-p2p' → no bootstrap, use meshTcpTransport for Tailscale peers
   network?: NetworkConfig;
-  // Explicit IP to bind to (used in 'exp-p2p' mode — the Tailscale 100.x.x.x address).
-  // Overrides the default 0.0.0.0 listen addresses.
+  // Explicit IP to announce (used in 'exp-p2p' mode — the Tailscale 100.x.x.x address).
   listenIp?: string;
+  // SOCKS5 proxy port exposed by the buzz-mesh sidecar (exp-p2p mode).
+  socksPort?: number;
 };
 
 export async function createNode(opts: NodeOptions): Promise<Libp2p> {
@@ -50,8 +56,8 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
   const isMesh = opts.network?.mode === 'exp-p2p';
 
   // Resolve bootstrap list: explicit `bootstrap` wins, else network mode, else default.
-  // In exp-p2p (mesh) mode we skip public bootstrap entirely — the Tailscale mesh
-  // provides full connectivity and the IPFS bootstrappers are not needed.
+  // In exp-p2p (mesh) mode we skip public bootstrap — the Tailscale mesh provides
+  // direct connectivity and IPFS bootstrappers are not needed.
   const bootstrapList =
     opts.bootstrap ??
     (isMesh
@@ -60,9 +66,8 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
         ? [opts.network.serverAddr]
         : DEFAULT_BOOTSTRAP);
 
-  // Local-network discovery via mDNS. Enabled in pure p2p mode and in
-  // exp-p2p mode (all tailnet peers appear "local" to libp2p).
-  // Disabled in server mode — the Hive server is the rendezvous point.
+  // Local-network discovery via mDNS. Enabled in p2p and exp-p2p modes.
+  // Disabled in server mode.
   const peerDiscovery: Array<ReturnType<typeof bootstrap> | ReturnType<typeof mdns>> = [];
   if (bootstrapList.length > 0) {
     peerDiscovery.push(bootstrap({ list: bootstrapList }));
@@ -71,17 +76,28 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
     peerDiscovery.push(mdns({ interval: 5_000 }));
   }
 
-  // In exp-p2p (mesh) mode, tsnet is a userspace Go-only network stack — the
-  // Tailscale 100.x.x.x IP is not bindable by Node.js OS sockets. libp2p must
-  // listen on 0.0.0.0 and use the Tailscale IP only as an announced address so
-  // that tailnet peers know where to reach us (via the Go sidecar proxy, once
-  // that bridge layer is implemented). For now 0.0.0.0 lets account creation
-  // and the libp2p node start without error.
+  // In Buzz Mesh mode:
+  //   - Listen on a fixed local port (MESH_LIBP2P_PORT). The Go sidecar's
+  //     Tailscale forwarder bridges TS:MESH_LIBP2P_PORT → 127.0.0.1:MESH_LIBP2P_PORT.
+  //   - Announce the Tailscale IP so peers know where to reach us.
+  //   - Add meshTcpTransport to dial other peers' Tailscale IPs via SOCKS5.
   const listenAddresses: string[] = opts.listen ??
-    ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws'];
+    (isMesh
+      ? [`/ip4/0.0.0.0/tcp/${MESH_LIBP2P_PORT}`]
+      : ['/ip4/0.0.0.0/tcp/0', '/ip4/0.0.0.0/tcp/0/ws']);
 
   const announceAddresses: string[] | undefined =
-    isMesh && opts.listenIp ? undefined : undefined; // TODO: set to Tailscale IP once proxy bridge is ready
+    isMesh && opts.listenIp
+      ? [`/ip4/${opts.listenIp}/tcp/${MESH_LIBP2P_PORT}`]
+      : undefined;
+
+  // Transports: in mesh mode add meshTcpTransport (routes 100.x.x.x through
+  // SOCKS5) alongside regular tcp() (handles inbound from Go forwarder + mDNS).
+  const transports = isMesh && opts.socksPort != null
+    ? [meshTcpTransport(opts.socksPort), tcp(), webSockets()]
+    : isMesh
+      ? [tcp(), webSockets()]
+      : [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })];
 
   const node = await createLibp2p({
     peerId,
@@ -89,9 +105,7 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
       listen: listenAddresses,
       ...(announceAddresses ? { announce: announceAddresses } : {}),
     },
-    transports: isMesh
-      ? [tcp(), webSockets()]  // No circuit relay on mesh — tailnet is fully routable
-      : [tcp(), webSockets(), circuitRelayTransport({ discoverRelays: 1 })],
+    transports,
     connectionEncryption: [noise()],
     streamMuxers: [yamux()],
     peerDiscovery,

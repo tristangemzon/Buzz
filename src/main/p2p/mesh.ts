@@ -76,9 +76,15 @@ export class MeshNode {
   private _status: MeshStatus = { state: 'stopped' };
   private _proc: ChildProcess | null = null;
   private _apiPort: number | null = null;
+  private _socksPort: number | null = null;
 
   get status(): MeshStatus {
     return this._status;
+  }
+
+  /** Local SOCKS5 proxy port for routing TCP through Tailscale (available after start()). */
+  get socksPort(): number | null {
+    return this._socksPort;
   }
 
   getIp(): string | null {
@@ -144,6 +150,7 @@ export class MeshNode {
       let buf = '';
       let ip = '';
       let apiPort = 0;
+      let socksPort = 0;
 
       proc.stdout!.setEncoding('utf8');
       proc.stdout!.on('data', (chunk: string) => {
@@ -157,12 +164,17 @@ export class MeshNode {
             ip = trimmed;
           }
           // Second line: local HTTP API port
-          if (!apiPort && /^\d+$/.test(trimmed)) {
+          if (!apiPort && ip && /^\d+$/.test(trimmed)) {
             apiPort = parseInt(trimmed, 10);
             this._apiPort = apiPort;
           }
-          // Once we have both, we're connected.
-          if (ip && apiPort) {
+          // Third line: local SOCKS5 proxy port
+          if (!socksPort && apiPort && /^\d+$/.test(trimmed)) {
+            socksPort = parseInt(trimmed, 10);
+            this._socksPort = socksPort;
+          }
+          // Once we have all three, we're connected.
+          if (ip && apiPort && socksPort) {
             this._status = { state: 'connected', ip };
             resolve(ip);
           }
@@ -193,6 +205,7 @@ export class MeshNode {
         }
         this._proc = null;
         this._apiPort = null;
+        this._socksPort = null;
       });
     });
   }
@@ -228,6 +241,22 @@ export class MeshNode {
 
     this._proc = null;
     this._apiPort = null;
+    this._socksPort = null;
+  }
+
+  /**
+   * Fetch the list of other Buzz-mesh Tailscale peer IPs from the sidecar's
+   * LocalAPI. Returns an empty array if the sidecar is not running.
+   */
+  async fetchTailnetPeers(): Promise<string[]> {
+    if (!this._apiPort) return [];
+    try {
+      const res = await fetch(`http://127.0.0.1:${this._apiPort}/peers`);
+      if (!res.ok) return [];
+      return (await res.json()) as string[];
+    } catch {
+      return [];
+    }
   }
 
   /** POST to the Cloudflare Worker to obtain a fresh ephemeral preauth key. */
