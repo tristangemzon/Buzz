@@ -911,6 +911,54 @@ html[data-window-theme='graphite'] .list .row.selected {
   background: linear-gradient(to bottom, #8b8b8b, #6e6e6e);
 }
 
+/* Game picker title bar and box track the active window theme. */
+html[data-window-theme='aqua'] .game-picker-box {
+  background: var(--c-bg);
+  border-color: #ffffff #5b7fa3 #5b7fa3 #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+html[data-window-theme='aqua'] .game-picker-title {
+  background: linear-gradient(
+    to bottom,
+    #b9d3ee 0%,
+    #6a96c6 45%,
+    #4a78b8 55%,
+    #6a96c6 100%
+  );
+}
+html[data-window-theme='aqua'] .game-picker-close {
+  background: linear-gradient(to bottom, #e2ecf6, #c8d8eb);
+  border: 1px solid #6a8caf;
+  border-radius: 4px;
+}
+html[data-window-theme='aqua'] .game-picker-item.available:hover {
+  background: linear-gradient(to bottom, #6a96c6, #4a78b8);
+}
+html[data-window-theme='graphite'] .game-picker-box {
+  background: var(--c-bg);
+  border-color: #ffffff #5e5e5e #5e5e5e #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+html[data-window-theme='graphite'] .game-picker-title {
+  background: linear-gradient(
+    to bottom,
+    #c8c8c8 0%,
+    #8b8b8b 45%,
+    #6e6e6e 55%,
+    #8b8b8b 100%
+  );
+}
+html[data-window-theme='graphite'] .game-picker-close {
+  background: linear-gradient(to bottom, #f0f0f0, #d0d0d0);
+  border: 1px solid #6e6e6e;
+  border-radius: 4px;
+}
+html[data-window-theme='graphite'] .game-picker-item.available:hover {
+  background: linear-gradient(to bottom, #8b8b8b, #6e6e6e);
+}
+
 /* Balloons: iChat-style bubble layout in the chat log. */
 html[data-chat-theme='balloons'] .chat-log {
   display: flex;
@@ -941,9 +989,7 @@ html[data-chat-theme='balloons'] .chat-log {
   padding: 6px 10px;
   border-radius: 14px;
   max-width: 50%;
-  word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: break-word;
   white-space: pre-wrap;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
 }
