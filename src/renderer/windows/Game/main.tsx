@@ -1,5 +1,6 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { applyPlatformTheme } from '../../theme/applyPlatform';
 import type { GameProps } from './shared';
 import { CheckersGame } from './checkers';
 import { ReversiGame }  from './reversi';
@@ -16,6 +17,7 @@ function parseProps(): GameProps {
 }
 
 function GameRouter() {
+  useEffect(() => { void applyPlatformTheme(window.buzz); }, []);
   const props = parseProps();
   switch (props.kind) {
     case 'checkers': return <CheckersGame {...props} />;
