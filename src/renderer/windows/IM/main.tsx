@@ -91,7 +91,7 @@ function App(): JSX.Element {
   const [draft, setDraft] = useState('');
   const editorRef = useRef<RichEditorHandle>(null);
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
-  const [peerWentOffline, setPeerWentOffline] = useState(false);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [awayMessage, setAwayMessage] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -156,7 +156,8 @@ function App(): JSX.Element {
       .then((s) => {
         const resolved = !s || s.status === 'invisible' ? 'offline' : (s.status as typeof status);
         setStatus(resolved);
-        if (resolved === 'offline') setPeerWentOffline(true);
+        if (resolved === 'offline') setStatusNotice(`${alias} is offline.`);
+        else if (resolved === 'away') setStatusNotice(`${alias} is away.`);
         if (s) setAwayMessage(s.awayMessage);
       })
       .catch(() => undefined);
@@ -182,7 +183,10 @@ function App(): JSX.Element {
       if (e.peerId === peerId) {
         const next = e.status === 'invisible' ? 'offline' : (e.status as 'online' | 'offline' | 'away' | 'idle');
         setStatus((prev) => {
-          if (next === 'offline' && prev !== 'offline') setPeerWentOffline(true);
+          if (next === prev) return prev;
+          if (next === 'offline') setStatusNotice(`${alias} has gone offline.`);
+          else if (next === 'away') setStatusNotice(`${alias} has gone away.`);
+          else if (next === 'online' || next === 'idle') setStatusNotice(null);
           return next;
         });
         setAwayMessage(e.awayMessage);
@@ -439,8 +443,8 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
-        {peerWentOffline && (
-          <div className="im-system-notice">{alias} has gone offline.</div>
+        {statusNotice && (
+          <div className="im-system-notice">{statusNotice}</div>
         )}
       </div>
 
