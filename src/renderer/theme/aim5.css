@@ -1062,16 +1062,17 @@ html[data-chat-theme='compact'] .chat-log > div {
   margin: 0 6px 6px;
 }
 
-/* 2-column, 2-row grid for classic sidebar mode */
+/* 2-column, 3-row grid for classic sidebar mode */
 .im-body-sidebar {
   display: grid;
   grid-template-columns: 80px 1fr;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr auto auto;
 }
-.im-body-sidebar .im-avatar-top    { grid-column: 1; grid-row: 1; }
-.im-body-sidebar .im-avatar-bottom { grid-column: 1; grid-row: 2; }
+.im-body-sidebar .im-avatar-top    { grid-column: 1; grid-row: 1 / -1; align-self: start; }
+.im-body-sidebar .im-avatar-bottom { grid-column: 1; grid-row: 1 / -1; align-self: end; }
 .im-body-sidebar .chat-log         { grid-column: 2; grid-row: 1; margin: 6px 6px 0; }
-.im-body-sidebar .im-compose-wrap  { grid-column: 2; grid-row: 2; margin: 0 6px 6px; }
+.im-body-sidebar .im-status-banner { grid-column: 2; grid-row: 2; margin: 0 6px; }
+.im-body-sidebar .im-compose-wrap  { grid-column: 2; grid-row: 3; margin: 0 6px 6px; }
 
 .im-avatar-top {
   display: flex;
@@ -1249,10 +1250,8 @@ html[data-chat-theme='compact'] .chat-log > div {
   border-color: #6a90c0;
 }
 
-/* ── IM status banner (sticky bottom of chat log) ──────────────────────── */
+/* ── IM status banner (between chat log and compose area) ──────────────── */
 .im-status-banner {
-  position: sticky;
-  bottom: 0;
   font-weight: bold;
   font-size: 11px;
   color: #000;
@@ -1260,6 +1259,7 @@ html[data-chat-theme='compact'] .chat-log > div {
   border-top: 1px solid var(--c-bevel-dark, #888);
   padding: 3px 8px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 /* ── IM / Chat window AIM-style action bar ─────────────────────────────── */

@@ -257,7 +257,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [messages, statusNotice]);
+  }, [messages]);
 
   async function send(): Promise<void> {
     setErr('');
@@ -439,10 +439,11 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
-        {statusNotice && (
-          <div className="im-status-banner">{statusNotice}</div>
-        )}
       </div>
+
+      {statusNotice && (
+        <div className="im-status-banner">{statusNotice}</div>
+      )}
 
       <div className="bevel-in im-compose-wrap">
         <RichEditor
