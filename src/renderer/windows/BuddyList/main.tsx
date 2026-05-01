@@ -315,7 +315,10 @@ function App(): JSX.Element {
 
   function openCtx(e: React.MouseEvent, peerId: string): void {
     e.preventDefault();
-    setCtx({ peerId, x: e.clientX, y: e.clientY });
+    const menuW = 170; const menuH = 220;
+    const x = Math.min(e.clientX, window.innerWidth - menuW);
+    const y = Math.min(e.clientY, window.innerHeight - menuH);
+    setCtx({ peerId, x, y });
   }
 
   async function ctxBlock(peerId: string, blocked: boolean): Promise<void> {
@@ -339,7 +342,10 @@ function App(): JSX.Element {
 
   function openRoomCtx(e: React.MouseEvent, roomId: string): void {
     e.preventDefault();
-    setRoomCtx({ roomId, x: e.clientX, y: e.clientY });
+    const menuW = 160; const menuH = 120;
+    const x = Math.min(e.clientX, window.innerWidth - menuW);
+    const y = Math.min(e.clientY, window.innerHeight - menuH);
+    setRoomCtx({ roomId, x, y });
   }
 
   async function ctxLeaveRoom(roomId: string): Promise<void> {

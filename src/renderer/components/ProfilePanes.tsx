@@ -114,48 +114,85 @@ export function ProfileEditor(props: { onClose: () => void }): JSX.Element {
 
   return (
     <Modal title="My Profile" onClose={props.onClose} width={420}>
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div style={{ width: 64, marginRight: 8 }}>
+      {/* Avatar + stock pics row */}
+      <div className="row" style={{ alignItems: 'flex-start', gap: 10 }}>
+        {/* Current avatar preview */}
+        <div style={{ flexShrink: 0 }}>
           {p.avatarDataUrl ? (
             <img
               src={p.avatarDataUrl}
               alt="avatar"
-              style={{ width: 64, height: 64, objectFit: 'cover', border: '1px solid #888' }}
+              style={{ width: 72, height: 72, objectFit: 'cover', border: '1px solid #888', display: 'block' }}
             />
           ) : (
             <div
               style={{
-                width: 64,
-                height: 64,
-                background: '#ddd',
-                border: '1px solid #888',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 10,
-                color: '#666',
+                width: 72, height: 72, background: '#ddd', border: '1px solid #888',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, color: '#666',
               }}
             >
               no pic
             </div>
           )}
-          <div style={{ marginTop: 4 }}>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => void pickAvatar(e.target.files?.[0])}
-              style={{ width: 64, fontSize: 10 }}
-            />
+          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Hidden real file input, triggered by styled label */}
+            <label style={{ display: 'block' }}>
+              <span
+                style={{
+                  display: 'block', textAlign: 'center', padding: '2px 4px',
+                  fontSize: 10, cursor: 'pointer',
+                  background: '#d4d0c8', border: '1px solid',
+                  borderTopColor: '#fff', borderLeftColor: '#fff',
+                  borderBottomColor: '#808080', borderRightColor: '#808080',
+                }}
+              >
+                Choose File…
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => void pickAvatar(e.target.files?.[0])}
+                style={{ display: 'none' }}
+              />
+            </label>
             {p.avatarDataUrl && (
               <button
                 onClick={() => update('avatarDataUrl', '')}
-                style={{ width: 64, marginTop: 2, fontSize: 10 }}
+                style={{ fontSize: 10, padding: '2px 4px' }}
               >
                 Remove
               </button>
             )}
           </div>
         </div>
+
+        {/* Stock default profile pics */}
+        <div style={{ flex: 1 }}>
+          <div className="label" style={{ marginBottom: 4 }}>Default pics</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {['20001','20003','20004','20006','2000a','2000b','2000c'].map((name) => {
+              const url = `defaultpics/${name}.png`;
+              const selected = p.avatarDataUrl === url;
+              return (
+                <img
+                  key={name}
+                  src={url}
+                  alt={name}
+                  onClick={() => update('avatarDataUrl', url)}
+                  style={{
+                    width: 40, height: 40, objectFit: 'cover', cursor: 'pointer',
+                    border: selected ? '2px solid #0000cc' : '1px solid #888',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="row" style={{ alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
           <div className="label">About me</div>
           <FormatToolbar
