@@ -11,9 +11,9 @@ BINARY  := buzz-mesh
 DIST    := dist
 MODULE  := buzz.app/mesh
 
-.PHONY: all darwin-arm64 darwin-amd64 windows-amd64 clean
+.PHONY: all darwin-arm64 darwin-amd64 windows-amd64 linux-amd64 clean
 
-all: darwin-arm64 darwin-amd64 windows-amd64
+all: darwin-arm64 darwin-amd64 windows-amd64 linux-amd64
 
 darwin-arm64:
 	@mkdir -p $(DIST)
@@ -29,6 +29,11 @@ windows-amd64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
 		go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-windows-amd64.exe .
+
+linux-amd64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+		go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-linux-amd64 .
 
 clean:
 	rm -rf $(DIST)
