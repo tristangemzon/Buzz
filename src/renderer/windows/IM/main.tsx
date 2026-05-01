@@ -155,6 +155,8 @@ function App(): JSX.Element {
         });
       })
       .catch(() => undefined);
+    void window.buzz.history({ peerId, limit: 100 }).then(setMessages);
+    void window.buzz.markImRead(peerId).catch(() => undefined);
 
     // Door open when this conversation window comes alive; door close when
     // it is torn down.  We use beforeunload instead of the React cleanup
@@ -437,11 +439,10 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
+        {statusNotice && (
+          <div className="im-status-banner">{statusNotice}</div>
+        )}
       </div>
-
-      {statusNotice && (
-        <div className="im-status-banner">{statusNotice}</div>
-      )}
 
       <div className="bevel-in im-compose-wrap">
         <RichEditor
