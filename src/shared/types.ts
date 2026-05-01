@@ -105,6 +105,7 @@ export type AppApi = {
   unlock(req: UnlockReq): Promise<{ ok: true; profileId: string; buddyCode: string }>;
   lock(): Promise<void>;
   factoryReset(): Promise<void>;
+  migrateDb(req: { profileId: string; passphrase: string }): Promise<void>;
   getPlatform(): Promise<Platform>;
   getMyId(): Promise<{ peerId: string; buddyCode: string; screenName: string }>;
 

@@ -6,7 +6,7 @@ import { SignOnSettings } from '../../components/SignOnSettings';
 import buzzLogo from '../../assets/buzz-logo.png';
 import type { ProfileSummary } from '@shared/schemas';
 
-type Mode = 'signin' | 'create';
+type Mode = 'signin' | 'create' | 'migrate';
 
 function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
@@ -45,8 +45,22 @@ function App(): JSX.Element {
     try {
       if (mode === 'create') {
         await window.buzz.createIdentity({ screenName: screenName.trim(), passphrase: pass });
-      } else {
+      } else if (mode === 'migrate') {
+        await window.buzz.migrateDb({ profileId: selectedId, passphrase: pass });
         await window.buzz.unlock({ profileId: selectedId, passphrase: pass });
+      } else {
+        try {
+          await window.buzz.unlock({ profileId: selectedId, passphrase: pass });
+        } catch (e) {
+          const code = (e as { code?: string }).code ?? (e instanceof Error ? e.message : '');
+          if (code === 'LEGACY_DB' || code.includes('LEGACY_DB')) {
+            // Old database format — switch to migrate mode and let the user confirm.
+            setMode('migrate');
+            setErr('Your data is from an older version. Click Migrate to convert it.');
+            return;
+          }
+          throw e;
+        }
       }
       await window.buzzWindows.openBuddyList();
       window.close();
@@ -75,7 +89,16 @@ function App(): JSX.Element {
           <img src={buzzLogo} alt="Buzz" />
         </div>
 
-        {mode === 'signin' && (
+        {mode === 'migrate' && (
+          <div className="signon-row">
+            <span className="signon-label" />
+            <span className="signon-hint">
+              Select your account and enter your password to migrate your data to the new format.
+            </span>
+          </div>
+        )}
+
+        {(mode === 'signin' || mode === 'migrate') && (
           <div className="signon-row">
             <label className="signon-label">Screen Name</label>
             <select
@@ -141,7 +164,21 @@ function App(): JSX.Element {
             <span className="signon-iconbtn-glyph">⚙</span>
             <span className="signon-iconbtn-label">Setup</span>
           </button>
-          {hasProfiles && (
+          {hasProfiles && mode === 'signin' && (
+            <button
+              className="signon-iconbtn"
+              onClick={() => {
+                setErr('Your data is from an older version. Enter your password and click Migrate.');
+                setMode('migrate');
+              }}
+              disabled={busy}
+              title="Migrate data from an older version"
+            >
+              <span className="signon-iconbtn-glyph">⬆</span>
+              <span className="signon-iconbtn-label">Migrate</span>
+            </button>
+          )}
+          {hasProfiles && mode !== 'migrate' && (
             <button
               className="signon-iconbtn"
               onClick={() => {
@@ -160,21 +197,35 @@ function App(): JSX.Element {
               </span>
             </button>
           )}
+          {mode === 'migrate' && (
+            <button
+              className="signon-iconbtn"
+              onClick={() => {
+                setErr('');
+                setMode('signin');
+              }}
+              disabled={busy}
+              title="Back to sign in"
+            >
+              <span className="signon-iconbtn-glyph">↩</span>
+              <span className="signon-iconbtn-label">Cancel</span>
+            </button>
+          )}
           <span className="signon-actionbar-spacer" />
           <button
             className="signon-iconbtn signon-iconbtn-primary"
             onClick={submit}
             disabled={busy}
-            title={mode === 'create' ? 'Create account' : 'Sign On'}
+            title={mode === 'create' ? 'Create account' : mode === 'migrate' ? 'Migrate data' : 'Sign On'}
           >
             <span className="signon-iconbtn-glyph">🐝</span>
             <span className="signon-iconbtn-label">
-              {mode === 'create' ? 'Create' : 'Sign On'}
+              {mode === 'create' ? 'Create' : mode === 'migrate' ? 'Migrate' : 'Sign On'}
             </span>
           </button>
         </div>
 
-        <div className="signon-version">Version: 0.2.0</div>
+        <div className="signon-version">Version: 0.2.1</div>
 
         {showSettings && (
           <SignOnSettings

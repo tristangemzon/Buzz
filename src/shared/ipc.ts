@@ -9,6 +9,7 @@ export const IPC = {
   AuthGetPlatform: 'auth:platform',
   AuthGetMyId: 'auth:getMyId',
   AuthFactoryReset: 'auth:factoryReset',
+  AuthMigrateDb: 'auth:migrateDb',
 
   // buddies
   BuddiesList: 'buddies:list',

@@ -1,6 +1,7 @@
 // Encrypted SQLite store using better-sqlite3-multiple-ciphers (SQLCipher).
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID, pbkdf2Sync } from 'node:crypto';
+import fs from 'node:fs';
 import Database from 'better-sqlite3-multiple-ciphers';
 import { SCHEMA_SQL } from './schema.js';
 
@@ -35,6 +36,52 @@ export function openDb(file: string, key: Uint8Array): Db {
   // but some old installs were opened before those statements were added.
   migrateBuddyRequestsAndReads(db);
 
+  return db;
+}
+
+/**
+ * Opens a database created with bsmc v11 (SQLite3MultipleCiphers < 2.2.5).
+ *
+ * In v11 the x'hex' raw-key notation was broken (bug #218): the bypass flag
+ * was never set, so PBKDF2-HMAC-SHA256 was applied to the literal string
+ * "x'hexvalue'" as a passphrase.  In v12 the bypass is now correctly detected
+ * even in the single-quoted pragma path, making it impossible to replicate the
+ * v11 behaviour through a pragma string alone.
+ *
+ * Fix: read the ChaCha20 salt from the first 16 bytes of the database file
+ * (written there in plaintext by SQLite3MC), manually run
+ * PBKDF2-HMAC-SHA256("x'hexvalue'", salt, 64007, 32), then supply the derived
+ * bytes as a raw key via the double-quoted x'hex' pragma (bypass=1 in v12).
+ *
+ * The database is opened without schema changes so it can be read for migration.
+ */
+export function openDbLegacy(file: string, key: Uint8Array): Db {
+  // ChaCha20 cipher constants (SQLite3MC defaults).
+  const SALT_LEN = 16;
+  const KEY_LEN = 32;
+  const KDF_ITER = 64007; // CHACHA20_KDF_ITER_DEFAULT
+
+  // The salt is stored in plaintext at the very start of the database file.
+  const fileBuf = fs.readFileSync(file);
+  if (fileBuf.length < SALT_LEN) {
+    throw new Error('Database file is too small to be a valid legacy database.');
+  }
+  const salt = fileBuf.subarray(0, SALT_LEN);
+
+  // Reproduce the passphrase string that v11 fed into PBKDF2.
+  const hex = Buffer.from(key).toString('hex');
+  const passphrase = `x'${hex}'`; // the literal string the buggy v11 used as passphrase
+
+  // Derive the 32-byte ChaCha20 encryption key.
+  const derivedKey = pbkdf2Sync(passphrase, salt, KDF_ITER, KEY_LEN, 'sha256');
+  const derivedKeyHex = derivedKey.toString('hex');
+
+  // Open with the derived raw key (bypasses KDF in v12 via the x'hex' notation).
+  const db = new Database(file);
+  db.pragma(`key="x'${derivedKeyHex}'"`);
+
+  // Verify it actually opens (throws on wrong key).
+  db.prepare('SELECT count(*) FROM sqlite_master').get();
   return db;
 }
 

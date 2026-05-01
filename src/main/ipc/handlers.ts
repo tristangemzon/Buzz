@@ -79,6 +79,11 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     opts.onLocked?.();
   });
   handle(IPC.AuthFactoryReset, null, () => session.factoryReset());
+  handle(
+    IPC.AuthMigrateDb,
+    z.object({ profileId: z.string(), passphrase: z.string() }),
+    ({ profileId, passphrase }) => session.migrateDb(profileId, passphrase),
+  );
   handle(IPC.AuthGetPlatform, null, () => platform());
   handle(IPC.AuthGetMyId, null, () => ({
     peerId: session.peerIdStr(),

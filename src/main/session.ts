@@ -9,7 +9,7 @@ import { app, BrowserWindow } from 'electron';
 import type { Libp2p } from 'libp2p';
 
 import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
-import { openDb, type Db } from './db/open.js';
+import { openDb, openDbLegacy, type Db } from './db/open.js';
 import * as repos from './db/repos.js';
 import * as profiles from './profiles.js';
 import { ImService, IM_PROTOCOL } from './p2p/im.js';
@@ -148,6 +148,71 @@ export class Session {
     return { profileId, buddyCode: this.buddyCode() };
   }
 
+  /**
+   * Migrate a legacy database (created with bsmc v11 / SQLite3MultipleCiphers
+   * < 2.2.5) to the current format. Opens the old DB using the broken KDF
+   * passphrase derivation, copies all data to a fresh DB with the correct
+   * raw key, then atomically replaces the old file.
+   */
+  async migrateDb(profileId: string, passphrase: string): Promise<void> {
+    const profile = profiles.getProfile(profileId);
+    if (!profile) throw new Error('Profile not found');
+    const ks = new Keystore(path.join(profiles.profileDir(profileId), 'keystore.bin'));
+    const id = await ks.unlock(passphrase);
+    const dbFile = path.join(profiles.profileDir(profileId), 'buzz.sqlite');
+    const tmpFile = dbFile + '.migrating';
+
+    let oldDb: Db;
+    try {
+      oldDb = openDbLegacy(dbFile, id.dbKey);
+    } catch (e) {
+      throw new Error(
+        `Could not open legacy database (wrong passphrase or not a v11 database): ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+
+    fs.rmSync(tmpFile, { force: true });
+    const newDb = openDb(tmpFile, id.dbKey);
+
+    try {
+      const tables = [
+        'identity', 'buddies', 'messages', 'prefs', 'profile_cache',
+        'transfers', 'rooms', 'room_members', 'room_messages',
+        'room_channels', 'mailbox', 'buddy_requests', 'room_reads',
+      ];
+      const tx = newDb.transaction(() => {
+        for (const table of tables) {
+          const exists = oldDb
+            .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`)
+            .get(table) as unknown;
+          if (!exists) continue;
+          const rows = oldDb.prepare(`SELECT * FROM ${table}`).all();
+          if (rows.length === 0) continue;
+          const cols = Object.keys(rows[0] as Record<string, unknown>);
+          const placeholders = cols.map(() => '?').join(', ');
+          const ins = newDb.prepare(
+            `INSERT OR REPLACE INTO ${table}(${cols.join(', ')}) VALUES (${placeholders})`,
+          );
+          for (const row of rows) {
+            ins.run(...cols.map((c) => (row as Record<string, unknown>)[c]));
+          }
+        }
+      });
+      tx();
+    } finally {
+      oldDb.close();
+      newDb.close();
+    }
+
+    fs.renameSync(tmpFile, dbFile);
+    // Remove any WAL/SHM files left from the old encryption so that the
+    // freshly-migrated database is not tainted by stale pages.
+    fs.rmSync(dbFile + '-wal', { force: true });
+    fs.rmSync(dbFile + '-shm', { force: true });
+  }
+
   async lock(): Promise<void> {
     if (this.presence) {
       try {
@@ -241,16 +306,13 @@ export class Session {
     try {
       this.db = openDb(dbFile, id.dbKey);
     } catch (err: unknown) {
-      // Legacy databases created with bsmc v11 used a broken raw-key
-      // derivation (SQLite3MultipleCiphers bug #218, fixed in 2.2.5). They
-      // cannot be migrated — delete and start fresh.
       const code = (err as { code?: string }).code;
       if (code === 'SQLITE_NOTADB' || code === 'SQLITE_ERROR') {
-        fs.rmSync(dbFile, { force: true });
-        this.db = openDb(dbFile, id.dbKey);
-      } else {
-        throw err;
+        // Legacy database (bsmc v11 / SQLite3MultipleCiphers < 2.2.5 bug #218).
+        // Surface as a typed error so the renderer can offer a migration flow.
+        throw Object.assign(new Error('LEGACY_DB'), { code: 'LEGACY_DB' });
       }
+      throw err;
     }
 
     // Establish identity row in DB.

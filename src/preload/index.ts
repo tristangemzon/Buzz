@@ -15,6 +15,8 @@ const api: AppApi = {
   unlock: (req) => ipcRenderer.invoke(IPC.AuthUnlock, req),
   lock: () => ipcRenderer.invoke(IPC.AuthLock),
   factoryReset: () => ipcRenderer.invoke(IPC.AuthFactoryReset),
+  migrateDb: (req: { profileId: string; passphrase: string }) =>
+    ipcRenderer.invoke(IPC.AuthMigrateDb, req),
   getPlatform: () => ipcRenderer.invoke(IPC.AuthGetPlatform),
   getMyId: () => ipcRenderer.invoke(IPC.AuthGetMyId),
 

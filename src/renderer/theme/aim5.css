@@ -618,6 +618,12 @@ button:disabled {
   font-size: 12px;
   color: var(--c-fg);
 }
+.signon-hint {
+  font-size: 11px;
+  color: var(--c-fg);
+  opacity: 0.8;
+  line-height: 1.4;
+}
 .signon-field {
   padding: 3px 5px;
   font-size: 12px;
