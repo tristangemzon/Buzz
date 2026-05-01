@@ -154,11 +154,10 @@ function App(): JSX.Element {
     void window.buzz
       .getPeerStatus(peerId)
       .then((s) => {
-        if (!s) return;
-        const resolved = s.status === 'invisible' ? 'offline' : (s.status as typeof status);
+        const resolved = !s || s.status === 'invisible' ? 'offline' : (s.status as typeof status);
         setStatus(resolved);
         if (resolved === 'offline') setPeerWentOffline(true);
-        setAwayMessage(s.awayMessage);
+        if (s) setAwayMessage(s.awayMessage);
       })
       .catch(() => undefined);
 
