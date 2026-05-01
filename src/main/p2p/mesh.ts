@@ -148,9 +148,25 @@ export class MeshNode {
       this._proc = proc;
 
       let buf = '';
+      let stderrBuf = '';
       let ip = '';
       let apiPort = 0;
       let socksPort = 0;
+
+      // Kill the process and reject if it hasn't connected within 45 seconds.
+      // On Windows, Windows Defender or a firewall may silently block the binary
+      // from making outbound connections, causing srv.Up() to stall indefinitely.
+      const startTimeout = setTimeout(() => {
+        const detail = stderrBuf.trim()
+          ? `\n\nSidecar output:\n${stderrBuf.trim().slice(-400)}`
+          : '';
+        const msg =
+          `Buzz Mesh timed out connecting to Tailscale (45 s). ` +
+          `Check your internet connection and firewall settings.${detail}`;
+        this._status = { state: 'error', message: msg };
+        proc.kill();
+        reject(new Error(msg));
+      }, 45_000);
 
       proc.stdout!.setEncoding('utf8');
       proc.stdout!.on('data', (chunk: string) => {
@@ -175,6 +191,7 @@ export class MeshNode {
           }
           // Once we have all three, we're connected.
           if (ip && apiPort && socksPort) {
+            clearTimeout(startTimeout);
             this._status = { state: 'connected', ip };
             resolve(ip);
           }
@@ -183,6 +200,7 @@ export class MeshNode {
 
       proc.stderr!.setEncoding('utf8');
       proc.stderr!.on('data', (data: string) => {
+        stderrBuf += data;
         // Log stderr in dev but don't treat as fatal — tsnet emits some noise.
         if (process.env.NODE_ENV !== 'production') {
           process.stderr.write(`[buzz-mesh] ${data}`);
@@ -190,12 +208,14 @@ export class MeshNode {
       });
 
       proc.on('error', (err) => {
+        clearTimeout(startTimeout);
         this._status = { state: 'error', message: err.message };
         this._proc = null;
         reject(err);
       });
 
       proc.on('exit', (code) => {
+        clearTimeout(startTimeout);
         if (this._status.state === 'connecting') {
           const msg = `Mesh sidecar exited with code ${code} before connecting`;
           this._status = { state: 'error', message: msg };
@@ -263,6 +283,7 @@ export class MeshNode {
   private async _fetchAuthKey(): Promise<string> {
     const res = await fetch(MESH_KEY_URL, {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
       headers: { 'Content-Type': 'application/json' },
       // Include a simple identifier so the Worker can rate-limit per tailnet slot.
       body: JSON.stringify({ client: 'buzz', platform: process.platform }),
