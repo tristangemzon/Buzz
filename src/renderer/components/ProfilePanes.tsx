@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Profile } from '@shared/schemas';
 import { FormatToolbar, RichText, handleFormatShortcut } from './RichText';
+import { Modal } from './Modal';
 
 const AVATAR_MAX_BYTES = 64 * 1024;
 const BG_MAX_BYTES = 128 * 1024;
@@ -389,37 +390,5 @@ export function ProfileViewer(props: {
         <button onClick={props.onClose}>Close</button>
       </div>
     </Modal>
-  );
-}
-
-function Modal(props: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  width?: number;
-}): JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.25)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-    >
-      <div className="bevel-out" style={{ width: props.width ?? 320, padding: 0 }}>
-        <div className="titlebar">
-          <span>{props.title}</span>
-          <span style={{ flex: 1 }} />
-          <button onClick={props.onClose}>×</button>
-        </div>
-        <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {props.children}
-        </div>
-      </div>
-    </div>
   );
 }

@@ -101,7 +101,7 @@ export type Profile = z.infer<typeof Profile>;
 // peers — they only affect how this user sees their own windows.
 export const ChatTheme = z.enum(['classic', 'balloons', 'compact']);
 export type ChatTheme = z.infer<typeof ChatTheme>;
-export const WindowTheme = z.enum(['classic', 'aqua', 'graphite']);
+export const WindowTheme = z.enum(['classic', 'aqua', 'graphite', 'aero']);
 export type WindowTheme = z.infer<typeof WindowTheme>;
 
 export const Theme = z.object({

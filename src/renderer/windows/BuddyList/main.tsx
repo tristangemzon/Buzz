@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
+import { Modal } from '../../components/Modal';
 import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme } from '../../sounds/synth';
 import type { SoundScheme } from '../../sounds/synth';
 import type {
@@ -906,36 +907,6 @@ function App(): JSX.Element {
           </>
         );
       })()}
-    </div>
-  );
-}
-
-function Modal(props: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.25)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div className="bevel-out" style={{ width: 280, padding: 0 }}>
-        <div className="titlebar">
-          <span>{props.title}</span>
-          <span style={{ flex: 1 }} />
-          <button onClick={props.onClose}>×</button>
-        </div>
-        <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {props.children}
-        </div>
-      </div>
     </div>
   );
 }

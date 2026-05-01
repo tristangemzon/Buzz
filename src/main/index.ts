@@ -112,7 +112,7 @@ function openSignOn(): BrowserWindow {
     maximizable: false,
     frame: false,
     title: 'Sign On',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
@@ -136,7 +136,7 @@ function openBuddyList(): BrowserWindow {
     minHeight: 360,
     frame: false,
     title: 'Buddy List',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
@@ -160,7 +160,7 @@ function openSettingsWindow(): BrowserWindow {
     minHeight: 340,
     frame: false,
     title: 'Settings',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
@@ -183,7 +183,7 @@ export function openImWindow(peerId: string): BrowserWindow {
     height: 420,
     frame: false,
     title: 'Instant Message',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
@@ -208,7 +208,7 @@ export function openChatWindow(roomId: string): BrowserWindow {
     minHeight: 320,
     frame: false,
     title: 'Chat Room',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });
@@ -259,7 +259,7 @@ export function openGameWindow(peerId: string, kind: string, initiator = false):
     minHeight: 460,
     frame: false,
     title: 'Games',
-    backgroundColor: '#ece9d8',
+    transparent: true,
     icon: APP_ICON,
     webPreferences: commonWebPrefs(),
   });

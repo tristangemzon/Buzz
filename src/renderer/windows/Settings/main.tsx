@@ -69,7 +69,7 @@ function ThemesPane(): JSX.Element {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="label">Window theme</div>
       <div className="row" style={{ gap: 8 }}>
-        {(['classic', 'aqua', 'graphite'] as const).map((wt) => (
+        {(['classic', 'aqua', 'graphite', 'aero'] as const).map((wt) => (
           <label key={wt}>
             <input type="radio" name="wt" checked={t.windowTheme === wt} onChange={() => update('windowTheme', wt)} />{' '}
             {wt.charAt(0).toUpperCase() + wt.slice(1)}
