@@ -443,10 +443,11 @@ function App(): JSX.Element {
             onDecline={() => void respondXfer(c.id, false)}
           />
         ))}
-        {statusNotice && (
-          <div className="im-system-notice">{statusNotice}</div>
-        )}
       </div>
+
+      {statusNotice && (
+        <div className="im-status-banner">{statusNotice}</div>
+      )}
 
       <div className="bevel-in im-compose-wrap">
         <RichEditor
