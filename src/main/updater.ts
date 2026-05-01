@@ -15,12 +15,18 @@
 // In dev mode (ELECTRON_RENDERER_URL set) the updater is a no-op because
 // there is no packaged `app-update.yml` to read.
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, shell } from 'electron';
 import updaterPkg from 'electron-updater';
 const { autoUpdater } = updaterPkg;
 import type { UpdateStatus } from '@shared/types.js';
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL'];
+const isMac = process.platform === 'darwin';
+
+// On macOS, Squirrel.Mac requires a valid Apple code signature to install
+// updates via quitAndInstall(). Since CI builds are unsigned, we bypass the
+// in-app install and open the GitHub Releases page instead.
+const RELEASES_URL = 'https://github.com/tristangemzon/Buzz/releases/latest';
 
 let currentStatus: UpdateStatus = { phase: 'idle' };
 let broadcastFn: ((status: UpdateStatus) => void) | null = null;
@@ -51,6 +57,12 @@ export function initUpdater(broadcast_: (status: UpdateStatus) => void): void {
   });
 
   autoUpdater.on('update-available', (info) => {
+    // On macOS, skip the in-app download/install flow (requires code signing).
+    // Surface a special phase so the UI shows "Open Download Page" instead.
+    if (isMac) {
+      broadcast({ phase: 'available-external', version: String(info.version) });
+      return;
+    }
     broadcast({ phase: 'available', version: String(info.version) });
   });
 
@@ -63,6 +75,13 @@ export function initUpdater(broadcast_: (status: UpdateStatus) => void): void {
   });
 
   autoUpdater.on('error', (err: Error) => {
+    // On macOS, Squirrel.Mac rejects unsigned updates with a code-signature
+    // error. Treat this as "update available but needs manual install" so the
+    // UI shows a helpful "Open Download Page" button rather than a raw error.
+    if (isMac && err.message.includes('code failed to satisfy specified code requirement')) {
+      broadcast({ phase: 'available-external', version: '' });
+      return;
+    }
     broadcast({ phase: 'error', message: err.message ?? String(err) });
   });
 }
@@ -82,14 +101,23 @@ export function registerUpdaterIpc(): void {
     return currentStatus;
   });
 
-  // Renderer → main: start downloading the available update
+  // Renderer → main: start downloading the available update (or open browser on macOS)
   ipcMain.handle('updates:download', async () => {
     if (isDev) return;
+    if (isMac) {
+      await shell.openExternal(RELEASES_URL);
+      return;
+    }
     try {
       await autoUpdater.downloadUpdate();
     } catch (err) {
       broadcast({ phase: 'error', message: (err as Error).message ?? String(err) });
     }
+  });
+
+  // Renderer → main: open releases page directly (macOS manual-update fallback)
+  ipcMain.handle('updates:openReleasePage', async () => {
+    await shell.openExternal(RELEASES_URL);
   });
 
   // Renderer → main: quit and install the downloaded update

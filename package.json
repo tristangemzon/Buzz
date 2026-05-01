@@ -1,7 +1,7 @@
 {
   "name": "buzz",
   "productName": "Buzz",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Buzz — secure, AIM/AOL-flavoured P2P chat client (Electron + libp2p + SQLCipher).",
   "main": "out/main/index.js",
   "type": "module",

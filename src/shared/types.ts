@@ -93,6 +93,7 @@ export type UpdateStatus =
   | { phase: 'checking' }
   | { phase: 'not-available'; currentVersion: string }
   | { phase: 'available'; version: string }
+  | { phase: 'available-external'; version: string }
   | { phase: 'downloading'; percent: number }
   | { phase: 'downloaded'; version: string }
   | { phase: 'error'; message: string };
@@ -226,6 +227,7 @@ export type AppApi = {
   updatesCheck(): Promise<UpdateStatus>;
   updatesDownload(): Promise<void>;
   updatesInstall(): Promise<void>;
+  updatesOpenReleasePage(): Promise<void>;
   updatesGetStatus(): Promise<UpdateStatus>;
   updatesGetVersion(): Promise<string>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;

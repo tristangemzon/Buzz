@@ -213,6 +213,9 @@ function UpdatesPane(): JSX.Element {
       case 'checking': return 'Checking for updates…';
       case 'not-available': return `Up to date (${status.currentVersion})`;
       case 'available': return `Update available: v${status.version}`;
+      case 'available-external': return status.version
+        ? `Update available: v${status.version} — download from GitHub`
+        : 'Update available — download from GitHub';
       case 'downloading': return `Downloading… ${status.percent}%`;
       case 'downloaded': return `v${status.version} ready to install`;
       case 'error': return `Error: ${status.message}`;
@@ -230,6 +233,9 @@ function UpdatesPane(): JSX.Element {
           )}
           {status.phase === 'available' && (
             <button onClick={() => { void window.buzz.updatesDownload().then(() => undefined); }}>Download Update</button>
+          )}
+          {status.phase === 'available-external' && (
+            <button onClick={() => { void window.buzz.updatesOpenReleasePage(); }}>Open Download Page</button>
           )}
           {status.phase === 'downloaded' && (
             <button onClick={() => { void window.buzz.updatesInstall(); }}>Install &amp; Restart</button>

@@ -118,6 +118,7 @@ const api: AppApi = {
   updatesCheck: () => ipcRenderer.invoke(IPC.UpdatesCheck),
   updatesDownload: () => ipcRenderer.invoke(IPC.UpdatesDownload),
   updatesInstall: () => ipcRenderer.invoke(IPC.UpdatesInstall),
+  updatesOpenReleasePage: () => ipcRenderer.invoke('updates:openReleasePage'),
   updatesGetStatus: () => ipcRenderer.invoke(IPC.UpdatesGetStatus),
   updatesGetVersion: () => ipcRenderer.invoke(IPC.UpdatesGetVersion),
   onUpdateStatus: (cb) => on(IPC.EvtUpdateStatus, cb),
