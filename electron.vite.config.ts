@@ -46,6 +46,7 @@ export default defineConfig({
           chat: resolve('src/renderer/chat.html'),
           videocall: resolve('src/renderer/videocall.html'),
           game: resolve('src/renderer/game.html'),
+          settings: resolve('src/renderer/settings.html'),
         },
       },
     },

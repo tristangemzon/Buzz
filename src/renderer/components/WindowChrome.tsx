@@ -8,6 +8,7 @@ declare global {
       openBuddyList(): Promise<void>;
       openChat(roomId: string): Promise<void>;
       openGame(peerId: string, kind: string, initiator?: boolean): Promise<void>;
+      openSettings(): Promise<void>;
       minimize(): Promise<void>;
       toggleMax(): Promise<void>;
       close(): Promise<void>;

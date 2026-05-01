@@ -62,7 +62,7 @@ function installCsp(): void {
 }
 
 // Resolve the renderer URL/file for a given page id (matches Vite multi-entry).
-function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game'): {
+function rendererTarget(page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings'): {
   url?: string;
   file?: string;
 } {
@@ -79,6 +79,7 @@ const imWindows = new Map<string, BrowserWindow>();
 const chatWindows = new Map<string, BrowserWindow>();
 const videoCallWindows = new Map<string, BrowserWindow>();
 const gameWindows = new Map<string, BrowserWindow>();
+let settingsWin: BrowserWindow | null = null;
 
 function commonWebPrefs() {
   return {
@@ -91,7 +92,7 @@ function commonWebPrefs() {
   } as const;
 }
 
-function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game', hash = ''): void {
+function loadInto(win: BrowserWindow, page: 'signon' | 'buddylist' | 'im' | 'chat' | 'videocall' | 'game' | 'settings', hash = ''): void {
   const t = rendererTarget(page);
   const suffix = hash ? `#${encodeURIComponent(hash)}` : '';
   if (t.url) void win.loadURL(t.url + suffix);
@@ -144,6 +145,30 @@ function openBuddyList(): BrowserWindow {
     if (buddyListWin === win) buddyListWin = null;
   });
   buddyListWin = win;
+  return win;
+}
+
+function openSettingsWindow(): BrowserWindow {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus();
+    return settingsWin;
+  }
+  const win = new BrowserWindow({
+    width: 560,
+    height: 420,
+    minWidth: 480,
+    minHeight: 340,
+    frame: false,
+    title: 'Settings',
+    backgroundColor: '#ece9d8',
+    icon: APP_ICON,
+    webPreferences: commonWebPrefs(),
+  });
+  loadInto(win, 'settings');
+  win.on('closed', () => {
+    if (settingsWin === win) settingsWin = null;
+  });
+  settingsWin = win;
   return win;
 }
 
@@ -294,6 +319,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('windows:openBuddyList', () => {
     openBuddyList();
+  });
+  ipcMain.handle('windows:openSettings', () => {
+    openSettingsWindow();
   });
   ipcMain.handle('windows:openChat', (_e, roomId: string) => {
     if (typeof roomId !== 'string') throw new Error('bad roomId');

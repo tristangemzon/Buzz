@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
-import { ThemeSettings } from '../../components/ThemeSettings';
 import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme } from '../../sounds/synth';
 import type { SoundScheme } from '../../sounds/synth';
 import type {
@@ -21,7 +20,6 @@ import type {
   SelfPresence,
   UnreadCounts,
 } from '@shared/schemas';
-import type { UpdateStatus } from '@shared/types';
 
 function App(): JSX.Element {
   const [me, setMe] = useState<{ peerId: string; buddyCode: string; screenName: string } | null>(
@@ -43,7 +41,6 @@ function App(): JSX.Element {
   const [soundScheme, setSoundSchemeState] = useState<SoundScheme>(getSoundScheme());
   const logoutSoundPlayedRef = useRef(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showThemes, setShowThemes] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [roomMembers, setRoomMembers] = useState<Set<string>>(new Set());
@@ -51,9 +48,6 @@ function App(): JSX.Element {
   const [showMailbox, setShowMailbox] = useState(false);
   const [mailbox, setMailbox] = useState<MailboxStats | null>(null);
   const [relayInput, setRelayInput] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: 'idle' });
-  const [appVersion, setAppVersion] = useState('');
   const [viewProfile, setViewProfile] = useState<{ peerId: string; alias: string } | null>(null);
   const [ctx, setCtx] = useState<{ peerId: string; x: number; y: number } | null>(null);
   const [roomCtx, setRoomCtx] = useState<{ roomId: string; x: number; y: number } | null>(null);
@@ -152,9 +146,6 @@ function App(): JSX.Element {
       // Open game window as acceptor (initiator=false) so recipient sees invite dialog
       void window.buzzWindows.openGame(e.fromPeerId, e.kind ?? 'checkers', false);
     });
-    const offUpdateStatus = window.buzz.onUpdateStatus((s: UpdateStatus) => setUpdateStatus(s));
-    void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
-    void window.buzz.updatesGetVersion().then(setAppVersion).catch(() => undefined);
 
     // Play goodbye when the buddy list window is closed directly (X button).
     // signOff() plays it before lock(), so we guard against a double-play.
@@ -173,7 +164,6 @@ function App(): JSX.Element {
       offUnread();
       offTalkInvite();
       offGameInvite();
-      offUpdateStatus();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
@@ -293,16 +283,6 @@ function App(): JSX.Element {
     setSoundsEnabled(next);
     try {
       await window.buzz.setPrefs({ soundsEnabled: next });
-    } catch {
-      /* best-effort */
-    }
-  }
-
-  async function changeSoundScheme(s: SoundScheme): Promise<void> {
-    setSoundSchemeState(s);
-    setSoundScheme(s);
-    try {
-      await window.buzz.setPrefs({ soundScheme: s });
     } catch {
       /* best-effort */
     }
@@ -579,9 +559,6 @@ function App(): JSX.Element {
         <button className="bl-action-btn" title="My Profile" onClick={() => setShowProfile(true)}>
           ✏️
         </button>
-        <button className="bl-action-btn" title="Themes" onClick={() => setShowThemes(true)}>
-          🎨
-        </button>
         <button
           className="bl-action-btn"
           title="Offline Mailbox"
@@ -604,10 +581,7 @@ function App(): JSX.Element {
         <button
           className="bl-action-btn"
           title="Settings"
-          onClick={() => {
-            void window.buzz.updatesGetStatus().then(setUpdateStatus).catch(() => undefined);
-            setShowSettings(true);
-          }}
+          onClick={() => void window.buzzWindows.openSettings()}
         >
           ⚙️
         </button>
@@ -687,7 +661,6 @@ function App(): JSX.Element {
       )}
 
       {showProfile && <ProfileEditor onClose={() => setShowProfile(false)} />}
-      {showThemes && <ThemeSettings onClose={() => setShowThemes(false)} />}
       {viewProfile && (
         <ProfileViewer
           peerId={viewProfile.peerId}
@@ -841,26 +814,7 @@ function App(): JSX.Element {
         </Modal>
       )}
 
-      {showSettings && (
-        <Modal title="Settings" onClose={() => setShowSettings(false)}>
-          <SettingsPanel
-            updateStatus={updateStatus}
-            appVersion={appVersion}
-            soundScheme={soundScheme}
-            onSoundSchemeChange={(s) => void changeSoundScheme(s)}
-            onCheckNow={async () => {
-              const s = await window.buzz.updatesCheck();
-              setUpdateStatus(s);
-            }}
-            onDownload={async () => {
-              await window.buzz.updatesDownload();
-            }}
-            onInstall={() => {
-              void window.buzz.updatesInstall();
-            }}
-          />
-        </Modal>
-      )}
+      {/* showSettings modal removed — now a dedicated window */}
 
       {/* ── Room context menu ────────────────────────────────────────── */}
       {roomCtx && (() => {
@@ -949,88 +903,6 @@ function App(): JSX.Element {
           </>
         );
       })()}
-    </div>
-  );
-}
-
-function SettingsPanel(props: {
-  updateStatus: UpdateStatus;
-  appVersion: string;
-  soundScheme: SoundScheme;
-  onSoundSchemeChange: (s: SoundScheme) => void;
-  onCheckNow: () => Promise<void>;
-  onDownload: () => Promise<void>;
-  onInstall: () => void;
-}): JSX.Element {
-  const { updateStatus, appVersion, soundScheme, onSoundSchemeChange, onCheckNow, onDownload, onInstall } = props;
-
-  function statusLine(): string {
-    switch (updateStatus.phase) {
-      case 'idle': return appVersion ? `Version ${appVersion}` : 'Up to date';
-      case 'checking': return 'Checking for updates…';
-      case 'not-available': return `Up to date (${updateStatus.currentVersion})`;
-      case 'available': return `Update available: v${updateStatus.version}`;
-      case 'downloading': return `Downloading… ${updateStatus.percent}%`;
-      case 'downloaded': return `v${updateStatus.version} ready to install`;
-      case 'error': return `Error: ${updateStatus.message}`;
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* ── Sound scheme ── */}
-      <div className="settings-section">
-        <div className="settings-section-title">Sound Scheme</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <input
-              type="radio"
-              name="soundscheme-bl"
-              checked={soundScheme === 'buzz'}
-              onChange={() => onSoundSchemeChange('buzz')}
-            />
-            <span><strong>Buzz</strong> — synthesized tones</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <input
-              type="radio"
-              name="soundscheme-bl"
-              checked={soundScheme === 'classic'}
-              onChange={() => onSoundSchemeChange('classic')}
-            />
-            <span><strong>Classic</strong> — authentic AIM sounds</span>
-          </label>
-        </div>
-      </div>
-      {/* ── Auto-updates ── */}
-      <div className="settings-section">
-        <div className="settings-section-title">Auto-Updates</div>
-        <div className="settings-status-line">{statusLine()}</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-          {(updateStatus.phase === 'idle' ||
-            updateStatus.phase === 'not-available' ||
-            updateStatus.phase === 'error') && (
-            <button onClick={() => void onCheckNow()}>Check Now</button>
-          )}
-          {updateStatus.phase === 'available' && (
-            <button onClick={() => void onDownload()}>Download Update</button>
-          )}
-          {updateStatus.phase === 'downloaded' && (
-            <button onClick={onInstall}>Install &amp; Restart</button>
-          )}
-        </div>
-        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 6 }}>
-          Updates are downloaded from the official{' '}
-          <a
-            href="https://github.com/tristangemzon/Buzz/releases"
-            onClick={(e) => { e.preventDefault(); }}
-            style={{ color: 'inherit' }}
-          >
-            GitHub Releases
-          </a>{' '}
-          page and verified by a cryptographic hash before install.
-        </div>
-      </div>
     </div>
   );
 }

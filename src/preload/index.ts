@@ -140,6 +140,7 @@ const windows = {
   openBuddyList: () => ipcRenderer.invoke('windows:openBuddyList'),
   openChat: (roomId: string) => ipcRenderer.invoke('windows:openChat', roomId),
   openGame: (peerId: string, kind: string, initiator?: boolean) => ipcRenderer.invoke('windows:openGame', peerId, kind, initiator),
+  openSettings: () => ipcRenderer.invoke('windows:openSettings'),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   toggleMax: () => ipcRenderer.invoke('window:toggleMax'),
   close: () => ipcRenderer.invoke('window:close'),
