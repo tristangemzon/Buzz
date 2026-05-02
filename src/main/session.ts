@@ -966,12 +966,27 @@ export class Session {
         }
       },
       onBuddyRequest: (peerId, screenName) => {
+        // Persist the incoming request so approveBuddyRequest can find it.
+        repos.upsertBuddyRequest(db, {
+          peerId,
+          direction: 'in',
+          screenName,
+          ts: Date.now(),
+        });
         this.broadcast(IPC.EvtBuddyRequest, {
           kind: 'incoming',
           request: { peerId, screenName, direction: 'in', ts: Date.now() },
         } satisfies BuddyRequestEvent);
       },
-      onBuddyResponse: (peerId, accepted, _screenName) => {
+      onBuddyResponse: (peerId, accepted, screenName) => {
+        // Mirror what P2P handleBuddyResp does: persist the result to DB.
+        const req = db.prepare('SELECT screen_name FROM buddy_requests WHERE peer_id=?').get(peerId) as { screen_name?: string } | undefined;
+        db.prepare('DELETE FROM buddy_requests WHERE peer_id=?').run(peerId);
+        if (accepted) {
+          const alias = req?.screen_name?.trim() || screenName?.trim() || `${peerId.slice(0, 8)}…`;
+          repos.addBuddy(db, peerId, alias, 'Buddies');
+          this.forgetDiscovered(peerId);
+        }
         this.broadcast(IPC.EvtBuddyRequestResolved, { peerId, accepted } satisfies BuddyRequestResolvedEvent);
       },
       onMessage: (fromPeerId, msgId, ts, cipherB64) => {
