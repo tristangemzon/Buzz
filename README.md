@@ -2,7 +2,7 @@
 
 A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built with Electron + React + TypeScript and powered by [`js-libp2p`](https://github.com/libp2p/js-libp2p) (Noise XX + Yamux + KadDHT) and **SQLCipher** for encrypted local storage.
 
-> Status: **early scaffold, but feature-rich.** Sign-on, buddy list, 1:1 IM, encrypted local DB, P2P transport, platform-aware Mac/Windows skinning, profile customization, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (with text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, and **auto-updates via GitHub Releases** are all wired up.
+> **v0.3.8** — Sign-on, buddy list, 1:1 IM, encrypted local DB, three network transport modes (libp2p P2P, Hive server, Buzz Mesh via Tailscale), platform-aware Mac/Windows skinning, profile customisation, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, **in-client games** (Checkers, Chess, Reversi, Gomoku, Poker, Spades), and **auto-updates via GitHub Releases** are all wired up.
 
 ## Features in this build
 
@@ -13,21 +13,52 @@ A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built
 - **Multiple profiles** on one machine — pick from the Sign-On screen, each with its own keystore + DB.
 - **Factory reset** wipes the local profile cleanly.
 
-### Networking
+### Networking — three modes
+
+Switch modes in Settings → Network (or via the `NetworkConfig` IPC before signing on).
+
+#### `p2p` — libp2p (default)
 
 - **`js-libp2p` host** with Noise XX, Yamux, TCP + WebSockets, Kad DHT, and circuit-relay-v2 client.
-- **Custom IM protocol** `/buzz/im/1.0.0` (length-prefixed CBOR frames, 256 KiB cap) — carries IMs, typing/read receipts, profile cards, room control, talk/video signalling, and voice-channel audio.
-- **Automatic peer discovery** on the local network via mDNS (in P2P mode).
-- **Buddy request approval flow**: outgoing requests can be approved, denied, or cancelled; only mutual buddies see your presence.
-- **Presence heartbeat** every 10 s keeps buddy statuses fresh; a **login burst** re-announces at 2 s / 5 s / 12 s / 25 s after sign-in to catch peers who are already online.
+- **Automatic LAN discovery** via mDNS; **DHT bootstrap** via public IPFS bootstrap nodes for internet reachability.
+- **Presence login burst** re-announces at 2 s / 5 s / 12 s / 25 s after sign-in to catch peers who are already online.
 - **Offline debounce** (6 s default, 18 s during active calls) prevents flicker when libp2p re-negotiates transports.
+
+#### `server` — Hive server
+
+- Connects to a Buzz **Hive server** over WSS; replaces the libp2p stack entirely.
+- **Ed25519 challenge-response authentication** — the server never sees your private key.
+- Full buddy list, presence, rooms, file transfer, and talk signalling all route through the server.
+- Optional **local message cache** (enabled by default) so history survives server restarts.
+
+#### `exp-p2p` — Buzz Mesh (Tailscale)
+
+- Spawns a **Go sidecar** (`buzz-mesh`) that joins a shared Tailscale tailnet via [`tsnet`](https://pkg.go.dev/tailscale.com/tsnet).
+- The sidecar exposes a **local SOCKS5 proxy** so libp2p can reach other nodes' `100.x.x.x` Tailscale addresses through the userspace VPN without any OS-level Tailscale client.
+- A Tailscale inbound forwarder on port 14001 bridges remote mesh peers back into the local libp2p host.
+- The sidecar's `/peers` endpoint returns only **online** (Tailscale-reachable) peers, so libp2p never wastes dial attempts on offline tailnet members.
+- A **mesh dial burst** fires at 2 s / 5 s / 10 s / 20 s / 40 s after login, then polls every 60 s; after a successful libp2p connect, any pending outgoing buddy requests are retried automatically.
+- The 📡 **Mesh Debug** button appears in the buddy list action bar when in `exp-p2p` mode, opening a live diagnostic window (auto-refreshes every 5 s) showing mesh state, Tailscale IP, SOCKS5 port, online tailnet peers, libp2p connections, and recent dial errors.
+
+### Custom IM protocol
+
+- `/buzz/im/1.0.0` — length-prefixed CBOR frames, 256 KiB cap.
+- Carries: IMs, typing/read receipts, profile cards, buddy requests, room control, talk/video signalling, voice-channel audio, game moves.
+
+### Buddy management
+
+- **Buddy request approval flow**: outgoing requests can be approved, denied, or cancelled; only mutual buddies see each other's presence.
+- **Buddy groups**: organise contacts into named groups.
+- **Block** a buddy to suppress all incoming messages and presence.
+- **Warn level** (0–100 %, AIM-era): increase a buddy's warn level; buddies with high warn levels are visible to others.
+- **Rename** any buddy with a local alias.
 
 ### 1:1 messaging
 
 - **Rich-text IM** (bold/italic/underline/strike, links, line-breaks) with format toolbar and keyboard shortcuts.
 - **Typing indicators** and **read receipts** in-window.
 - **Presence & away messages**: online / away / invisible, custom away text shown in the buddy list and on hover.
-- **Profile cards**: edit your own info pane (display name, location, blurb, avatar) and view buddies' cards.
+- **Profile cards**: edit your own info pane (display name, location, blurb, avatar, background image) and view buddies' cards.
 - **File transfer** with offer/accept/reject + per-chunk progress (`/buzz/xfer/1.0.0`).
 
 ### Voice & video calls
@@ -38,10 +69,23 @@ A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built
 
 ### Multi-party chat rooms
 
-- **Per-room 32-byte symmetric key**, sealed inside the already Noise-XX-encrypted IM channel. Messages are XSalsa20-Poly1305 secretbox'd and fanned out full-mesh to room members. Conceptually equivalent to gossipsub + a sealed room key, without an extra protocol.
+- **Per-room 32-byte symmetric key**, sealed inside the already Noise-XX-encrypted IM channel. Messages are XSalsa20-Poly1305 secretbox'd and fanned out full-mesh to room members.
 - **Text channels** within a room (Discord-style), with a default `#general`.
 - **Voice channels** (🔊): join/leave/mute, live participant list, per-peer playback sinks. Audio is captured at 80 ms timeslices via `MediaRecorder` (Opus/WebM), encrypted with the room key, and played back through per-peer `MediaSource` sinks.
 - Per-room invite flow, leave, member roster, and unread counters.
+
+### In-client games
+
+Challenge any buddy to a 1:1 game directly from the IM window. Each game opens in a dedicated **Game** window; moves are sent peer-to-peer over the existing IM connection (no separate protocol).
+
+| Game | Notes |
+|------|-------|
+| **Checkers** | Standard 8×8 draughts with multi-jump support |
+| **Chess** | Full rules including castling and en passant |
+| **Reversi** | Classic Othello-style board |
+| **Gomoku** | Five-in-a-row on a 15×15 grid |
+| **Poker** | Texas Hold 'em (heads-up) |
+| **Spades** | Classic trick-taking card game |
 
 ### Offline delivery
 
@@ -54,9 +98,9 @@ A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built
   - **Windows / Linux**: `Tahoma` UI, `Times New Roman` chat font.
   - Override via the `skin` pref (`auto` | `mac` | `windows`).
 - **iChat-style chat themes**: classic / balloons / compact, with customisable my/their bubble colours, optional timestamps and avatars.
-- **Per-event sounds** (door open/close, IM send/receive, buddy on/off) with mute toggle.
+- **Per-event sounds** (door open/close, IM send/receive, buddy on/off) with mute toggle and multiple sound schemes.
 - **Custom window chrome** that adapts to platform skin.
-- **Settings panel** (⚙️ in the buddy list action bar): auto-update status, Check Now / Download / Install & Restart buttons.
+- **Settings window** (⚙️ in the buddy list action bar): three-tab panel covering Themes, Sounds, and Auto-updates.
 
 ### Auto-updates
 
@@ -77,21 +121,21 @@ npm install
 npm run dev
 ```
 
-Then to test peer-to-peer locally, launch a second instance pointing at a different `userData` dir:
+To test peer-to-peer locally, launch a second instance pointing at a different `userData` dir:
 
 ```bash
 # macOS / Linux example
 USER_DATA_DIR=$(mktemp -d) npm run dev
 ```
 
-(or just run the built app from two machines on the same network)
+(or run the built app from two machines on the same LAN, or on the same Tailscale tailnet in `exp-p2p` mode)
 
 ### First-time flow
 
 1. **Sign On** window asks you to create a screen name and passphrase.
 2. The Buddy List opens. Click **My Info** to copy your **buddy code** (a base58 PeerId).
 3. On the second instance, click **Add Buddy**, paste the code, and give it a display name. The other side receives an approval prompt.
-4. Once approved, double-click the buddy in the list to open an IM window — from there you can send files, start voice/video calls, or create a chat room and invite them.
+4. Once approved, double-click the buddy in the list to open an IM window — from there you can send files, start voice/video calls, create a chat room, or challenge them to a game.
 5. In a chat room, click **+** in the channel sidebar to add a Text or **Voice** channel; voice channels show a 🔊 icon and have Join / Mute / Leave buttons.
 
 ## Project layout
@@ -102,7 +146,9 @@ src/
     crypto/            Keystore (Argon2id + libsodium), sealed-box helpers
     db/                SQLCipher schema + repository layer + migrations
     p2p/               libp2p node, IM protocol, rooms, mailbox, presence,
-                       file transfer, talk (audio/video) signalling
+                       file transfer, talk (audio/video) signalling,
+                       Buzz Mesh sidecar manager + custom SOCKS5 transport,
+                       Hive server client
     ipc/               Typed IPC handlers (zod-validated)
     session.ts         Locked/unlocked app state + event fan-out
     index.ts           Entry: lifecycle + windows
@@ -115,10 +161,15 @@ src/
     windows/
       SignOn/          Create / unlock identity, pick profile
       BuddyList/       Buddy list, Add Buddy, My Info, prefs
-      IM/              1:1 IM window (rich text, file xfer, call buttons)
+      IM/              1:1 IM window (rich text, file xfer, call/game buttons)
       Chat/            Multi-party chat room (text + voice channels)
       VideoCall/       Dedicated 4:3 video call window
+      Game/            In-client game window (Checkers, Chess, Reversi,
+                       Gomoku, Poker, Spades)
+      Settings/        Settings window (Themes / Sounds / Updates)
+      MeshDebug/       Buzz Mesh live diagnostic window (exp-p2p only)
   shared/              Cross-process types, IPC channels, zod schemas
+buzz-mesh/             Go sidecar (tsnet Tailscale bridge + SOCKS5 proxy)
 ```
 
 ## Security notes
@@ -126,6 +177,7 @@ src/
 - All persistent state (buddies, history, prefs, profiles, room keys) is stored in **SQLCipher** with a key derived from your seed; the DB file is unreadable without your passphrase.
 - The libp2p transport authenticates peers cryptographically via **Noise XX**; your **PeerId is your identity** — screen names are local cosmetic aliases.
 - Room messages and voice-channel audio are additionally **secret-boxed with the per-room key** before going on the wire, so even a compromised libp2p stream wouldn't reveal room contents.
+- In Buzz Mesh mode, `@libp2p/tcp` is patched to reject all `100.x.x.x` addresses, ensuring Tailscale peers are only ever dialled through the SOCKS5 proxy (never directly via the OS network stack, which can't reach tsnet addresses).
 - Renderers cannot touch Node APIs; everything goes through the typed, schema-validated IPC bridge.
 
 ## What's not built yet (planned)
