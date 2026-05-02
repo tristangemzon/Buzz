@@ -149,6 +149,26 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   // ── im ────────────────────────────────────────────────────────────────────
   handle(IPC.ImSend, SendImReq, async ({ toPeerId, body }) => {
     const db = requireDb(session);
+    // Server mode: seal-box encrypt and route via HiveClient.
+    const hive = session.hiveClient;
+    if (hive) {
+      const cipherB64 = hive.sealMessage(toPeerId, body);
+      if (!cipherB64) throw new Error('Peer encryption key not available yet — try again in a moment.');
+      const msg: ImMessage = ImMessage.parse({
+        id: randomUUID(),
+        peerId: toPeerId,
+        direction: 'out',
+        ts: Date.now(),
+        body,
+        status: 'queued',
+      });
+      const networkCfg = loadNetworkConfig();
+      if (networkCfg.serverCacheEnabled) repos.insertMessage(db, msg);
+      hive.sendIm(toPeerId, msg.id, msg.ts, cipherB64);
+      msg.status = 'sent';
+      if (networkCfg.serverCacheEnabled) repos.setMessageStatus(db, msg.id, 'sent');
+      return msg;
+    }
     const im = session.im;
     if (!im) throw new Error('Locked');
     const msg: ImMessage = ImMessage.parse({
@@ -190,6 +210,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     IPC.ImTyping,
     z.object({ peerId: PeerIdStr, typing: z.boolean() }),
     async ({ peerId: toPeerId, typing }) => {
+      if (session.hiveClient) return; // typing indicators not supported in server mode
       const im = session.im;
       if (!im) return;
       await im.send(toPeerId, { type: 'typing', typing }).catch(() => {});
@@ -288,6 +309,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 
   // ── file transfer ────────────────────────────────────────────────────────
   handle(IPC.XferOffer, XferOfferReq, async ({ toPeerId }) => {
+    if (session.hiveClient) throw new Error('File transfer is not yet supported in server mode.');
     const xfer = session.xfer;
     if (!xfer) throw new Error('Locked');
     const sender = BrowserWindow.getFocusedWindow() ?? undefined;
@@ -329,6 +351,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     } as const;
   });
   handle(IPC.XferRespond, XferRespondReq, async ({ id, accept }) => {
+    if (session.hiveClient) throw new Error('File transfer is not yet supported in server mode.');
     const xfer = session.xfer;
     if (!xfer) throw new Error('Locked');
     if (!accept) {
@@ -410,6 +433,28 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsCreate, RoomCreateReq, async ({ name, members }) => {
     const db = requireDb(session);
+    // Server mode: generate room key locally, seal for each member, create via HiveClient.
+    const hive = session.hiveClient;
+    if (hive) {
+      const s = await sodium();
+      const key = s.randombytes_buf(32);
+      const keyB64 = s.to_base64(key, s.base64_variants.ORIGINAL);
+      const createdAt = Date.now();
+      const roomId = randomUUID();
+      const myPeerId = session.peerIdStr();
+      const fullMembers = Array.from(new Set([myPeerId, ...members]));
+      const defaultChannel = { id: randomUUID(), name: 'general', kind: 'text' as const, isDefault: true, createdAt };
+      const keyEnvelopes = fullMembers
+        .map((pid) => { const c = hive.sealMessage(pid, keyB64); return c ? { peerId: pid, cipherB64: c } : null; })
+        .filter((e): e is { peerId: string; cipherB64: string } => e !== null);
+      hive.createRoom(roomId, name, keyEnvelopes, fullMembers);
+      repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
+      repos.setRoomMembers(db, roomId, fullMembers);
+      repos.upsertRoomChannel(db, { ...defaultChannel, roomId });
+      session.cacheRoomKey(roomId, key);
+      session.cacheRoomMembers(roomId, fullMembers);
+      return { id: roomId, name, members: fullMembers, createdAt };
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     // Build the default channel UP FRONT so we can ship its id along with
@@ -437,6 +482,19 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsInvite, RoomInviteReq, async ({ roomId, peerId }) => {
     const db = requireDb(session);
+    // Server mode.
+    const hive = session.hiveClient;
+    if (hive) {
+      const room = repos.getRoom(db, roomId);
+      if (!room) throw new Error('Unknown room');
+      const keyEnvelopeB64 = hive.sealMessage(peerId, room.keyB64);
+      if (!keyEnvelopeB64) throw new Error('Peer encryption key not available yet.');
+      const fullMembers = Array.from(new Set([...session.getRoomMembers(roomId), peerId]));
+      hive.inviteToRoom(roomId, peerId, keyEnvelopeB64);
+      repos.setRoomMembers(db, roomId, fullMembers);
+      session.cacheRoomMembers(roomId, fullMembers);
+      return { id: roomId, name: room.name, members: fullMembers, createdAt: room.createdAt };
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     const room = repos.getRoom(db, roomId);
@@ -455,6 +513,12 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsLeave, RoomLeaveReq, async ({ roomId }) => {
     const db = requireDb(session);
+    // Server mode: no leave signal to the server yet; just clean up locally.
+    if (session.hiveClient) {
+      repos.deleteRoom(db, roomId);
+      session.forgetRoom(roomId);
+      return { ok: true as const };
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     await rooms.leave(roomId);
@@ -464,6 +528,34 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, channelId, body }) => {
     const db = requireDb(session);
+    // Server mode: secretbox-encrypt with cached room key, send via HiveClient.
+    const hive = session.hiveClient;
+    if (hive) {
+      const ch = repos.getRoomChannel(db, channelId);
+      if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
+      const key = session.getRoomKey(roomId);
+      if (!key) throw new Error('Room key not available — rejoin the room.');
+      const s = await sodium();
+      const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
+      const ct = s.crypto_secretbox_easy(s.from_string(body), nonce, key);
+      const cipherB64 =
+        s.to_base64(nonce, s.base64_variants.ORIGINAL) + ':' +
+        s.to_base64(ct, s.base64_variants.ORIGINAL);
+      const id = randomUUID();
+      const ts = Date.now();
+      hive.sendRoomMsg(roomId, channelId, id, ts, cipherB64);
+      const stored = {
+        id, roomId, channelId,
+        fromPeerId: session.peerIdStr(),
+        fromName: session.screenName,
+        direction: 'out' as const,
+        ts,
+        body, // store plaintext locally
+      };
+      const networkCfg = loadNetworkConfig();
+      if (networkCfg.serverCacheEnabled) repos.insertRoomMessage(db, stored);
+      return stored;
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     // Validate the channel belongs to this room.
@@ -492,6 +584,22 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   );
   handle(IPC.RoomsCreateChannel, RoomChannelCreateReq, async ({ roomId, name, kind }) => {
     const db = requireDb(session);
+    // Server mode.
+    const hive = session.hiveClient;
+    if (hive) {
+      if (!repos.getRoom(db, roomId)) throw new Error('Unknown room');
+      const ch = {
+        id: randomUUID(),
+        roomId,
+        name,
+        kind: kind ?? 'text',
+        isDefault: false,
+        createdAt: Date.now(),
+      } as const;
+      repos.upsertRoomChannel(db, ch);
+      hive.addRoomChannel(roomId, ch.id, ch.name, ch.kind);
+      return ch;
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     if (!repos.getRoom(db, roomId)) throw new Error('Unknown room');
@@ -509,6 +617,15 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsDeleteChannel, RoomChannelDeleteReq, async ({ roomId, channelId }) => {
     const db = requireDb(session);
+    // Server mode: no broadcast protocol; delete locally.
+    const hive = session.hiveClient;
+    if (hive) {
+      const ch = repos.getRoomChannel(db, channelId);
+      if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
+      if (ch.isDefault) throw new Error('Cannot delete the default channel');
+      repos.deleteRoomChannel(db, channelId);
+      return { ok: true as const };
+    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     const ch = repos.getRoomChannel(db, channelId);

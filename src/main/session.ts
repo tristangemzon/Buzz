@@ -1072,8 +1072,27 @@ export class Session {
         this.broadcast(IPC.EvtRoomMembers, { roomId, members } satisfies RoomMembersEvent);
       },
       onTalkSignal: (from, callId, signal, payload) => {
-        // Re-use the same talk signal IPC so renderers don't need to know about Hive.
-        this.broadcast(IPC.EvtTalkState, { from, callId, signal, payload });
+        // Route through the same handlers as P2P so call state is managed consistently.
+        const p = (payload ?? {}) as Record<string, unknown>;
+        switch (signal) {
+          case 'invite':
+            this.handleTalkInvite(from, callId, String(p.screenName ?? ''), Number(p.ts ?? 0), (p.kind as 'voice' | 'video') ?? 'voice');
+            break;
+          case 'accept':
+            this.handleTalkAccept(from, callId);
+            break;
+          case 'reject':
+            this.handleTalkReject(from, callId, p.reason as string | undefined);
+            break;
+          case 'bye':
+            this.handleTalkBye(from, callId);
+            break;
+          case 'videoState':
+            this.handleTalkVideoState(from, callId, Boolean(p.on));
+            break;
+          default:
+            break;
+        }
       },
       onTalkAudio: (from, callId, buf) => {
         this.handleTalkAudio(from, callId, 0, buf);
@@ -1130,6 +1149,12 @@ export class Session {
   cacheRoomMembers(roomId: string, members: string[]): void {
     this.roomMembers.set(roomId, [...members]);
   }
+  getRoomKey(roomId: string): Uint8Array | null {
+    return this.roomKeys.get(roomId) ?? null;
+  }
+  getRoomMembers(roomId: string): string[] {
+    return [...(this.roomMembers.get(roomId) ?? [])];
+  }
   forgetRoom(roomId: string): void {
     this.roomKeys.delete(roomId);
     this.roomMembers.delete(roomId);
@@ -1169,7 +1194,7 @@ export class Session {
     alias: string,
     _group: string,
   ): Promise<void> {
-    if (!this.db || !this.im) throw new Error('Locked');
+    if (!this.db) throw new Error('Locked');
     if (this.db.prepare('SELECT 1 FROM buddies WHERE peer_id=?').get(peerId)) {
       return; // already a buddy
     }
@@ -1180,10 +1205,14 @@ export class Session {
       screenName: alias,
       ts,
     });
-    // Best-effort send; if the peer is offline we'll retry next time the
-    // user clicks "Add" (the local pending row is the source of truth).
+    // Server mode: delegate to HiveClient.
+    if (this.hiveClient) {
+      this.hiveClient.addBuddy(peerId);
+      return;
+    }
+    // P2P mode: best-effort send; peer may be offline.
     try {
-      await this.im.send(peerId, {
+      await this.im?.send(peerId, {
         type: 'buddy-req',
         screenName: this.screenName,
         ts,
@@ -1201,9 +1230,13 @@ export class Session {
     repos.addBuddy(this.db, peerId, alias, 'Buddies');
     repos.deleteBuddyRequest(this.db, peerId);
     this.forgetDiscovered(peerId);
-    void this.im
-      ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
-      .catch(() => {});
+    if (this.hiveClient) {
+      this.hiveClient.approveBuddy(peerId);
+    } else {
+      void this.im
+        ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
+        .catch(() => {});
+    }
     this.broadcast(IPC.EvtBuddyRequestResolved, {
       peerId,
       accepted: true,
@@ -1215,9 +1248,13 @@ export class Session {
     const req = repos.getBuddyRequest(this.db, peerId);
     if (!req || req.direction !== 'in') return;
     repos.deleteBuddyRequest(this.db, peerId);
-    void this.im
-      ?.send(peerId, { type: 'buddy-resp', accepted: false })
-      .catch(() => {});
+    if (this.hiveClient) {
+      this.hiveClient.denyBuddy(peerId);
+    } else {
+      void this.im
+        ?.send(peerId, { type: 'buddy-resp', accepted: false })
+        .catch(() => {});
+    }
     this.broadcast(IPC.EvtBuddyRequestResolved, {
       peerId,
       accepted: false,
@@ -1369,7 +1406,7 @@ export class Session {
   }
 
   async startCall(peerId: string, kind: 'voice' | 'video' = 'voice'): Promise<TalkCallState> {
-    if (!this.talk) throw new Error('Locked');
+    if (!this.talk && !this.hiveClient) throw new Error('Locked');
     if (this.currentCall && this.currentCall.state !== 'ended') {
       throw new Error('Another call is already active');
     }
@@ -1387,13 +1424,11 @@ export class Session {
     this.currentCall = state;
     this.broadcast(IPC.EvtTalkState, state);
     try {
-      await this.talk.send(peerId, {
-        type: 'invite',
-        callId,
-        screenName: this.screenName,
-        ts,
-        kind,
-      });
+      if (this.hiveClient) {
+        this.hiveClient.sendTalkSignal(peerId, callId, 'invite', { screenName: this.screenName, ts, kind });
+      } else {
+        await this.talk!.send(peerId, { type: 'invite', callId, screenName: this.screenName, ts, kind });
+      }
     } catch (err) {
       this.endCallLocal(callId, 'unreachable');
       throw err;
@@ -1402,62 +1437,85 @@ export class Session {
   }
 
   async acceptCall(callId: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.role !== 'callee') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'accept', callId }).catch(() => undefined);
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkSignal(peerId, callId, 'accept', {});
+    } else {
+      await this.talk!.send(peerId, { type: 'accept', callId }).catch(() => undefined);
+    }
     this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
   }
 
   async rejectCall(callId: string, reason?: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkSignal(peerId, callId, 'reject', { reason });
+    } else {
+      await this.talk!.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
+    }
     this.endCallLocal(callId, reason ?? 'rejected');
   }
 
   async endCall(callId: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'bye', callId }).catch(() => undefined);
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkSignal(peerId, callId, 'bye', {});
+    } else {
+      await this.talk!.send(peerId, { type: 'bye', callId }).catch(() => undefined);
+    }
     this.endCallLocal(callId, 'ended');
   }
 
   async sendCallAudio(callId: string, data: Uint8Array): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    // eslint-disable-next-line no-console
-    console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
-    // We don't bother numbering on the main side; renderer-side seq is fine.
-    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
-      console.warn('[talk] tx send failed', err);
-    });
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkAudio(peerId, callId, Buffer.from(data));
+    } else {
+      // eslint-disable-next-line no-console
+      console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
+      await this.talk!.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
+        console.warn('[talk] tx send failed', err);
+      });
+    }
   }
 
   async sendCallVideo(callId: string, data: Uint8Array): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
-      console.warn('[talk] video tx send failed', err);
-    });
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkVideo(peerId, callId, Buffer.from(data));
+    } else {
+      await this.talk!.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
+        console.warn('[talk] video tx send failed', err);
+      });
+    }
   }
 
   async setCallVideo(callId: string, on: boolean): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
-      console.warn('[talk] videoState send failed', err);
-    });
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkSignal(peerId, callId, 'videoState', { on });
+    } else {
+      await this.talk!.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
+        console.warn('[talk] videoState send failed', err);
+      });
+    }
   }
 
   private endCallLocal(callId: string, reason?: string): void {
@@ -1480,10 +1538,14 @@ export class Session {
     _ts: number,
     kind: 'voice' | 'video',
   ): void {
-    if (!this.talk) return;
+    if (!this.talk && !this.hiveClient) return;
     // Reject if already in another call.
     if (this.currentCall && this.currentCall.state !== 'ended') {
-      void this.talk.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
+      if (this.hiveClient) {
+        this.hiveClient.sendTalkSignal(peerId, callId, 'reject', { reason: 'busy' });
+      } else {
+        void this.talk!.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
+      }
       return;
     }
     const state: TalkCallState = {
@@ -1553,7 +1615,7 @@ export class Session {
 
   // ── voice channels ────────────────────────────────────────────────────
   async roomVoiceJoin(roomId: string, channelId: string): Promise<void> {
-    if (!this.rooms) throw new Error('locked');
+    if (!this.rooms) return; // voice channels not available in server mode
     const key = `${roomId}|${channelId}`;
     if (this.localVoiceJoined.has(key)) return;
     this.localVoiceJoined.add(key);
