@@ -2,7 +2,7 @@
 
 A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built with Electron + React + TypeScript and powered by [`js-libp2p`](https://github.com/libp2p/js-libp2p) (Noise XX + Yamux + KadDHT) and **SQLCipher** for encrypted local storage.
 
-> **v0.3.8** — Sign-on, buddy list, 1:1 IM, encrypted local DB, three network transport modes (libp2p P2P, Hive server, Buzz Mesh via Tailscale), platform-aware Mac/Windows skinning, profile customisation, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, **in-client games** (Checkers, Chess, Reversi, Gomoku, Poker, Spades), and **auto-updates via GitHub Releases** are all wired up.
+> **v0.3.8** — Sign-on, buddy list, 1:1 IM, encrypted local DB, three network transport modes (libp2p P2P, Hive server, Buzz Mesh via Tailscale), platform-aware Mac/Windows skinning, profile customisation, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, **in-client games** (Checkers, Chess, Reversi, Gomoku, Poker, Spades), **auto-updates via GitHub Releases**, **live typing indicators**, and **full Hive server account management** (register, sign-in, server-validated Settings) are all wired up.
 
 ## Features in this build
 
@@ -30,6 +30,17 @@ Switch modes in Settings → Network (or via the `NetworkConfig` IPC before sign
 - **Ed25519 challenge-response authentication** — the server never sees your private key.
 - Full buddy list, presence, rooms, file transfer, and talk signalling all route through the server.
 - Optional **local message cache** (enabled by default) so history survives server restarts.
+- **Server account management** via three IPC calls:
+  - `serverDiscover(url)` — probes `/api/server-info` and `/api/users`; returns the server name, whether registration is open, and the list of registered users. Also used by Settings to validate a URL before saving.
+  - `serverRegister({ serverUrl, screenName, passphrase })` — creates a new keypair, registers with the server, and signs in.
+  - `serverUnlockAccount({ serverUrl, screenName, passphrase })` — signs into an existing account, downloading the encrypted keystore to this device on first login.
+- **Server sign-on UX** — the Sign-On window switches to a dedicated `ServerSignOn` flow when the network mode is `server`:
+  - Auto-connects to the configured server on mount and lands on the sign-in screen immediately.
+  - Sign-in step: **dropdown of registered users** (with an "Existing User?" option to switch to freeform name entry, and a back link to return to the dropdown) plus a password field.
+  - Register step: screen name + password + confirm.
+  - Settings validates the server connection (preflight `serverDiscover`) before persisting the URL; the Save button shows "Connecting…" during the check.
+- **Profile separation** — P2P profiles (no `serverUrl`) and server profiles (`serverUrl` set) are stored in the same index but never mixed in each other's sign-on dropdowns.
+- **Presence in server mode** — `presence:getSelf` and `presence:setStatus` IPC handlers work correctly when `session.presence` is `null` (Hive mode); status and away message are persisted to the local DB and forwarded to `HiveClient`.
 
 #### `exp-p2p` — Buzz Mesh (Tailscale)
 
@@ -56,7 +67,7 @@ Switch modes in Settings → Network (or via the `NetworkConfig` IPC before sign
 ### 1:1 messaging
 
 - **Rich-text IM** (bold/italic/underline/strike, links, line-breaks) with format toolbar and keyboard shortcuts.
-- **Typing indicators** and **read receipts** in-window.
+- **Typing indicators**: outgoing indicator is sent on first keystroke and stopped on send or 4 s of inactivity; incoming `"{name} is typing…"` notice auto-clears after 5 s if no stop frame arrives. **Read receipts** are also shown in-window.
 - **Presence & away messages**: online / away / invisible, custom away text shown in the buddy list and on hover.
 - **Profile cards**: edit your own info pane (display name, location, blurb, avatar, background image) and view buddies' cards.
 - **File transfer** with offer/accept/reject + per-chunk progress (`/buzz/xfer/1.0.0`).

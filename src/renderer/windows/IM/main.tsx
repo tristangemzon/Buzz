@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
@@ -102,6 +102,11 @@ function App(): JSX.Element {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
+  const [theirTyping, setTheirTyping] = useState(false);
+  const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether we have told the peer we are typing (so we can send stop).
+  const isTypingSentRef = useRef(false);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const talk = useTalk(peerId, { kind: 'voice' });
 
@@ -246,6 +251,17 @@ function App(): JSX.Element {
       setTheme(theme);
       applyThemeAttributes(theme);
     });
+    const offTyping = window.buzz.onTyping((e) => {
+      if (e.peerId !== peerId) return;
+      setTheirTyping(e.typing);
+      if (e.typing) {
+        // Auto-clear after 5 s in case the peer never sends a false frame.
+        if (typingClearRef.current) clearTimeout(typingClearRef.current);
+        typingClearRef.current = setTimeout(() => setTheirTyping(false), 5000);
+      } else {
+        if (typingClearRef.current) clearTimeout(typingClearRef.current);
+      }
+    });
     return () => {
       offRecv();
       offAck();
@@ -256,6 +272,7 @@ function App(): JSX.Element {
       offPeerProfile();
       offGameInvite();
       offTheme();
+      offTyping();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);
@@ -263,6 +280,30 @@ function App(): JSX.Element {
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [messages]);
+
+  // ── Typing indicator helpers ─────────────────────────────────────────────
+  const sendTypingStop = useCallback(() => {
+    if (!isTypingSentRef.current) return;
+    isTypingSentRef.current = false;
+    void window.buzz.sendTyping(peerId, false).catch(() => {});
+  }, [peerId]);
+
+  function handleDraftChange(markup: string): void {
+    setDraft(markup);
+    const hasText = markup.trim().length > 0;
+    if (hasText) {
+      if (!isTypingSentRef.current) {
+        isTypingSentRef.current = true;
+        void window.buzz.sendTyping(peerId, true).catch(() => {});
+      }
+      // Reset the auto-stop timer on each keystroke.
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = setTimeout(sendTypingStop, 4000);
+    } else {
+      sendTypingStop();
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    }
+  }
 
   async function send(): Promise<void> {
     setErr('');
@@ -273,6 +314,9 @@ function App(): JSX.Element {
     const body = (editorRef.current?.getMarkup() ?? '').trim();
     if (!body) return;
     setBusy(true);
+    // Stop the typing indicator before sending.
+    sendTypingStop();
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
     try {
       const m = await window.buzz.sendIm({ toPeerId: peerId, body });
       setMessages((prev) => [...prev, m]);
@@ -447,6 +491,9 @@ function App(): JSX.Element {
       </div>
 
       <div className="im-compose-col">
+        {theirTyping && (
+          <div className="im-typing-notice">{alias} is typing…</div>
+        )}
         {statusNotice && (
           <div className="im-status-banner">{statusNotice}</div>
         )}
@@ -455,7 +502,7 @@ function App(): JSX.Element {
             ref={editorRef}
             placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
             disabled={busy || blocked}
-            onMarkupChange={setDraft}
+            onMarkupChange={handleDraftChange}
             onEnter={() => void send()}
             style={{ width: '100%', minHeight: 100 }}
           />

@@ -61,6 +61,14 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
     setNetErr('');
     setNetBusy(true);
     try {
+      if (mode === 'server' && serverUrl.trim()) {
+        try {
+          await window.buzz.serverDiscover(serverUrl.trim());
+        } catch {
+          setNetErr('Could not connect to server. Check the URL and try again.');
+          return;
+        }
+      }
       const cfg: NetworkConfig = {
         mode,
         serverAddr: '',
@@ -288,7 +296,7 @@ export function SignOnSettings({ onClose, onReset }: Props): JSX.Element {
           </button>
           {section === 'network' && (
             <button onClick={saveNetwork} disabled={netBusy || !netLoaded}>
-              Save
+              {netBusy && mode === 'server' ? 'Connecting…' : 'Save'}
             </button>
           )}
           {section === 'reset' && (

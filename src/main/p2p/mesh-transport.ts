@@ -78,7 +78,7 @@ function socks5Connect(
         req[1] = 0x01; // CMD=CONNECT
         req[2] = 0x00; // RSV
         req[3] = 0x01; // ATYP=IPv4
-        req[4] = ip[0]; req[5] = ip[1]; req[6] = ip[2]; req[7] = ip[3];
+        req[4] = ip[0]!; req[5] = ip[1]!; req[6] = ip[2]!; req[7] = ip[3]!;
         req.writeUInt16BE(targetPort, 8);
         socket.write(req);
         state = 'connecting';
@@ -106,7 +106,7 @@ function socketToMultiaddrConnection(
   socket: net.Socket,
   remoteAddr: Multiaddr,
 ): MultiaddrConnection {
-  const timeline = { open: Date.now() };
+  const timeline: { open: number; close?: number } = { open: Date.now() };
 
   const maConn: MultiaddrConnection = {
     // Async iterable source: yields Uint8Array chunks from the socket.
@@ -212,8 +212,8 @@ export function meshTcpTransport(socksPort: number) {
       if (ip4Idx === -1 || tcpIdx === -1) {
         throw new Error(`meshTcpTransport: cannot parse multiaddr: ${str}`);
       }
-      const targetIp = parts[ip4Idx + 1];
-      const targetPort = parseInt(parts[tcpIdx + 1], 10);
+      const targetIp = parts[ip4Idx + 1]!;
+      const targetPort = parseInt(parts[tcpIdx + 1]!, 10);
 
       const socket = await socks5Connect('127.0.0.1', socksPort, targetIp, targetPort);
 

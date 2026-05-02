@@ -35,6 +35,7 @@ const api: AppApi = {
   cancelBuddyRequest: (peerId) => ipcRenderer.invoke(IPC.BuddiesCancelRequest, peerId),
 
   sendIm: (req) => ipcRenderer.invoke(IPC.ImSend, req),
+  sendTyping: (peerId, typing) => ipcRenderer.invoke(IPC.ImTyping, { peerId, typing }),
   history: (req) => ipcRenderer.invoke(IPC.ImHistory, req),
   markImRead: (peerId) => ipcRenderer.invoke(IPC.ImMarkRead, peerId),
 
@@ -137,6 +138,11 @@ const api: AppApi = {
   onGameDeclined: (cb) => on(IPC.EvtGameDeclined, cb),
   onGameMove: (cb) => on(IPC.EvtGameMove, cb),
   onGameResigned: (cb) => on(IPC.EvtGameResigned, cb),
+
+  // server-mode account management
+  serverDiscover: (serverUrl) => ipcRenderer.invoke(IPC.ServerDiscover, serverUrl),
+  serverRegister: (req) => ipcRenderer.invoke(IPC.ServerRegister, req),
+  serverUnlockAccount: (req) => ipcRenderer.invoke(IPC.ServerUnlockAccount, req),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

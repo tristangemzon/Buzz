@@ -316,7 +316,7 @@ export class Session {
     return this.node.peerId.toString();
   }
 
-  private async bringUp(
+  async bringUp(
     id: IdentityMaterial,
     profileId: string,
     screenNameIfNew: string,

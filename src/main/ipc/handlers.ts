@@ -1,6 +1,10 @@
 import { app, dialog, ipcMain, BrowserWindow } from 'electron';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomUUID, createHash } from 'node:crypto';
+import * as https from 'node:https';
+import * as http from 'node:http';
 import { z, type ZodTypeAny } from 'zod';
 
 import { IPC } from '@shared/ipc.js';
@@ -29,6 +33,8 @@ import {
   NetworkConfig,
   SendImReq,
   SetPrefsReq,
+  ServerRegisterReq,
+  ServerUnlockReq,
   UnlockReq,
   Uuid,
   XferOfferReq,
@@ -37,8 +43,9 @@ import {
 import type { Platform } from '@shared/types.js';
 
 import * as repos from '../db/repos.js';
-import { sodium } from '../crypto/keystore.js';
+import { sodium, Keystore } from '../crypto/keystore.js';
 import { loadNetworkConfig, saveNetworkConfig } from '../network.js';
+import * as profiles from '../profiles.js';
 import type { Session } from '../session.js';
 
 function platform(): Platform {
@@ -179,6 +186,15 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     }
     return msg;
   });
+  handle(
+    IPC.ImTyping,
+    z.object({ peerId: PeerIdStr, typing: z.boolean() }),
+    async ({ peerId: toPeerId, typing }) => {
+      const im = session.im;
+      if (!im) return;
+      await im.send(toPeerId, { type: 'typing', typing }).catch(() => {});
+    },
+  );
   handle(IPC.ImHistory, HistoryReq, ({ peerId, limit, before }) =>
     repos.history(requireDb(session), peerId, limit, before),
   );
@@ -214,18 +230,40 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   // ── presence ─────────────────────────────────────────────────────────────────────────────────────────
   handle(IPC.PresenceSetStatus, PresenceSetStatusReq, async ({ status, awayMessage }) => {
     const p = session.presence;
-    if (!p) throw new Error('Locked');
-    // Persist away message text into prefs when provided so it survives
-    // restarts and can be edited from Preferences later.
-    if (status === 'away' && typeof awayMessage === 'string') {
-      repos.setPrefs(requireDb(session), { awayMessage });
+    if (p) {
+      // P2P mode — delegate to PresenceManager.
+      if (status === 'away' && typeof awayMessage === 'string') {
+        repos.setPrefs(requireDb(session), { awayMessage });
+      }
+      return p.setStatus(status, awayMessage);
     }
-    return p.setStatus(status, awayMessage);
+    // Hive server mode — presence is managed by HiveClient.
+    if (session.state === 'unlocked' && session.db) {
+      if (status === 'online' || status === 'invisible') {
+        repos.setPrefs(session.db, { lastStatus: status });
+      }
+      if (status === 'away' && typeof awayMessage === 'string') {
+        repos.setPrefs(session.db, { awayMessage });
+      }
+      session.hiveClient?.setStatus(status as 'online' | 'away' | 'idle' | 'invisible' | 'offline', awayMessage);
+      return;
+    }
+    throw new Error('Locked');
   });
   handle(IPC.PresenceGetSelf, null, () => {
     const p = session.presence;
-    if (!p) throw new Error('Locked');
-    return p.getSelf();
+    if (p) return p.getSelf();
+    // Hive server mode — synthesise SelfPresence from persisted prefs.
+    if (session.state === 'unlocked' && session.db) {
+      const prefs = repos.getPrefs(session.db);
+      const base = prefs.lastStatus === 'invisible' ? 'invisible' as const : 'online' as const;
+      return {
+        status: base,
+        baseStatus: base,
+        awayMessage: prefs.awayMessage || undefined,
+      };
+    }
+    throw new Error('Locked');
   });
   handle(IPC.PresenceGetPeer, PeerIdStr, (peerId) => session.getPeerStatus(peerId));
 
@@ -555,6 +593,88 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     await session.sendGameFrame(toPeerId, 'resign', 'checkers');
   });
 
+  // ── Server-mode account management ────────────────────────────────────────
+
+  // Probe a Hive server and return its name + registered user list.
+  handle(IPC.ServerDiscover, z.string(), async (serverUrl) => {
+    const baseUrl = wssToHttps(serverUrl);
+    const [info, users] = await Promise.all([
+      hiveGet<{ serverName: string; version: string; registrationOpen: boolean }>(baseUrl + '/api/server-info'),
+      hiveGet<Array<{ screenName: string; peerId: string }>>(baseUrl + '/api/users'),
+    ]);
+    return { serverName: info.serverName, registrationOpen: info.registrationOpen, users };
+  });
+
+  // Register a brand-new account on a Hive server and sign in.
+  handle(IPC.ServerRegister, ServerRegisterReq, async ({ serverUrl, screenName, passphrase }) => {
+    // Save server URL as the current network config before bringUp.
+    await saveNetworkConfig({ mode: 'server', serverUrl, serverAddr: '', serverCacheEnabled: true });
+
+    const profile = profiles.addProfile(screenName, false, serverUrl);
+    try {
+      const keystorePath = path.join(profiles.profileDir(profile.id), 'keystore.bin');
+      const ks = new Keystore(keystorePath);
+      const id = await ks.create(passphrase);
+
+      // Derive the same peerId the HiveClient will use.
+      const s = await sodium();
+      const kp = s.crypto_sign_seed_keypair(id.seed);
+      const pubKeyB64 = Buffer.from(kp.publicKey).toString('base64');
+      const peerId = createHash('sha256').update(kp.publicKey).digest('hex');
+
+      // Read back the encrypted keystore blob and encode for transport.
+      const keystoreBlob = await readFile(keystorePath);
+      const encryptedKeystoreB64 = keystoreBlob.toString('base64');
+
+      // Register with the server.
+      const baseUrl = wssToHttps(serverUrl);
+      await hivePost(baseUrl + '/api/register', { screenName, peerId, pubKeyB64, encryptedKeystoreB64 });
+
+      // Bring up the session (bringUp reads network.json which we saved above).
+      await session.bringUp(id, profile.id, screenName);
+      return { profileId: profile.id, buddyCode: session.buddyCode() };
+    } catch (err) {
+      profiles.removeProfile(profile.id);
+      throw err;
+    }
+  });
+
+  // Sign in to an existing account on a Hive server (downloads keystore if not cached).
+  handle(IPC.ServerUnlockAccount, ServerUnlockReq, async ({ serverUrl, screenName, passphrase }) => {
+    // Save server URL as the current network config before unlock.
+    await saveNetworkConfig({ mode: 'server', serverUrl, serverAddr: '', serverCacheEnabled: true });
+
+    // Find or create local profile entry.
+    let profile = profiles.findServerProfile(serverUrl, screenName);
+    let freshProfile = false;
+    if (!profile) {
+      profile = profiles.addProfile(screenName, false, serverUrl);
+      freshProfile = true;
+    }
+
+    try {
+      const keystorePath = path.join(profiles.profileDir(profile.id), 'keystore.bin');
+      // Download keystore if not cached locally (new device).
+      if (!existsSync(keystorePath)) {
+        const baseUrl = wssToHttps(serverUrl);
+        const data = await hiveGet<{ encryptedKeystoreB64: string }>(
+          baseUrl + `/api/users/${encodeURIComponent(screenName)}/keystore`,
+        );
+        const blob = Buffer.from(data.encryptedKeystoreB64, 'base64');
+        await mkdir(path.dirname(keystorePath), { recursive: true });
+        await writeFile(keystorePath, blob, { mode: 0o600 });
+      }
+
+      const r = await session.unlock(profile.id, passphrase);
+      return { ok: true as const, profileId: r.profileId, buddyCode: r.buddyCode };
+    } catch (err) {
+      // If we created a fresh profile and unlock failed, roll it back so the
+      // user can retry without accumulating stale profile entries.
+      if (freshProfile) profiles.removeProfile(profile.id);
+      throw err;
+    }
+  });
+
   // ── Buzz Mesh debug ───────────────────────────────────────────────────────
   handle(IPC.MeshDebugGet, null, async () => {
     const { MeshNode } = await import('../p2p/mesh.js');
@@ -593,4 +713,80 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 function requireDb(s: Session) {
   if (!s.db) throw new Error('Locked');
   return s.db;
+}
+
+// ── Hive HTTP helpers ─────────────────────────────────────────────────────────
+
+/** Convert a wss:// or ws:// server URL to https:// or http:// for REST calls. */
+function wssToHttps(serverUrl: string): string {
+  return serverUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+}
+
+/** GET a JSON endpoint on a Hive server. Accepts self-signed TLS certs. */
+function hiveGet<T>(url: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const lib: typeof https = url.startsWith('https') ? https : (http as unknown as typeof https);
+    const options = { rejectUnauthorized: false };
+    lib.get(url, options, (res) => {
+      let body = '';
+      res.on('data', (chunk: Buffer) => { body += chunk.toString('utf8'); });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as T & { error?: string; message?: string };
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error((parsed as { message?: string }).message ?? `HTTP ${res.statusCode}`));
+          } else {
+            resolve(parsed);
+          }
+        } catch {
+          reject(new Error(`Invalid JSON response from server`));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+/** POST JSON to a Hive server endpoint. Throws on non-2xx response. */
+function hivePost(url: string, body: Record<string, string>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib: typeof https = url.startsWith('https') ? https : (http as unknown as typeof https);
+    const bodyStr = JSON.stringify(body);
+    const req = lib.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || (url.startsWith('https') ? 443 : 80),
+        path: parsed.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(bodyStr),
+        },
+        rejectUnauthorized: false,
+      },
+      (res) => {
+        let respBody = '';
+        res.on('data', (chunk: Buffer) => { respBody += chunk.toString('utf8'); });
+        res.on('end', () => {
+          try {
+            const parsed2 = JSON.parse(respBody) as { error?: string; message?: string };
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(parsed2.message ?? `HTTP ${res.statusCode}: ${parsed2.error ?? 'error'}`));
+            } else {
+              resolve();
+            }
+          } catch {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}`));
+            } else {
+              resolve();
+            }
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(bodyStr);
+    req.end();
+  });
 }

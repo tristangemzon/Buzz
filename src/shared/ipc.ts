@@ -31,6 +31,7 @@ export const IPC = {
 
   // im
   ImSend: 'im:send',
+  ImTyping: 'im:typing',
   ImHistory: 'im:history',
   ImMarkRead: 'im:markRead',
 
@@ -143,6 +144,11 @@ export const IPC = {
   EvtGameDeclined: 'evt:gameDeclined',
   EvtGameMove: 'evt:gameMove',
   EvtGameResigned: 'evt:gameResigned',
+
+  // server-mode account management (discovery + registration before WS auth)
+  ServerDiscover: 'server:discover',
+  ServerRegister: 'server:register',
+  ServerUnlockAccount: 'server:unlockAccount',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

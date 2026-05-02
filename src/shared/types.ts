@@ -45,6 +45,9 @@ import type {
   SelfPresence,
   SendImReq,
   SetPrefsReq,
+  ServerDiscoverResult,
+  ServerRegisterReq,
+  ServerUnlockReq,
   UnlockReq,
   UnreadCounts,
   XferDoneEvent,
@@ -142,6 +145,7 @@ export type AppApi = {
 
   // im
   sendIm(req: SendImReq): Promise<ImMessage>;
+  sendTyping(peerId: string, typing: boolean): Promise<void>;
   history(req: HistoryReq): Promise<ImMessage[]>;
   markImRead(peerId: string): Promise<void>;
 
@@ -259,6 +263,14 @@ export type AppApi = {
   onGameDeclined(cb: (e: GameDeclinedEvent) => void): () => void;
   onGameMove(cb: (e: GameMoveEvent) => void): () => void;
   onGameResigned(cb: (e: GameResignedEvent) => void): () => void;
+
+  // server-mode account management
+  /** Probe a Hive server URL and return its name + list of registered users. */
+  serverDiscover(serverUrl: string): Promise<ServerDiscoverResult>;
+  /** Register a brand-new account on a Hive server and sign in. */
+  serverRegister(req: ServerRegisterReq): Promise<{ profileId: string; buddyCode: string }>;
+  /** Sign in to an existing account on a Hive server (downloads keystore if needed). */
+  serverUnlockAccount(req: ServerUnlockReq): Promise<{ ok: true; profileId: string; buddyCode: string }>;
 };
 
 declare global {

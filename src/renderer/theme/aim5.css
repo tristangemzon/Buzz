@@ -1450,6 +1450,17 @@ html[data-chat-theme='compact'] .chat-log > div {
   flex-shrink: 0;
 }
 
+/* ── Typing indicator ───────────────────────────────────────────────────── */
+.im-typing-notice {
+  font-size: 11px;
+  color: var(--c-muted, #666);
+  font-style: italic;
+  background: var(--c-panel);
+  border-top: 1px solid var(--c-bevel-dark, #888);
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
 /* ── IM / Chat window AIM-style action bar ─────────────────────────────── */
 .im-actionbar {
   display: flex;
