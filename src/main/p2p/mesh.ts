@@ -11,7 +11,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { createReadStream, existsSync } from 'fs';
-import { chmod } from 'fs/promises';
+import { chmod, rm } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
@@ -152,6 +152,7 @@ export class MeshNode {
       let ip = '';
       let apiPort = 0;
       let socksPort = 0;
+      let authResetTriggered = false;
 
       // Kill the process and reject if it hasn't connected within 45 seconds.
       // On Windows, Windows Defender or a firewall may silently block the binary
@@ -199,6 +200,13 @@ export class MeshNode {
       proc.stderr!.setEncoding('utf8');
       proc.stderr!.on('data', (data: string) => {
         stderrBuf += data;
+        // Detect stale unauthenticated state: tsnet prints a manual-auth URL when
+        // tailscaled.state exists but was never fully authenticated. Wipe it and
+        // restart with a fresh key.
+        if (!authResetTriggered && data.includes('login.tailscale.com/a/')) {
+          authResetTriggered = true;
+          proc.kill();
+        }
         // Log stderr in dev but don't treat as fatal — tsnet emits some noise.
         if (process.env.NODE_ENV !== 'production') {
           process.stderr.write(`[buzz-mesh] ${data}`);
@@ -214,6 +222,19 @@ export class MeshNode {
 
       proc.on('exit', (code) => {
         clearTimeout(startTimeout);
+        if (authResetTriggered) {
+          // Stale unauthenticated Tailscale state — wipe it and restart with a fresh key.
+          this._proc = null;
+          this._apiPort = null;
+          this._socksPort = null;
+          this._status = { state: 'stopped' };
+          rm(statePath, { recursive: true, force: true })
+            .catch(() => undefined)
+            .then(() => this.start())
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
         if (this._status.state === 'connecting') {
           const msg = `Mesh sidecar exited with code ${code} before connecting`;
           this._status = { state: 'error', message: msg };
