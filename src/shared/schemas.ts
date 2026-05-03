@@ -29,43 +29,10 @@ export const ProfileSummary = z.object({
   screenName: z.string().min(1).max(64),
   createdAt: z.number().int().nonnegative(),
   mesh: z.boolean().default(false),
-  /** Set for profiles tied to a Hive server account. */
+  /** Set for profiles tied to a Hive server account (the wss:// URL). Absent for local p2p/mesh profiles. */
   serverUrl: z.string().max(512).optional(),
 });
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
-
-// ── Server-mode account management ────────────────────────────────
-
-/** A user entry returned by GET /api/users on a Hive server. */
-export const ServerUser = z.object({
-  screenName: z.string().min(1).max(64),
-  peerId: z.string().min(8).max(512),
-});
-export type ServerUser = z.infer<typeof ServerUser>;
-
-/** Result of serverDiscover() — server metadata + registered user list. */
-export const ServerDiscoverResult = z.object({
-  serverName: z.string().max(256),
-  registrationOpen: z.boolean(),
-  users: z.array(ServerUser),
-});
-export type ServerDiscoverResult = z.infer<typeof ServerDiscoverResult>;
-
-/** Request to register a new account on a Hive server. */
-export const ServerRegisterReq = z.object({
-  serverUrl: z.string().max(512),
-  screenName: ScreenName,
-  passphrase: Passphrase,
-});
-export type ServerRegisterReq = z.infer<typeof ServerRegisterReq>;
-
-/** Request to sign in to an existing account on a Hive server. */
-export const ServerUnlockReq = z.object({
-  serverUrl: z.string().max(512),
-  screenName: z.string().min(1).max(64),
-  passphrase: Passphrase,
-});
-export type ServerUnlockReq = z.infer<typeof ServerUnlockReq>;
 
 // ── Buddies ──────────────────────────────────────────────────────────────────
 
