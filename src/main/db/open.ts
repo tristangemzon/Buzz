@@ -36,6 +36,9 @@ export function openDb(file: string, key: Uint8Array): Db {
   // but some old installs were opened before those statements were added.
   migrateBuddyRequestsAndReads(db);
 
+  // Migration: add v0.5.0 columns and tables (reactions, edit/delete support).
+  migrateV050(db);
+
   return db;
 }
 
@@ -152,5 +155,27 @@ function migrateBuddyRequestsAndReads(db: Db): void {
       room_id       TEXT PRIMARY KEY,
       last_seen_ts  INTEGER NOT NULL DEFAULT 0
     );
+  `);
+}
+
+function migrateV050(db: Db): void {
+  // Idempotently add v0.5.0 columns and tables to existing databases.
+  const msgCols = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!msgCols.includes('edited_at')) {
+    db.exec('ALTER TABLE messages ADD COLUMN edited_at INTEGER');
+  }
+  if (!msgCols.includes('deleted_at')) {
+    db.exec('ALTER TABLE messages ADD COLUMN deleted_at INTEGER');
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reactions (
+      msg_id   TEXT NOT NULL,
+      peer_id  TEXT NOT NULL,
+      emoji    TEXT NOT NULL,
+      ts       INTEGER NOT NULL,
+      PRIMARY KEY (msg_id, peer_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reactions_msg ON reactions(msg_id);
   `);
 }

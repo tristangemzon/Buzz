@@ -11,10 +11,16 @@ import type {
   DiscoveredPeer,
   HistoryReq,
   ImAckEvent,
+  ImEditReq,
+  ImDeleteReq,
+  ImReactReq,
+  ImUnreactReq,
+  ImSearchReq,
   ImMessage,
   ImReceivedEvent,
   PeerProfile,
   Prefs,
+  Reaction,
   PresenceSetStatusReq,
   Profile,
   ProfileSummary,
@@ -45,9 +51,6 @@ import type {
   SelfPresence,
   SendImReq,
   SetPrefsReq,
-  ServerDiscoverResult,
-  ServerRegisterReq,
-  ServerUnlockReq,
   UnlockReq,
   UnreadCounts,
   XferDoneEvent,
@@ -145,9 +148,14 @@ export type AppApi = {
 
   // im
   sendIm(req: SendImReq): Promise<ImMessage>;
-  sendTyping(peerId: string, typing: boolean): Promise<void>;
   history(req: HistoryReq): Promise<ImMessage[]>;
   markImRead(peerId: string): Promise<void>;
+  imEdit(req: ImEditReq): Promise<{ ok: true; editedAt: number; peerId?: string }>;
+  imDelete(req: ImDeleteReq): Promise<{ ok: true; deletedAt: number }>;
+  imReact(req: ImReactReq): Promise<{ ok: true }>;
+  imUnreact(req: ImUnreactReq): Promise<{ ok: true }>;
+  imListReactions(msgIds: string[]): Promise<Reaction[]>;
+  imSearch(req: ImSearchReq): Promise<ImMessage[]>;
 
   // unread
   getUnread(): Promise<UnreadCounts>;
@@ -219,6 +227,10 @@ export type AppApi = {
   onBuddyStatus(cb: (e: BuddyStatusEvent) => void): () => void;
   onImReceived(cb: (e: ImReceivedEvent) => void): () => void;
   onImAck(cb: (e: ImAckEvent) => void): () => void;
+  onImEdited(cb: (e: { id: string; body: string; editedAt: number }) => void): () => void;
+  onImDeleted(cb: (e: { id: string; deletedAt: number }) => void): () => void;
+  onReaction(cb: (e: { msgId: string; peerId: string; emoji: string; added: boolean; roomId?: string }) => void): () => void;
+  onReadReceipt(cb: (e: { from: string; msgId: string }) => void): () => void;
   onTyping(cb: (e: { peerId: string; typing: boolean }) => void): () => void;
   onPeerProfile(cb: (e: PeerProfile) => void): () => void;
   onXferOffered(cb: (e: XferOfferEvent) => void): () => void;
@@ -263,14 +275,6 @@ export type AppApi = {
   onGameDeclined(cb: (e: GameDeclinedEvent) => void): () => void;
   onGameMove(cb: (e: GameMoveEvent) => void): () => void;
   onGameResigned(cb: (e: GameResignedEvent) => void): () => void;
-
-  // server-mode account management
-  /** Probe a Hive server URL and return its name + list of registered users. */
-  serverDiscover(serverUrl: string): Promise<ServerDiscoverResult>;
-  /** Register a brand-new account on a Hive server and sign in. */
-  serverRegister(req: ServerRegisterReq): Promise<{ profileId: string; buddyCode: string }>;
-  /** Sign in to an existing account on a Hive server (downloads keystore if needed). */
-  serverUnlockAccount(req: ServerUnlockReq): Promise<{ ok: true; profileId: string; buddyCode: string }>;
 };
 
 declare global {

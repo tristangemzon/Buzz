@@ -35,9 +35,14 @@ const api: AppApi = {
   cancelBuddyRequest: (peerId) => ipcRenderer.invoke(IPC.BuddiesCancelRequest, peerId),
 
   sendIm: (req) => ipcRenderer.invoke(IPC.ImSend, req),
-  sendTyping: (peerId, typing) => ipcRenderer.invoke(IPC.ImTyping, { peerId, typing }),
   history: (req) => ipcRenderer.invoke(IPC.ImHistory, req),
   markImRead: (peerId) => ipcRenderer.invoke(IPC.ImMarkRead, peerId),
+  imEdit: (req) => ipcRenderer.invoke(IPC.ImEdit, req),
+  imDelete: (req) => ipcRenderer.invoke(IPC.ImDelete, req),
+  imReact: (req) => ipcRenderer.invoke(IPC.ImReact, req),
+  imUnreact: (req) => ipcRenderer.invoke(IPC.ImUnreact, req),
+  imListReactions: (msgIds) => ipcRenderer.invoke(IPC.ImListReactions, { msgIds }),
+  imSearch: (req) => ipcRenderer.invoke(IPC.ImSearch, req),
 
   getUnread: () => ipcRenderer.invoke(IPC.UnreadGet),
   markRoomRead: (roomId) => ipcRenderer.invoke(IPC.RoomsMarkRead, { roomId }),
@@ -95,6 +100,10 @@ const api: AppApi = {
   onBuddyStatus: (cb) => on(IPC.EvtBuddyStatus, cb),
   onImReceived: (cb) => on(IPC.EvtImReceived, cb),
   onImAck: (cb) => on(IPC.EvtImAck, cb),
+  onImEdited: (cb) => on(IPC.EvtImEdited, cb),
+  onImDeleted: (cb) => on(IPC.EvtImDeleted, cb),
+  onReaction: (cb) => on(IPC.EvtReaction, cb),
+  onReadReceipt: (cb) => on(IPC.EvtReadReceipt, cb),
   onTyping: (cb) => on(IPC.EvtTyping, cb),
   onPeerProfile: (cb) => on(IPC.EvtPeerProfile, cb),
   onXferOffered: (cb) => on(IPC.EvtXferOffered, cb),
@@ -138,11 +147,6 @@ const api: AppApi = {
   onGameDeclined: (cb) => on(IPC.EvtGameDeclined, cb),
   onGameMove: (cb) => on(IPC.EvtGameMove, cb),
   onGameResigned: (cb) => on(IPC.EvtGameResigned, cb),
-
-  // server-mode account management
-  serverDiscover: (serverUrl) => ipcRenderer.invoke(IPC.ServerDiscover, serverUrl),
-  serverRegister: (req) => ipcRenderer.invoke(IPC.ServerRegister, req),
-  serverUnlockAccount: (req) => ipcRenderer.invoke(IPC.ServerUnlockAccount, req),
 };
 
 // Window-management helpers that aren't part of the AppApi but are used by

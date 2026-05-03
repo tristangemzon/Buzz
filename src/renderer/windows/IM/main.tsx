@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
@@ -6,6 +6,7 @@ import { ProfileViewer } from '../../components/ProfilePanes';
 import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
+import { GamePicker } from '../../components/GamePicker';
 import { playSound, setSoundsEnabled, setSoundScheme } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
@@ -43,48 +44,9 @@ type XferCard = {
   savedPath?: string;
 };
 
-// ── Game picker ──────────────────────────────────────────────────────────────
-type GameEntry = { kind: string; label: string; icon: string; available: boolean };
-const GAME_LIST: GameEntry[] = [
-  { kind: 'checkers', label: 'Checkers',   icon: '🔴', available: true },
-  { kind: 'chess',    label: 'Chess',      icon: '♟️', available: true },
-  { kind: 'reversi',  label: 'Reversi',    icon: '⚫', available: true },
-  { kind: 'gomoku',   label: 'Gomoku',     icon: '🟡', available: true },
-  { kind: 'poker',    label: 'Poker',      icon: '🃏', available: true },
-  { kind: 'spades',   label: 'Spades',     icon: '♠️', available: true },
-];
-
-function GamePicker({ onSelect, onClose }: { onSelect: (kind: string) => void; onClose: () => void }) {
-  return (
-    <div className="game-picker-backdrop" onClick={onClose}>
-      <div className="game-picker-box bevel-out" onClick={(e) => e.stopPropagation()}>
-        <div className="game-picker-title">
-          <span>Select a Game</span>
-          <button className="game-picker-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="game-picker-subtitle">Choose a game to invite your buddy to play</div>
-        <ul className="game-picker-list">
-          {GAME_LIST.map((g) => (
-            <li
-              key={g.kind}
-              className={['game-picker-item', g.available ? 'available' : 'unavailable'].join(' ')}
-              onClick={() => g.available && onSelect(g.kind)}
-              title={g.available ? `Play ${g.label}` : `${g.label} — coming soon`}
-            >
-              <span className="game-picker-icon">{g.icon}</span>
-              <span className="game-picker-label">{g.label}</span>
-              {!g.available && <span className="game-picker-soon">Soon</span>}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 function App(): JSX.Element {
   const peerId = getPeerIdFromHash();
-  const [me, setMe] = useState<{ screenName: string } | null>(null);
+  const [me, setMe] = useState<{ screenName: string; peerId?: string } | null>(null);
   const [alias, setAlias] = useState<string>(peerId.slice(0, 12) + '…');
   const [messages, setMessages] = useState<ImMessage[]>([]);
   const [xfers, setXfers] = useState<XferCard[]>([]);
@@ -102,13 +64,20 @@ function App(): JSX.Element {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
-  const [theirTyping, setTheirTyping] = useState(false);
-  const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track whether we have told the peer we are typing (so we can send stop).
-  const isTypingSentRef = useRef(false);
-  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const talk = useTalk(peerId, { kind: 'voice' });
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number; canEdit: boolean } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  // reactions: msgId → { emoji: string; count: number; mine: boolean }[]
+  const [reactions, setReactions] = useState<Map<string, { emoji: string; count: number; mine: boolean }[]>>(new Map());
+  const [emojiPickerPos, setEmojiPickerPos] = useState<{ id: string; x: number; y: number } | null>(null);
+  const myPeerIdRef = useRef<string | null>(null);
+  // Search
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ImMessage[] | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   function upsertXfer(updater: (list: XferCard[]) => XferCard[]): void {
     setXfers(updater);
@@ -126,7 +95,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
-    void window.buzz.getMyId().then(setMe);
+    void window.buzz.getMyId().then((info) => { setMe(info); myPeerIdRef.current = info.peerId; });
     void window.buzz
       .getPrefs()
       .then((p) => {
@@ -160,7 +129,25 @@ function App(): JSX.Element {
         });
       })
       .catch(() => undefined);
-    void window.buzz.history({ peerId, limit: 100 }).then(setMessages);
+    void window.buzz.history({ peerId, limit: 100 }).then((msgs) => {
+      setMessages(msgs);
+      // Load reactions for all loaded messages.
+      void window.buzz.imListReactions(msgs.map((m) => m.id)).then((rows) => {
+        const map = new Map<string, { emoji: string; count: number; mine: boolean }[]>();
+        for (const r of rows) {
+          const list = map.get(r.msgId) ?? [];
+          const existing = list.find((x) => x.emoji === r.emoji);
+          if (existing) {
+            existing.count++;
+            if (r.peerId === myPeerIdRef.current) existing.mine = true;
+          } else {
+            list.push({ emoji: r.emoji, count: 1, mine: r.peerId === myPeerIdRef.current });
+          }
+          map.set(r.msgId, list);
+        }
+        setReactions(map);
+      });
+    });
     void window.buzz.markImRead(peerId).catch(() => undefined);
 
     // Door open when this conversation window comes alive; door close when
@@ -247,20 +234,40 @@ function App(): JSX.Element {
       // Open the game window as acceptor (no initiator flag)
       void window.buzzWindows.openGame(peerId, ev.kind ?? 'checkers');
     });
+    const offImEdited = window.buzz.onImEdited(({ id, body, editedAt }) => {
+      setMessages((prev) => prev.map((m) => m.id === id ? { ...m, body, editedAt } : m));
+    });
+    const offImDeleted = window.buzz.onImDeleted(({ id, deletedAt }) => {
+      setMessages((prev) => prev.map((m) => m.id === id ? { ...m, deletedAt } : m));
+    });
+    const offReaction = window.buzz.onReaction(({ msgId, peerId: reactorId, emoji, added, roomId }) => {
+      if (roomId) return; // room reactions handled by chat window
+      setReactions((prev) => {
+        const next = new Map(prev);
+        const list = [...(next.get(msgId) ?? [])];
+        const idx = list.findIndex((x) => x.emoji === emoji);
+        if (added) {
+          if (idx >= 0) {
+            const entry = { ...list[idx], count: list[idx].count + 1 };
+            if (reactorId === myPeerIdRef.current) entry.mine = true;
+            list[idx] = entry;
+          } else {
+            list.push({ emoji, count: 1, mine: reactorId === myPeerIdRef.current });
+          }
+        } else {
+          if (idx >= 0) {
+            const entry = { ...list[idx], count: Math.max(0, list[idx].count - 1) };
+            if (reactorId === myPeerIdRef.current) entry.mine = false;
+            if (entry.count > 0) list[idx] = entry; else list.splice(idx, 1);
+          }
+        }
+        next.set(msgId, list);
+        return next;
+      });
+    });
     const offTheme = window.buzz.onThemeChanged((theme) => {
       setTheme(theme);
       applyThemeAttributes(theme);
-    });
-    const offTyping = window.buzz.onTyping((e) => {
-      if (e.peerId !== peerId) return;
-      setTheirTyping(e.typing);
-      if (e.typing) {
-        // Auto-clear after 5 s in case the peer never sends a false frame.
-        if (typingClearRef.current) clearTimeout(typingClearRef.current);
-        typingClearRef.current = setTimeout(() => setTheirTyping(false), 5000);
-      } else {
-        if (typingClearRef.current) clearTimeout(typingClearRef.current);
-      }
     });
     return () => {
       offRecv();
@@ -271,8 +278,10 @@ function App(): JSX.Element {
       offDone();
       offPeerProfile();
       offGameInvite();
+      offImEdited();
+      offImDeleted();
+      offReaction();
       offTheme();
-      offTyping();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);
@@ -281,28 +290,28 @@ function App(): JSX.Element {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [messages]);
 
-  // ── Typing indicator helpers ─────────────────────────────────────────────
-  const sendTypingStop = useCallback(() => {
-    if (!isTypingSentRef.current) return;
-    isTypingSentRef.current = false;
-    void window.buzz.sendTyping(peerId, false).catch(() => {});
-  }, [peerId]);
-
-  function handleDraftChange(markup: string): void {
-    setDraft(markup);
-    const hasText = markup.trim().length > 0;
-    if (hasText) {
-      if (!isTypingSentRef.current) {
-        isTypingSentRef.current = true;
-        void window.buzz.sendTyping(peerId, true).catch(() => {});
+  // Cmd+F / Ctrl+F opens message search.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
       }
-      // Reset the auto-stop timer on each keystroke.
-      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
-      typingStopTimerRef.current = setTimeout(sendTypingStop, 4000);
-    } else {
-      sendTypingStop();
-      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery('');
+        setSearchResults(null);
+      }
     }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [searchOpen]);
+
+  async function runSearch(q: string): Promise<void> {
+    if (!q.trim()) { setSearchResults(null); return; }
+    const results = await window.buzz.imSearch({ query: q, peerId, limit: 50 }).catch(() => []);
+    setSearchResults(results);
   }
 
   async function send(): Promise<void> {
@@ -314,9 +323,6 @@ function App(): JSX.Element {
     const body = (editorRef.current?.getMarkup() ?? '').trim();
     if (!body) return;
     setBusy(true);
-    // Stop the typing indicator before sending.
-    sendTypingStop();
-    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
     try {
       const m = await window.buzz.sendIm({ toPeerId: peerId, body });
       setMessages((prev) => [...prev, m]);
@@ -390,6 +396,29 @@ function App(): JSX.Element {
     await window.buzz.gameInvite({ toPeerId: peerId, kind });
   }
 
+  async function commitEdit(id: string): Promise<void> {
+    if (!editDraft.trim()) return;
+    await window.buzz.imEdit({ id, body: editDraft.trim() }).catch(() => undefined);
+    setEditingId(null);
+    setEditDraft('');
+  }
+
+  async function deleteMsg(id: string): Promise<void> {
+    await window.buzz.imDelete({ id }).catch(() => undefined);
+  }
+
+  async function toggleReaction(msgId: string, emoji: string): Promise<void> {
+    const myId = myPeerIdRef.current;
+    if (!myId) return;
+    const list = reactions.get(msgId) ?? [];
+    const existing = list.find((x) => x.emoji === emoji);
+    if (existing?.mine) {
+      await window.buzz.imUnreact({ msgId, peerId: myId, emoji }).catch(() => undefined);
+    } else {
+      await window.buzz.imReact({ msgId, peerId: myId, emoji }).catch(() => undefined);
+    }
+  }
+
   const myName = me?.screenName ?? 'me';
 
   return (
@@ -433,67 +462,147 @@ function App(): JSX.Element {
             </div>
           </>
         )}
-      <div ref={logRef} className="bevel-in chat-log">
-        {messages.map((m) =>
-          theme.chatTheme === 'balloons' ? (
-            <div key={m.id} className={`bubble-row ${m.direction}`}>
-              {theme.showAvatarsInChat &&
-                (() => {
-                  const src = m.direction === 'out' ? myAvatar : theirAvatar;
-                  return src ? (
-                    <img className="bubble-avatar" src={src} alt="" />
-                  ) : (
-                    <div className="bubble-avatar" />
-                  );
-                })()}
-              <div className="bubble-content">
-                <div className="bubble-name" style={{ textAlign: m.direction === 'out' ? 'right' : 'left' }}>
-                  {m.direction === 'out' ? myName : alias}
-                </div>
-                <div className="bubble">
-                  <RichText body={m.body} />
-                  {(theme.showTimestamps || (m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered')) && (
-                    <div className="meta">
-                      {theme.showTimestamps && new Date(m.ts).toLocaleTimeString()}
-                      {m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered'
-                        ? ` · ${m.status}`
-                        : ''}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div key={m.id}>
-              {theme.showTimestamps && (
-                <span className="muted" style={{ fontSize: 10, marginRight: 4 }}>
-                  [{new Date(m.ts).toLocaleTimeString()}]
-                </span>
-              )}
-              <span className={m.direction === 'out' ? 'me' : 'them'}>
-                {m.direction === 'out' ? myName : alias}:
-              </span>{' '}
-              <RichText body={m.body} />
-              {m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered' ? (
-                <span className="muted"> [{m.status}]</span>
-              ) : null}
-            </div>
-          ),
+      <div ref={logRef} className="bevel-in chat-log" style={{ position: 'relative' }}>
+        {/* ── Search bar overlay ── */}
+        {searchOpen && (
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10, background: '#f0f0f0',
+            borderBottom: '1px solid #bbb', padding: '4px 6px', display: 'flex', gap: 4, alignItems: 'center',
+          }}>
+            <input
+              ref={searchInputRef}
+              style={{ flex: 1, fontSize: 11 }}
+              placeholder="Search messages…"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); void runSearch(e.target.value); }}
+            />
+            <button style={{ fontSize: 10 }} onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults(null); }}>✕</button>
+          </div>
         )}
-        {xfers.map((c) => (
-          <XferLine
-            key={c.id}
-            card={c}
-            onAccept={() => void respondXfer(c.id, true)}
-            onDecline={() => void respondXfer(c.id, false)}
-          />
-        ))}
+        {/* Search results replace normal log when active */}
+        {searchResults !== null ? (
+          searchResults.length === 0 ? (
+            <div className="muted" style={{ padding: 8, fontSize: 11 }}>No results.</div>
+          ) : (
+            <>
+              {searchResults.map((m) => (
+                <div key={m.id} style={{ padding: '2px 0', borderBottom: '1px solid #eee', fontSize: 11 }}>
+                  <span className="muted">{new Date(m.ts).toLocaleString()}</span>{' '}
+                  <span className={m.direction === 'out' ? 'me' : 'them'}>{m.direction === 'out' ? (me?.screenName ?? 'me') : alias}:</span>{' '}
+                  <span>{m.body}</span>
+                </div>
+              ))}
+            </>
+          )
+        ) : (
+          <>
+            {messages.map((m) => {
+              const isDeleted = !!m.deletedAt;
+              const canEdit = m.direction === 'out' && !isDeleted;
+              const isEditing = editingId === m.id;
+              const msgContent = isDeleted ? (
+                <span className="muted" style={{ fontStyle: 'italic' }}>Message deleted.</span>
+              ) : isEditing ? (
+                <span>
+                  <textarea
+                    style={{ fontSize: 12, width: '100%', minHeight: 40, boxSizing: 'border-box' }}
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void commitEdit(m.id); }
+                      if (e.key === 'Escape') { setEditingId(null); setEditDraft(''); }
+                    }}
+                    autoFocus
+                  />
+                  <button style={{ fontSize: 10 }} onClick={() => void commitEdit(m.id)}>Save</button>{' '}
+                  <button style={{ fontSize: 10 }} onClick={() => { setEditingId(null); setEditDraft(''); }}>Cancel</button>
+                </span>
+              ) : (
+                <>
+                  <RichText body={m.body} />
+                  {m.editedAt && <span className="muted" style={{ fontSize: 10 }}> (edited)</span>}
+                </>
+              );
+              const msgPills = reactions.get(m.id) ?? [];
+              const reactionRow = !isDeleted ? (
+                <div>
+                  <ReactionPills
+                    pills={msgPills}
+                    onToggle={(emoji) => void toggleReaction(m.id, emoji)}
+                  />
+                </div>
+              ) : null;
+
+              if (theme.chatTheme === 'balloons') {
+                return (
+                  <div
+                    key={m.id}
+                    className={`bubble-row ${m.direction}`}
+                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ id: m.id, x: e.clientX, y: e.clientY, canEdit: canEdit && !isEditing }); }}
+                  >
+                    {theme.showAvatarsInChat &&
+                      (() => {
+                        const src = m.direction === 'out' ? myAvatar : theirAvatar;
+                        return src ? (
+                          <img className="bubble-avatar" src={src} alt="" />
+                        ) : (
+                          <div className="bubble-avatar" />
+                        );
+                      })()}
+                    <div className="bubble-content">
+                      <div className="bubble-name" style={{ textAlign: m.direction === 'out' ? 'right' : 'left' }}>
+                        {m.direction === 'out' ? myName : alias}
+                      </div>
+                      <div className="bubble">
+                        {msgContent}
+                        {(theme.showTimestamps || (m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered')) && (
+                          <div className="meta">
+                            {theme.showTimestamps && new Date(m.ts).toLocaleTimeString()}
+                            {m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered'
+                              ? ` · ${m.status}`
+                              : ''}
+                          </div>
+                        )}
+                      </div>
+                      {reactionRow}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={m.id}
+                  onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ id: m.id, x: e.clientX, y: e.clientY, canEdit: canEdit && !isEditing }); }}
+                >
+                  {theme.showTimestamps && (
+                    <span className="muted" style={{ fontSize: 10, marginRight: 4 }}>
+                      [{new Date(m.ts).toLocaleTimeString()}]
+                    </span>
+                  )}
+                  <span className={m.direction === 'out' ? 'me' : 'them'}>
+                    {m.direction === 'out' ? myName : alias}:
+                  </span>{' '}
+                  {msgContent}
+                  {m.direction === 'out' && m.status !== 'sent' && m.status !== 'delivered' ? (
+                    <span className="muted"> [{m.status}]</span>
+                  ) : null}
+                  {reactionRow}
+                </div>
+              );
+            })}
+            {xfers.map((c) => (
+              <XferLine
+                key={c.id}
+                card={c}
+                onAccept={() => void respondXfer(c.id, true)}
+                onDecline={() => void respondXfer(c.id, false)}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       <div className="im-compose-col">
-        {theirTyping && (
-          <div className="im-typing-notice">{alias} is typing…</div>
-        )}
         {statusNotice && (
           <div className="im-status-banner">{statusNotice}</div>
         )}
@@ -502,7 +611,7 @@ function App(): JSX.Element {
             ref={editorRef}
             placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
             disabled={busy || blocked}
-            onMarkupChange={handleDraftChange}
+            onMarkupChange={setDraft}
             onEnter={() => void send()}
             style={{ width: '100%', minHeight: 100 }}
           />
@@ -638,6 +747,116 @@ function App(): JSX.Element {
         </div>
       )}
       {talk.error && <div className="error" style={{ margin: '0 6px 6px' }}>{talk.error}</div>}
+
+      {ctxMenu && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} />
+          <MessageContextMenu
+            x={ctxMenu.x}
+            y={ctxMenu.y}
+            canEdit={ctxMenu.canEdit}
+            onEdit={() => {
+              const msg = messages.find((m) => m.id === ctxMenu.id);
+              if (msg) { setEditingId(ctxMenu.id); setEditDraft(msg.body); }
+              setCtxMenu(null);
+            }}
+            onDelete={() => { void deleteMsg(ctxMenu.id); setCtxMenu(null); }}
+            onReact={() => { setEmojiPickerPos({ id: ctxMenu.id, x: ctxMenu.x, y: ctxMenu.y }); setCtxMenu(null); }}
+            onClose={() => setCtxMenu(null)}
+          />
+        </>
+      )}
+
+      {emojiPickerPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setEmojiPickerPos(null)} onContextMenu={(e) => { e.preventDefault(); setEmojiPickerPos(null); }} />
+          <EmojiPickerPopover
+            x={emojiPickerPos.x}
+            y={emojiPickerPos.y}
+            onPick={(emoji) => { void toggleReaction(emojiPickerPos.id, emoji); setEmojiPickerPos(null); }}
+            onClose={() => setEmojiPickerPos(null)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+const EMOJI_LIST = ['👍','👎','❤️','😂','😮','😢','🔥','🎉','👀','💯','✅','❌','🤔','💀','🙏','🫡','💪','🤝','😎','🚀'];
+
+function EmojiPickerPopover({ x, y, onPick, onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'fixed', left: x, top: y, zIndex: 1000, background: '#fff', border: '1px solid #aaa',
+        borderRadius: 4, padding: 4, display: 'flex', flexWrap: 'wrap', width: 160, gap: 2,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {EMOJI_LIST.map((e) => (
+        <span
+          key={e}
+          style={{ cursor: 'pointer', fontSize: 16, padding: '1px 2px', borderRadius: 2 }}
+          title={e}
+          onClick={() => onPick(e)}
+        >{e}</span>
+      ))}
+    </div>
+  );
+}
+
+function ReactionPills({
+  pills, onToggle,
+}: {
+  pills: { emoji: string; count: number; mine: boolean }[];
+  onToggle: (emoji: string) => void;
+}) {
+  if (pills.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 2 }}>
+      {pills.map((p) => (
+        <button
+          key={p.emoji}
+          style={{
+            fontSize: 12, padding: '0 5px', border: p.mine ? '1px solid #316ac5' : '1px solid #bbb',
+            background: p.mine ? '#dce8f8' : '#f0f0f0', borderRadius: 10, cursor: 'pointer',
+          }}
+          title={p.mine ? 'Remove reaction' : 'Add reaction'}
+          onClick={() => onToggle(p.emoji)}
+        >
+          {p.emoji} {p.count}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MessageContextMenu({ x, y, canEdit, onEdit, onDelete, onReact, onClose }: {
+  x: number; y: number; canEdit: boolean;
+  onEdit: () => void; onDelete: () => void; onReact: () => void; onClose: () => void;
+}) {
+  const itemStyle: React.CSSProperties = {
+    padding: '5px 12px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
+    userSelect: 'none',
+  };
+  return (
+    <div
+      style={{
+        position: 'fixed', left: x, top: y, zIndex: 1000,
+        background: '#fff', border: '1px solid #aaa', borderRadius: 3,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.18)', minWidth: 140,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {canEdit && (
+        <>
+          <div style={itemStyle} onClick={onEdit}>✏️ Edit</div>
+          <div style={itemStyle} onClick={onDelete}>🗑️ Delete</div>
+          <div style={{ borderTop: '1px solid #eee' }} />
+        </>
+      )}
+      <div style={itemStyle} onClick={onReact}>😀 Add Reaction</div>
     </div>
   );
 }
@@ -690,8 +909,17 @@ function XferLine(props: {
         </div>
       )}
       {card.state === 'complete' && (
-        <div className="muted" style={{ marginTop: 2 }}>
-          ✓ Complete{card.savedPath ? ` — saved to ${card.savedPath}` : ''}
+        <div style={{ marginTop: 4 }}>
+          <div className="muted">
+            ✓ Complete{card.savedPath ? ` — saved to ${card.savedPath}` : ''}
+          </div>
+          {/\.(png|jpe?g|gif|webp|svg)$/i.test(card.fileName) && (
+            <img
+              src={`buzz-file://${card.id}`}
+              alt={card.fileName}
+              style={{ maxWidth: '100%', maxHeight: 240, marginTop: 4, display: 'block', borderRadius: 2 }}
+            />
+          )}
         </div>
       )}
       {card.state === 'declined' && (

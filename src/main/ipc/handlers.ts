@@ -1,10 +1,6 @@
 import { app, dialog, ipcMain, BrowserWindow } from 'electron';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { randomUUID, createHash } from 'node:crypto';
-import * as https from 'node:https';
-import * as http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { z, type ZodTypeAny } from 'zod';
 
 import { IPC } from '@shared/ipc.js';
@@ -14,6 +10,11 @@ import {
   CreateIdentityReq,
   HistoryReq,
   ImMessage,
+  ImEditReq,
+  ImDeleteReq,
+  ImReactReq,
+  ImUnreactReq,
+  ImSearchReq,
   PeerIdStr,
   Prefs,
   Profile,
@@ -33,8 +34,6 @@ import {
   NetworkConfig,
   SendImReq,
   SetPrefsReq,
-  ServerRegisterReq,
-  ServerUnlockReq,
   UnlockReq,
   Uuid,
   XferOfferReq,
@@ -43,9 +42,9 @@ import {
 import type { Platform } from '@shared/types.js';
 
 import * as repos from '../db/repos.js';
-import { sodium, Keystore } from '../crypto/keystore.js';
+import { sodium } from '../crypto/keystore.js';
 import { loadNetworkConfig, saveNetworkConfig } from '../network.js';
-import * as profiles from '../profiles.js';
+import { setNotificationsEnabled } from '../notify.js';
 import type { Session } from '../session.js';
 
 function platform(): Platform {
@@ -149,26 +148,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   // ── im ────────────────────────────────────────────────────────────────────
   handle(IPC.ImSend, SendImReq, async ({ toPeerId, body }) => {
     const db = requireDb(session);
-    // Server mode: seal-box encrypt and route via HiveClient.
-    const hive = session.hiveClient;
-    if (hive) {
-      const cipherB64 = hive.sealMessage(toPeerId, body);
-      if (!cipherB64) throw new Error('Peer encryption key not available yet — try again in a moment.');
-      const msg: ImMessage = ImMessage.parse({
-        id: randomUUID(),
-        peerId: toPeerId,
-        direction: 'out',
-        ts: Date.now(),
-        body,
-        status: 'queued',
-      });
-      const networkCfg = loadNetworkConfig();
-      if (networkCfg.serverCacheEnabled) repos.insertMessage(db, msg);
-      hive.sendIm(toPeerId, msg.id, msg.ts, cipherB64);
-      msg.status = 'sent';
-      if (networkCfg.serverCacheEnabled) repos.setMessageStatus(db, msg.id, 'sent');
-      return msg;
-    }
     const im = session.im;
     if (!im) throw new Error('Locked');
     const msg: ImMessage = ImMessage.parse({
@@ -206,16 +185,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     }
     return msg;
   });
-  handle(
-    IPC.ImTyping,
-    z.object({ peerId: PeerIdStr, typing: z.boolean() }),
-    async ({ peerId: toPeerId, typing }) => {
-      if (session.hiveClient) return; // typing indicators not supported in server mode
-      const im = session.im;
-      if (!im) return;
-      await im.send(toPeerId, { type: 'typing', typing }).catch(() => {});
-    },
-  );
   handle(IPC.ImHistory, HistoryReq, ({ peerId, limit, before }) =>
     repos.history(requireDb(session), peerId, limit, before),
   );
@@ -223,8 +192,89 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     const db = requireDb(session);
     const changed = repos.markImRead(db, peerId);
     if (changed > 0) session.broadcastUnread();
+    // In server mode, send a read receipt for the most recent inbound message.
+    if (session.hiveClient && changed > 0) {
+      const latest = db.prepare(
+        `SELECT id FROM messages WHERE peer_id=? AND direction='in' ORDER BY ts DESC LIMIT 1`,
+      ).get(peerId) as { id: string } | undefined;
+      if (latest) session.hiveClient.sendReadReceipt(peerId, latest.id);
+    }
   });
   handle(IPC.UnreadGet, null, () => session.unreadSnapshot());
+
+  handle(IPC.ImEdit, ImEditReq, ({ id, body }) => {
+    const db = requireDb(session);
+    repos.editMessage(db, id, body);
+    const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(id) as { peer_id: string } | undefined;
+    const editedAt = Date.now();
+    const evt = { id, body, editedAt };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtImEdited, evt);
+    }
+    // TODO: relay edit to peer in server mode (requires Hive Phase 4 edit types)
+    return { ok: true as const, editedAt, peerId: row?.peer_id };
+  });
+
+  handle(IPC.ImDelete, ImDeleteReq, ({ id }) => {
+    const db = requireDb(session);
+    repos.deleteMessage(db, id);
+    const deletedAt = Date.now();
+    const evt = { id, deletedAt };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtImDeleted, evt);
+    }
+    return { ok: true as const, deletedAt };
+  });
+
+  handle(IPC.ImReact, ImReactReq, ({ msgId, peerId, emoji }) => {
+    const db = requireDb(session);
+    repos.upsertReaction(db, msgId, peerId, emoji);
+    const evt = { msgId, peerId, emoji, added: true };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtReaction, evt);
+    }
+    // In server mode, send reaction to the other party.
+    if (session.hiveClient) {
+      const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(msgId) as { peer_id: string } | undefined;
+      if (row) session.hiveClient.sendReaction(row.peer_id, msgId, emoji);
+    }
+    return { ok: true as const };
+  });
+
+  handle(IPC.ImUnreact, ImUnreactReq, ({ msgId, peerId, emoji }) => {
+    const db = requireDb(session);
+    repos.deleteReaction(db, msgId, peerId, emoji);
+    const evt = { msgId, peerId, emoji, added: false };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtReaction, evt);
+    }
+    if (session.hiveClient) {
+      const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(msgId) as { peer_id: string } | undefined;
+      if (row) session.hiveClient.sendUnreaction(row.peer_id, msgId, emoji);
+    }
+    return { ok: true as const };
+  });
+
+  handle(IPC.ImListReactions, z.object({ msgIds: z.array(Uuid).max(200) }), ({ msgIds }) => {
+    const db = requireDb(session);
+    return repos.listReactionsForMessages(db, msgIds);
+  });
+
+  handle(IPC.ImSearch, ImSearchReq, ({ query, peerId, limit }) => {
+    const db = requireDb(session);
+    // Simple LIKE search over stored message bodies.
+    const likeQuery = `%${query.replace(/[%_]/g, '\\$&')}%`;
+    const rows = peerId
+      ? (db.prepare(
+          `SELECT id, peer_id as peerId, direction, ts, body, status, edited_at as editedAt, deleted_at as deletedAt
+           FROM messages WHERE peer_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY ts DESC LIMIT ?`,
+        ).all(peerId, likeQuery, limit))
+      : (db.prepare(
+          `SELECT id, peer_id as peerId, direction, ts, body, status, edited_at as editedAt, deleted_at as deletedAt
+           FROM messages WHERE body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY ts DESC LIMIT ?`,
+        ).all(likeQuery, limit));
+    return rows as ImMessage[];
+  });
 
   // ── prefs ────────────────────────────────────────────────────────────────────────────────────────────
   // Pre-unlock callers (e.g. the SignOn window applying platform theme)
@@ -241,6 +291,10 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
         if (!win.isDestroyed()) win.webContents.send('evt:themeChanged', updated.theme);
       }
     }
+    // Keep notification gate in sync.
+    if (patch.notificationsEnabled !== undefined) {
+      setNotificationsEnabled(patch.notificationsEnabled);
+    }
     return updated;
   });
 
@@ -251,40 +305,18 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   // ── presence ─────────────────────────────────────────────────────────────────────────────────────────
   handle(IPC.PresenceSetStatus, PresenceSetStatusReq, async ({ status, awayMessage }) => {
     const p = session.presence;
-    if (p) {
-      // P2P mode — delegate to PresenceManager.
-      if (status === 'away' && typeof awayMessage === 'string') {
-        repos.setPrefs(requireDb(session), { awayMessage });
-      }
-      return p.setStatus(status, awayMessage);
+    if (!p) throw new Error('Locked');
+    // Persist away message text into prefs when provided so it survives
+    // restarts and can be edited from Preferences later.
+    if (status === 'away' && typeof awayMessage === 'string') {
+      repos.setPrefs(requireDb(session), { awayMessage });
     }
-    // Hive server mode — presence is managed by HiveClient.
-    if (session.state === 'unlocked' && session.db) {
-      if (status === 'online' || status === 'invisible') {
-        repos.setPrefs(session.db, { lastStatus: status });
-      }
-      if (status === 'away' && typeof awayMessage === 'string') {
-        repos.setPrefs(session.db, { awayMessage });
-      }
-      session.hiveClient?.setStatus(status as 'online' | 'away' | 'idle' | 'invisible' | 'offline', awayMessage);
-      return;
-    }
-    throw new Error('Locked');
+    return p.setStatus(status, awayMessage);
   });
   handle(IPC.PresenceGetSelf, null, () => {
     const p = session.presence;
-    if (p) return p.getSelf();
-    // Hive server mode — synthesise SelfPresence from persisted prefs.
-    if (session.state === 'unlocked' && session.db) {
-      const prefs = repos.getPrefs(session.db);
-      const base = prefs.lastStatus === 'invisible' ? 'invisible' as const : 'online' as const;
-      return {
-        status: base,
-        baseStatus: base,
-        awayMessage: prefs.awayMessage || undefined,
-      };
-    }
-    throw new Error('Locked');
+    if (!p) throw new Error('Locked');
+    return p.getSelf();
   });
   handle(IPC.PresenceGetPeer, PeerIdStr, (peerId) => session.getPeerStatus(peerId));
 
@@ -309,7 +341,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 
   // ── file transfer ────────────────────────────────────────────────────────
   handle(IPC.XferOffer, XferOfferReq, async ({ toPeerId }) => {
-    if (session.hiveClient) throw new Error('File transfer is not yet supported in server mode.');
     const xfer = session.xfer;
     if (!xfer) throw new Error('Locked');
     const sender = BrowserWindow.getFocusedWindow() ?? undefined;
@@ -351,7 +382,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     } as const;
   });
   handle(IPC.XferRespond, XferRespondReq, async ({ id, accept }) => {
-    if (session.hiveClient) throw new Error('File transfer is not yet supported in server mode.');
     const xfer = session.xfer;
     if (!xfer) throw new Error('Locked');
     if (!accept) {
@@ -433,28 +463,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsCreate, RoomCreateReq, async ({ name, members }) => {
     const db = requireDb(session);
-    // Server mode: generate room key locally, seal for each member, create via HiveClient.
-    const hive = session.hiveClient;
-    if (hive) {
-      const s = await sodium();
-      const key = s.randombytes_buf(32);
-      const keyB64 = s.to_base64(key, s.base64_variants.ORIGINAL);
-      const createdAt = Date.now();
-      const roomId = randomUUID();
-      const myPeerId = session.peerIdStr();
-      const fullMembers = Array.from(new Set([myPeerId, ...members]));
-      const defaultChannel = { id: randomUUID(), name: 'general', kind: 'text' as const, isDefault: true, createdAt };
-      const keyEnvelopes = fullMembers
-        .map((pid) => { const c = hive.sealMessage(pid, keyB64); return c ? { peerId: pid, cipherB64: c } : null; })
-        .filter((e): e is { peerId: string; cipherB64: string } => e !== null);
-      hive.createRoom(roomId, name, keyEnvelopes, fullMembers);
-      repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
-      repos.setRoomMembers(db, roomId, fullMembers);
-      repos.upsertRoomChannel(db, { ...defaultChannel, roomId });
-      session.cacheRoomKey(roomId, key);
-      session.cacheRoomMembers(roomId, fullMembers);
-      return { id: roomId, name, members: fullMembers, createdAt };
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     // Build the default channel UP FRONT so we can ship its id along with
@@ -482,19 +490,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsInvite, RoomInviteReq, async ({ roomId, peerId }) => {
     const db = requireDb(session);
-    // Server mode.
-    const hive = session.hiveClient;
-    if (hive) {
-      const room = repos.getRoom(db, roomId);
-      if (!room) throw new Error('Unknown room');
-      const keyEnvelopeB64 = hive.sealMessage(peerId, room.keyB64);
-      if (!keyEnvelopeB64) throw new Error('Peer encryption key not available yet.');
-      const fullMembers = Array.from(new Set([...session.getRoomMembers(roomId), peerId]));
-      hive.inviteToRoom(roomId, peerId, keyEnvelopeB64);
-      repos.setRoomMembers(db, roomId, fullMembers);
-      session.cacheRoomMembers(roomId, fullMembers);
-      return { id: roomId, name: room.name, members: fullMembers, createdAt: room.createdAt };
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     const room = repos.getRoom(db, roomId);
@@ -513,12 +508,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsLeave, RoomLeaveReq, async ({ roomId }) => {
     const db = requireDb(session);
-    // Server mode: no leave signal to the server yet; just clean up locally.
-    if (session.hiveClient) {
-      repos.deleteRoom(db, roomId);
-      session.forgetRoom(roomId);
-      return { ok: true as const };
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     await rooms.leave(roomId);
@@ -528,34 +517,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, channelId, body }) => {
     const db = requireDb(session);
-    // Server mode: secretbox-encrypt with cached room key, send via HiveClient.
-    const hive = session.hiveClient;
-    if (hive) {
-      const ch = repos.getRoomChannel(db, channelId);
-      if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
-      const key = session.getRoomKey(roomId);
-      if (!key) throw new Error('Room key not available — rejoin the room.');
-      const s = await sodium();
-      const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
-      const ct = s.crypto_secretbox_easy(s.from_string(body), nonce, key);
-      const cipherB64 =
-        s.to_base64(nonce, s.base64_variants.ORIGINAL) + ':' +
-        s.to_base64(ct, s.base64_variants.ORIGINAL);
-      const id = randomUUID();
-      const ts = Date.now();
-      hive.sendRoomMsg(roomId, channelId, id, ts, cipherB64);
-      const stored = {
-        id, roomId, channelId,
-        fromPeerId: session.peerIdStr(),
-        fromName: session.screenName,
-        direction: 'out' as const,
-        ts,
-        body, // store plaintext locally
-      };
-      const networkCfg = loadNetworkConfig();
-      if (networkCfg.serverCacheEnabled) repos.insertRoomMessage(db, stored);
-      return stored;
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     // Validate the channel belongs to this room.
@@ -584,22 +545,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   );
   handle(IPC.RoomsCreateChannel, RoomChannelCreateReq, async ({ roomId, name, kind }) => {
     const db = requireDb(session);
-    // Server mode.
-    const hive = session.hiveClient;
-    if (hive) {
-      if (!repos.getRoom(db, roomId)) throw new Error('Unknown room');
-      const ch = {
-        id: randomUUID(),
-        roomId,
-        name,
-        kind: kind ?? 'text',
-        isDefault: false,
-        createdAt: Date.now(),
-      } as const;
-      repos.upsertRoomChannel(db, ch);
-      hive.addRoomChannel(roomId, ch.id, ch.name, ch.kind);
-      return ch;
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     if (!repos.getRoom(db, roomId)) throw new Error('Unknown room');
@@ -617,15 +562,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsDeleteChannel, RoomChannelDeleteReq, async ({ roomId, channelId }) => {
     const db = requireDb(session);
-    // Server mode: no broadcast protocol; delete locally.
-    const hive = session.hiveClient;
-    if (hive) {
-      const ch = repos.getRoomChannel(db, channelId);
-      if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
-      if (ch.isDefault) throw new Error('Cannot delete the default channel');
-      repos.deleteRoomChannel(db, channelId);
-      return { ok: true as const };
-    }
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     const ch = repos.getRoomChannel(db, channelId);
@@ -710,88 +646,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     await session.sendGameFrame(toPeerId, 'resign', 'checkers');
   });
 
-  // ── Server-mode account management ────────────────────────────────────────
-
-  // Probe a Hive server and return its name + registered user list.
-  handle(IPC.ServerDiscover, z.string(), async (serverUrl) => {
-    const baseUrl = wssToHttps(serverUrl);
-    const [info, users] = await Promise.all([
-      hiveGet<{ serverName: string; version: string; registrationOpen: boolean }>(baseUrl + '/api/server-info'),
-      hiveGet<Array<{ screenName: string; peerId: string }>>(baseUrl + '/api/users'),
-    ]);
-    return { serverName: info.serverName, registrationOpen: info.registrationOpen, users };
-  });
-
-  // Register a brand-new account on a Hive server and sign in.
-  handle(IPC.ServerRegister, ServerRegisterReq, async ({ serverUrl, screenName, passphrase }) => {
-    // Save server URL as the current network config before bringUp.
-    await saveNetworkConfig({ mode: 'server', serverUrl, serverAddr: '', serverCacheEnabled: true });
-
-    const profile = profiles.addProfile(screenName, false, serverUrl);
-    try {
-      const keystorePath = path.join(profiles.profileDir(profile.id), 'keystore.bin');
-      const ks = new Keystore(keystorePath);
-      const id = await ks.create(passphrase);
-
-      // Derive the same peerId the HiveClient will use.
-      const s = await sodium();
-      const kp = s.crypto_sign_seed_keypair(id.seed);
-      const pubKeyB64 = Buffer.from(kp.publicKey).toString('base64');
-      const peerId = createHash('sha256').update(kp.publicKey).digest('hex');
-
-      // Read back the encrypted keystore blob and encode for transport.
-      const keystoreBlob = await readFile(keystorePath);
-      const encryptedKeystoreB64 = keystoreBlob.toString('base64');
-
-      // Register with the server.
-      const baseUrl = wssToHttps(serverUrl);
-      await hivePost(baseUrl + '/api/register', { screenName, peerId, pubKeyB64, encryptedKeystoreB64 });
-
-      // Bring up the session (bringUp reads network.json which we saved above).
-      await session.bringUp(id, profile.id, screenName);
-      return { profileId: profile.id, buddyCode: session.buddyCode() };
-    } catch (err) {
-      profiles.removeProfile(profile.id);
-      throw err;
-    }
-  });
-
-  // Sign in to an existing account on a Hive server (downloads keystore if not cached).
-  handle(IPC.ServerUnlockAccount, ServerUnlockReq, async ({ serverUrl, screenName, passphrase }) => {
-    // Save server URL as the current network config before unlock.
-    await saveNetworkConfig({ mode: 'server', serverUrl, serverAddr: '', serverCacheEnabled: true });
-
-    // Find or create local profile entry.
-    let profile = profiles.findServerProfile(serverUrl, screenName);
-    let freshProfile = false;
-    if (!profile) {
-      profile = profiles.addProfile(screenName, false, serverUrl);
-      freshProfile = true;
-    }
-
-    try {
-      const keystorePath = path.join(profiles.profileDir(profile.id), 'keystore.bin');
-      // Download keystore if not cached locally (new device).
-      if (!existsSync(keystorePath)) {
-        const baseUrl = wssToHttps(serverUrl);
-        const data = await hiveGet<{ encryptedKeystoreB64: string }>(
-          baseUrl + `/api/users/${encodeURIComponent(screenName)}/keystore`,
-        );
-        const blob = Buffer.from(data.encryptedKeystoreB64, 'base64');
-        await mkdir(path.dirname(keystorePath), { recursive: true });
-        await writeFile(keystorePath, blob, { mode: 0o600 });
-      }
-
-      const r = await session.unlock(profile.id, passphrase);
-      return { ok: true as const, profileId: r.profileId, buddyCode: r.buddyCode };
-    } catch (err) {
-      // If we created a fresh profile and unlock failed, roll it back so the
-      // user can retry without accumulating stale profile entries.
-      if (freshProfile) profiles.removeProfile(profile.id);
-      throw err;
-    }
-  });
-
   // ── Buzz Mesh debug ───────────────────────────────────────────────────────
   handle(IPC.MeshDebugGet, null, async () => {
     const { MeshNode } = await import('../p2p/mesh.js');
@@ -830,80 +684,4 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 function requireDb(s: Session) {
   if (!s.db) throw new Error('Locked');
   return s.db;
-}
-
-// ── Hive HTTP helpers ─────────────────────────────────────────────────────────
-
-/** Convert a wss:// or ws:// server URL to https:// or http:// for REST calls. */
-function wssToHttps(serverUrl: string): string {
-  return serverUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
-}
-
-/** GET a JSON endpoint on a Hive server. Accepts self-signed TLS certs. */
-function hiveGet<T>(url: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const lib: typeof https = url.startsWith('https') ? https : (http as unknown as typeof https);
-    const options = { rejectUnauthorized: false };
-    lib.get(url, options, (res) => {
-      let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString('utf8'); });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as T & { error?: string; message?: string };
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error((parsed as { message?: string }).message ?? `HTTP ${res.statusCode}`));
-          } else {
-            resolve(parsed);
-          }
-        } catch {
-          reject(new Error(`Invalid JSON response from server`));
-        }
-      });
-    }).on('error', reject);
-  });
-}
-
-/** POST JSON to a Hive server endpoint. Throws on non-2xx response. */
-function hivePost(url: string, body: Record<string, string>): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const lib: typeof https = url.startsWith('https') ? https : (http as unknown as typeof https);
-    const bodyStr = JSON.stringify(body);
-    const req = lib.request(
-      {
-        hostname: parsed.hostname,
-        port: parsed.port || (url.startsWith('https') ? 443 : 80),
-        path: parsed.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(bodyStr),
-        },
-        rejectUnauthorized: false,
-      },
-      (res) => {
-        let respBody = '';
-        res.on('data', (chunk: Buffer) => { respBody += chunk.toString('utf8'); });
-        res.on('end', () => {
-          try {
-            const parsed2 = JSON.parse(respBody) as { error?: string; message?: string };
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(parsed2.message ?? `HTTP ${res.statusCode}: ${parsed2.error ?? 'error'}`));
-            } else {
-              resolve();
-            }
-          } catch {
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(`HTTP ${res.statusCode}`));
-            } else {
-              resolve();
-            }
-          }
-        });
-      },
-    );
-    req.on('error', reject);
-    req.write(bodyStr);
-    req.end();
-  });
 }

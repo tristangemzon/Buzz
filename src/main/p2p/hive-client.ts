@@ -58,7 +58,11 @@ type SrvRoomMemberLeave = { type: 'roomMemberLeave'; roomId: string; peerId: str
 type SrvTalkSignal = { type: 'talkSignal'; from: string; callId: string; signal: string; payload: unknown };
 type SrvGameSignal = { type: 'gameSignal'; from: string; action: string; kind: string; path?: number[] };
 type SrvError = { type: 'error'; code: string; message: string };
-type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError;
+type SrvReaction = { type: 'reaction'; from: string; msgId: string; emoji: string; added: boolean };
+type SrvRoomReaction = { type: 'roomReaction'; roomId: string; from: string; msgId: string; emoji: string; added: boolean };
+type SrvTyping = { type: 'typing'; from: string; typing: boolean };
+type SrvReadReceipt = { type: 'readReceipt'; from: string; msgId: string };
+type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError | SrvReaction | SrvRoomReaction | SrvTyping | SrvReadReceipt;
 
 // Subset of client→server messages that the client sends.
 type CliAuth = { type: 'auth'; peerId: string; screenName: string; pubKeyB64: string; sigB64: string };
@@ -77,7 +81,13 @@ type CliGetHistory = { type: 'getHistory'; peerId: string; before?: number; limi
 type CliGetRoomHistory = { type: 'getRoomHistory'; roomId: string; channelId: string; before?: number; limit?: number };
 type CliTalkSignal = { type: 'talkSignal'; to: string; callId: string; signal: string; payload: unknown };
 type CliGameSignal = { type: 'gameSignal'; to: string; action: string; kind: string; path?: number[] };
-type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal;
+type CliReaction = { type: 'reaction'; to: string; msgId: string; emoji: string };
+type CliUnreaction = { type: 'unreaction'; to: string; msgId: string; emoji: string };
+type CliRoomReaction = { type: 'roomReaction'; roomId: string; msgId: string; emoji: string };
+type CliRoomUnreaction = { type: 'roomUnreaction'; roomId: string; msgId: string; emoji: string };
+type CliTyping = { type: 'typing'; to: string; typing: boolean };
+type CliReadReceipt = { type: 'readReceipt'; to: string; msgId: string };
+type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal | CliReaction | CliUnreaction | CliRoomReaction | CliRoomUnreaction | CliTyping | CliReadReceipt;
 
 // Sodium import — same pattern as keystore.ts uses.
 import sodiumPkg from 'libsodium-wrappers-sumo';
@@ -110,6 +120,13 @@ export type HiveCallbacks = {
   onConnected: () => void;
   onDisconnected: () => void;
   onError: (err: Error) => void;
+  // Reactions
+  onReaction?: (from: string, msgId: string, emoji: string, added: boolean) => void;
+  onRoomReaction?: (roomId: string, from: string, msgId: string, emoji: string, added: boolean) => void;
+  // Typing indicator
+  onTyping?: (from: string, typing: boolean) => void;
+  // Read receipts
+  onReadReceipt?: (from: string, msgId: string) => void;
 };
 
 export class HiveClient {
@@ -305,6 +322,18 @@ export class HiveClient {
         if (this.callbacks.onGameSignal && typeof msg.from === 'string' && typeof msg.action === 'string' && typeof msg.kind === 'string') {
           this.callbacks.onGameSignal(msg.from, msg.action, msg.kind, Array.isArray(msg.path) ? msg.path : undefined);
         }
+        break;
+      case 'reaction':
+        this.callbacks.onReaction?.(msg.from, msg.msgId, msg.emoji, msg.added);
+        break;
+      case 'roomReaction':
+        this.callbacks.onRoomReaction?.(msg.roomId, msg.from, msg.msgId, msg.emoji, msg.added);
+        break;
+      case 'typing':
+        this.callbacks.onTyping?.(msg.from, msg.typing);
+        break;
+      case 'readReceipt':
+        this.callbacks.onReadReceipt?.(msg.from, msg.msgId);
         break;
       case 'error':
         this.callbacks.onError(new Error(`[hive] ${msg.code}: ${msg.message}`));
@@ -520,5 +549,29 @@ export class HiveClient {
 
   sendTalkVideo(to: string, callId: string, payload: Buffer): void {
     this._sendMediaFrame(BINARY_VIDEO, to, callId, payload);
+  }
+
+  sendTyping(to: string, typing: boolean): void {
+    this._send({ type: 'typing', to, typing });
+  }
+
+  sendReadReceipt(to: string, msgId: string): void {
+    this._send({ type: 'readReceipt', to, msgId });
+  }
+
+  sendReaction(to: string, msgId: string, emoji: string): void {
+    this._send({ type: 'reaction', to, msgId, emoji });
+  }
+
+  sendUnreaction(to: string, msgId: string, emoji: string): void {
+    this._send({ type: 'unreaction', to, msgId, emoji });
+  }
+
+  sendRoomReaction(roomId: string, msgId: string, emoji: string): void {
+    this._send({ type: 'roomReaction', roomId, msgId, emoji });
+  }
+
+  sendRoomUnreaction(roomId: string, msgId: string, emoji: string): void {
+    this._send({ type: 'roomUnreaction', roomId, msgId, emoji });
   }
 }

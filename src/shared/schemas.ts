@@ -86,6 +86,8 @@ export const ImMessage = z.object({
   ts: z.number().int().nonnegative(),
   body: z.string(),
   status: z.enum(['queued', 'sent', 'delivered', 'read', 'failed']),
+  editedAt: z.number().int().nonnegative().optional(),
+  deletedAt: z.number().int().nonnegative().optional(),
 });
 export type ImMessage = z.infer<typeof ImMessage>;
 
@@ -95,6 +97,44 @@ export const HistoryReq = z.object({
   before: z.number().int().nonnegative().optional(),
 });
 export type HistoryReq = z.infer<typeof HistoryReq>;
+
+export const ImEditReq = z.object({
+  id: Uuid,
+  body: z.string().min(1).max(64 * 1024),
+});
+export type ImEditReq = z.infer<typeof ImEditReq>;
+
+export const ImDeleteReq = z.object({ id: Uuid });
+export type ImDeleteReq = z.infer<typeof ImDeleteReq>;
+
+export const ImReactReq = z.object({
+  msgId: Uuid,
+  peerId: PeerIdStr,
+  emoji: z.string().min(1).max(8),
+});
+export type ImReactReq = z.infer<typeof ImReactReq>;
+
+export const ImUnreactReq = z.object({
+  msgId: Uuid,
+  peerId: PeerIdStr,
+  emoji: z.string().min(1).max(8),
+});
+export type ImUnreactReq = z.infer<typeof ImUnreactReq>;
+
+export const ImSearchReq = z.object({
+  query: z.string().min(1).max(256),
+  peerId: PeerIdStr.optional(),
+  limit: z.number().int().positive().max(200).default(50),
+});
+export type ImSearchReq = z.infer<typeof ImSearchReq>;
+
+export const Reaction = z.object({
+  msgId: Uuid,
+  peerId: PeerIdStr,
+  emoji: z.string().min(1).max(8),
+  ts: z.number().int().nonnegative(),
+});
+export type Reaction = z.infer<typeof Reaction>;
 
 // ── Prefs ────────────────────────────────────────────────────────────────────
 
@@ -140,6 +180,16 @@ export const Prefs = z.object({
   // Persisted base status across sessions. Only 'online' or 'invisible'
   // are persisted; 'away'/'idle' are derived/transient.
   lastStatus: z.enum(['online', 'invisible']).default('online'),
+  // Desktop notifications
+  notificationsEnabled: z.boolean().default(true),
+  // Audio device & voice settings
+  micDeviceId: z.string().max(256).default(''),
+  speakerDeviceId: z.string().max(256).default(''),
+  inputGain: z.number().min(0).max(4).default(1),
+  outputGain: z.number().min(0).max(4).default(1),
+  pttKey: z.string().max(64).default('b'),
+  noiseSuppression: z.boolean().default(true),
+  echoCancellation: z.boolean().default(true),
   profile: Profile.default({
     aboutText: '',
     textColor: '#000000',

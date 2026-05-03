@@ -2,7 +2,7 @@
 
 A nostalgia-driven, AIM/AOL-flavoured **secure peer-to-peer chat client**, built with Electron + React + TypeScript and powered by [`js-libp2p`](https://github.com/libp2p/js-libp2p) (Noise XX + Yamux + KadDHT) and **SQLCipher** for encrypted local storage.
 
-> **v0.3.9** — Sign-on, buddy list, 1:1 IM, encrypted local DB, three network transport modes (libp2p P2P, Hive server, Buzz Mesh via Tailscale), platform-aware Mac/Windows skinning, profile customisation, file transfer, iChat-style theming, presence/away messages, sounds, **multi-party chat rooms (text *and* voice channels)**, **1:1 voice + video calls**, **offline mailbox relay**, **in-client games** (Checkers, Chess, Reversi, Gomoku, Poker, Spades), **auto-updates via GitHub Releases**, **live typing indicators**, and **full Hive server account management** (register, sign-in, server-validated Settings) are all wired up.
+> **v0.5.0** — Everything in v0.3.9, plus: **Audio Settings** (per-device mic/speaker selection, gain sliders, noise suppression, echo cancellation, PTT key binding), **Desktop Notifications** (opt-in OS notifications for incoming IMs when Buzz is not focused), **Inline Image Previews** (received image files render inline in the chat log via the `buzz-file://` protocol), **Message Edit & Delete** (right-click any outbound message to edit or delete; deleted messages show a tombstone; edited messages are marked), **Message Reactions** (right-click any message → Add Reaction; a fixed emoji grid lets you react; reaction pills appear below messages), **Message Search** (Cmd/Ctrl+F opens a search bar that queries full-text history with live results), **Games in Rooms** (the 🎲 Games button in multi-party chat rooms lets you challenge any room member to a game), and **Server Mode Parity** (read receipts, typing indicators, and reactions are fully relayed through Hive).
 
 ## Features in this build
 
@@ -100,7 +100,7 @@ Challenge any buddy to a 1:1 game directly from the IM window. Each game opens i
 - **iChat-style chat themes**: classic / balloons / compact, with customisable my/their bubble colours, optional timestamps and avatars.
 - **Per-event sounds** (door open/close, IM send/receive, buddy on/off) with mute toggle and multiple sound schemes.
 - **Custom window chrome** that adapts to platform skin.
-- **Settings window** (⚙️ in the buddy list action bar): three-tab panel covering Themes, Sounds, and Auto-updates.
+- **Settings window** (⚙️ in the buddy list action bar): four-tab panel covering Themes, Sounds, Audio, and Auto-updates.
 
 ### Auto-updates
 
@@ -113,6 +113,25 @@ Challenge any buddy to a 1:1 game directly from the IM window. Each game opens i
 ### Security
 
 - Sandboxed renderers (`contextIsolation: true`, `sandbox: true`, no `nodeIntegration`), strict CSP, all IPC payloads validated with `zod`.
+
+### Message interactions (v0.5.0)
+
+- **Inline image previews**: completed image-file transfers render inline in the chat log via the `buzz-file://` privileged protocol.
+- **Edit & delete**: right-click any outbound message to edit it inline or delete it (shows a tombstone). Edits and deletes sync to peers in server mode.
+- **Reactions**: right-click any message → *Add Reaction* → pick from a 20-emoji grid. Reaction pills appear below the message; click a pill to toggle. Synced via Hive in server mode.
+- **Message search**: Cmd/Ctrl+F opens a sticky search bar. Results are filtered in real time against the full local message history.
+
+### Audio settings (v0.5.0)
+
+- **Device selection**: choose mic and speaker independently from all OS-enumerated devices.
+- **Gain control**: separate input (mic) and output gain sliders (0–200 %).
+- **Noise suppression** and **echo cancellation** toggles.
+- **Push-to-talk key**: configurable from the Audio tab (default `b`).
+- **Desktop notifications**: opt-in OS-level notification for incoming IMs when Buzz is not the focused window.
+
+### Games in rooms (v0.5.0)
+
+- The 🎲 **Games** button in multi-party chat rooms lets you challenge any room member to a 1:1 game directly from the room window — no need to open a separate IM window.
 
 ## Run it
 

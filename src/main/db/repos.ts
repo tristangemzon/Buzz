@@ -2,6 +2,8 @@ import type { Db } from './open.js';
 import type { Buddy, ImMessage, PeerProfile, Prefs, Room, RoomChannel, RoomMessage } from '@shared/schemas.js';
 import { Prefs as PrefsSchema } from '@shared/schemas.js';
 
+export type Reaction = { msgId: string; peerId: string; emoji: string; ts: number };
+
 // ── identity ─────────────────────────────────────────────────────────────────
 
 export function setIdentity(db: Db, peerId: string, screenName: string): void {
@@ -87,9 +89,17 @@ export function warnBuddy(db: Db, peerId: string, delta = 10): number {
 
 export function insertMessage(db: Db, m: ImMessage): void {
   db.prepare(
-    `INSERT OR REPLACE INTO messages(id, peer_id, direction, ts, body, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(m.id, m.peerId, m.direction, m.ts, m.body, m.status);
+    `INSERT OR REPLACE INTO messages(id, peer_id, direction, ts, body, status, edited_at, deleted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(m.id, m.peerId, m.direction, m.ts, m.body, m.status, m.editedAt ?? null, m.deletedAt ?? null);
+}
+
+export function editMessage(db: Db, id: string, body: string): void {
+  db.prepare('UPDATE messages SET body=?, edited_at=? WHERE id=?').run(body, Date.now(), id);
+}
+
+export function deleteMessage(db: Db, id: string): void {
+  db.prepare('UPDATE messages SET deleted_at=? WHERE id=?').run(Date.now(), id);
 }
 
 export function setMessageStatus(db: Db, id: string, status: ImMessage['status']): void {
@@ -100,13 +110,13 @@ export function history(db: Db, peerId: string, limit: number, before?: number):
   const rows = before
     ? (db
         .prepare(
-          `SELECT id, peer_id as peerId, direction, ts, body, status
+          `SELECT id, peer_id as peerId, direction, ts, body, status, edited_at as editedAt, deleted_at as deletedAt
            FROM messages WHERE peer_id=? AND ts<? ORDER BY ts DESC LIMIT ?`,
         )
         .all(peerId, before, limit) as ImMessage[])
     : (db
         .prepare(
-          `SELECT id, peer_id as peerId, direction, ts, body, status
+          `SELECT id, peer_id as peerId, direction, ts, body, status, edited_at as editedAt, deleted_at as deletedAt
            FROM messages WHERE peer_id=? ORDER BY ts DESC LIMIT ?`,
         )
         .all(peerId, limit) as ImMessage[]);
@@ -556,4 +566,36 @@ export function markRoomRead(db: Db, roomId: string, ts = Date.now()): void {
     `INSERT INTO room_reads(room_id, last_seen_ts) VALUES (?, ?)
      ON CONFLICT(room_id) DO UPDATE SET last_seen_ts = MAX(last_seen_ts, excluded.last_seen_ts)`,
   ).run(roomId, ts);
+}
+
+// ── reactions ────────────────────────────────────────────────────────────────
+
+export function upsertReaction(db: Db, msgId: string, peerId: string, emoji: string): void {
+  db.prepare(
+    `INSERT INTO reactions(msg_id, peer_id, emoji, ts)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(msg_id, peer_id, emoji) DO UPDATE SET ts = excluded.ts`,
+  ).run(msgId, peerId, emoji, Date.now());
+}
+
+export function deleteReaction(db: Db, msgId: string, peerId: string, emoji: string): void {
+  db.prepare('DELETE FROM reactions WHERE msg_id=? AND peer_id=? AND emoji=?').run(msgId, peerId, emoji);
+}
+
+export function listReactions(db: Db, msgId: string): Reaction[] {
+  return db
+    .prepare(
+      `SELECT msg_id as msgId, peer_id as peerId, emoji, ts FROM reactions WHERE msg_id=? ORDER BY ts ASC`,
+    )
+    .all(msgId) as Reaction[];
+}
+
+export function listReactionsForMessages(db: Db, msgIds: string[]): Reaction[] {
+  if (msgIds.length === 0) return [];
+  const placeholders = msgIds.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT msg_id as msgId, peer_id as peerId, emoji, ts FROM reactions WHERE msg_id IN (${placeholders}) ORDER BY ts ASC`,
+    )
+    .all(...msgIds) as Reaction[];
 }

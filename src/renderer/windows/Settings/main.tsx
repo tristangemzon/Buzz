@@ -7,7 +7,7 @@ import type { SoundScheme } from '../../sounds/synth';
 import type { Theme } from '@shared/schemas';
 import type { UpdateStatus } from '@shared/types';
 
-type Section = 'themes' | 'sounds' | 'updates';
+type Section = 'themes' | 'sounds' | 'audio' | 'updates';
 
 function App(): JSX.Element {
   const [section, setSection] = useState<Section>('themes');
@@ -22,13 +22,13 @@ function App(): JSX.Element {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* ── Left nav ── */}
         <div className="settings-nav">
-          {(['themes', 'sounds', 'updates'] as Section[]).map((s) => (
+          {(['themes', 'sounds', 'audio', 'updates'] as Section[]).map((s) => (
             <button
               key={s}
               className={`settings-nav-item${section === s ? ' active' : ''}`}
               onClick={() => setSection(s)}
             >
-              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : '🔄 Updates'}
+              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : '🔄 Updates'}
             </button>
           ))}
         </div>
@@ -36,6 +36,7 @@ function App(): JSX.Element {
         <div className="settings-content">
           {section === 'themes' && <ThemesPane />}
           {section === 'sounds' && <SoundsPane />}
+          {section === 'audio' && <AudioPane />}
           {section === 'updates' && <UpdatesPane />}
         </div>
       </div>
@@ -187,6 +188,191 @@ function SoundsPane(): JSX.Element {
       </label>
 
       <div className="actions">
+        <button onClick={() => void save()} disabled={busy}>Save</button>
+        {saved && <span style={{ fontSize: 11, color: 'green' }}>Saved!</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Audio pane ────────────────────────────────────────────────────────────── */
+
+type AudioDevice = { deviceId: string; label: string };
+
+function AudioPane(): JSX.Element {
+  const [micId, setMicId] = useState('');
+  const [speakerId, setSpeakerId] = useState('');
+  const [inputGain, setInputGain] = useState(1);
+  const [outputGain, setOutputGain] = useState(1);
+  const [pttKey, setPttKey] = useState('b');
+  const [noiseSuppression, setNoiseSuppression] = useState(true);
+  const [echoCancellation, setEchoCancellation] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [micDevices, setMicDevices] = useState<AudioDevice[]>([]);
+  const [speakerDevices, setSpeakerDevices] = useState<AudioDevice[]>([]);
+  const [capturingPtt, setCapturingPtt] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void window.buzz.getPrefs().then((p) => {
+      setMicId(p.micDeviceId ?? '');
+      setSpeakerId(p.speakerDeviceId ?? '');
+      setInputGain(p.inputGain ?? 1);
+      setOutputGain(p.outputGain ?? 1);
+      setPttKey(p.pttKey ?? 'b');
+      setNoiseSuppression(p.noiseSuppression ?? true);
+      setEchoCancellation(p.echoCancellation ?? true);
+      setNotificationsEnabled(p.notificationsEnabled ?? true);
+    });
+    // Enumerate audio devices (requires permissions on some platforms).
+    void navigator.mediaDevices.enumerateDevices().then((devices) => {
+      setMicDevices(
+        devices
+          .filter((d) => d.kind === 'audioinput')
+          .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId })),
+      );
+      setSpeakerDevices(
+        devices
+          .filter((d) => d.kind === 'audiooutput')
+          .map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId })),
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!capturingPtt) return;
+    function onKey(e: KeyboardEvent): void {
+      e.preventDefault();
+      e.stopPropagation();
+      setPttKey(e.key);
+      setCapturingPtt(false);
+      setSaved(false);
+    }
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [capturingPtt]);
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    try {
+      await window.buzz.setPrefs({
+        micDeviceId: micId,
+        speakerDeviceId: speakerId,
+        inputGain,
+        outputGain,
+        pttKey,
+        noiseSuppression,
+        echoCancellation,
+        notificationsEnabled,
+      });
+      setSaved(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const rowStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* ── Notifications ── */}
+      <div className="label">Notifications</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <input
+          type="checkbox"
+          checked={notificationsEnabled}
+          onChange={(e) => { setNotificationsEnabled(e.target.checked); setSaved(false); }}
+        />
+        Enable desktop notifications for new messages
+      </label>
+
+      {/* ── Devices ── */}
+      <div className="label" style={{ marginTop: 4 }}>Audio devices</div>
+      <div style={rowStyle}>
+        <span style={{ fontSize: 11 }}>Microphone</span>
+        <select
+          style={{ fontSize: 11 }}
+          value={micId}
+          onChange={(e) => { setMicId(e.target.value); setSaved(false); }}
+        >
+          <option value="">Default</option>
+          {micDevices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+          ))}
+        </select>
+      </div>
+      <div style={rowStyle}>
+        <span style={{ fontSize: 11 }}>Speaker / output</span>
+        <select
+          style={{ fontSize: 11 }}
+          value={speakerId}
+          onChange={(e) => { setSpeakerId(e.target.value); setSaved(false); }}
+        >
+          <option value="">Default</option>
+          {speakerDevices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* ── Gain ── */}
+      <div className="label" style={{ marginTop: 4 }}>Volume</div>
+      <div style={rowStyle}>
+        <span style={{ fontSize: 11 }}>Mic gain: {Math.round(inputGain * 100)}%</span>
+        <input
+          type="range" min={0} max={200} step={5}
+          value={Math.round(inputGain * 100)}
+          onChange={(e) => { setInputGain(Number(e.target.value) / 100); setSaved(false); }}
+        />
+      </div>
+      <div style={rowStyle}>
+        <span style={{ fontSize: 11 }}>Output gain: {Math.round(outputGain * 100)}%</span>
+        <input
+          type="range" min={0} max={200} step={5}
+          value={Math.round(outputGain * 100)}
+          onChange={(e) => { setOutputGain(Number(e.target.value) / 100); setSaved(false); }}
+        />
+      </div>
+
+      {/* ── Processing ── */}
+      <div className="label" style={{ marginTop: 4 }}>Processing</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <input type="checkbox" checked={noiseSuppression} onChange={(e) => { setNoiseSuppression(e.target.checked); setSaved(false); }} />
+        Noise suppression
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <input type="checkbox" checked={echoCancellation} onChange={(e) => { setEchoCancellation(e.target.checked); setSaved(false); }} />
+        Echo cancellation
+      </label>
+
+      {/* ── PTT key ── */}
+      <div className="label" style={{ marginTop: 4 }}>Push-to-talk key</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            fontFamily: 'monospace',
+            padding: '2px 8px',
+            border: '1px solid #888',
+            borderRadius: 3,
+            background: '#eee',
+            fontSize: 13,
+            minWidth: 24,
+            textAlign: 'center',
+          }}
+        >
+          {pttKey}
+        </span>
+        <button
+          onClick={() => setCapturingPtt(true)}
+          style={{ fontSize: 11 }}
+        >
+          {capturingPtt ? 'Press any key…' : 'Change'}
+        </button>
+      </div>
+
+      <div className="actions" style={{ marginTop: 4 }}>
         <button onClick={() => void save()} disabled={busy}>Save</button>
         {saved && <span style={{ fontSize: 11, color: 'green' }}>Saved!</span>}
       </div>

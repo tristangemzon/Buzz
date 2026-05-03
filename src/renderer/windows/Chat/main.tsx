@@ -6,6 +6,7 @@ import { RichEditor, RichEditorHandle, RichText } from '../../components/RichTex
 import { useRoomVoice } from '../../components/useRoomVoice';
 import { playSound, setSoundsEnabled, setSoundScheme } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
+import { GamePicker } from '../../components/GamePicker';
 
 const DEFAULT_THEME: Theme = {
   chatTheme: 'classic',
@@ -40,6 +41,9 @@ function App(): JSX.Element {
   const [newChannelKind, setNewChannelKind] = useState<'text' | 'voice'>('text');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [showGamePicker, setShowGamePicker] = useState(false);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
+  const [gameKindPending, setGameKindPending] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEditorHandle>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
@@ -389,7 +393,11 @@ function App(): JSX.Element {
 
           {/* AIM-style action bar */}
           <div className="im-actionbar">
-            <button className="im-action-btn" disabled title="Games (coming soon)">
+            <button
+              className="im-action-btn"
+              title="Games"
+              onClick={() => setShowGamePicker(true)}
+            >
               <span className="im-action-btn-icon">🎲</span>
               <span className="im-action-btn-label">Games</span>
             </button>
@@ -516,6 +524,56 @@ function App(): JSX.Element {
             )}
             <div style={{ marginTop: 8, textAlign: 'right' }}>
               <button onClick={() => setShowInvite(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGamePicker && (
+        <GamePicker
+          onSelect={(kind) => {
+            setShowGamePicker(false);
+            setGameKindPending(kind);
+            setShowMemberPicker(true);
+          }}
+          onClose={() => setShowGamePicker(false)}
+        />
+      )}
+
+      {showMemberPicker && gameKindPending && room && (
+        <div
+          className="modal-backdrop"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => { setShowMemberPicker(false); setGameKindPending(null); }}
+        >
+          <div
+            className="modal"
+            style={{ background: '#fff', padding: 12, minWidth: 220, borderRadius: 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px' }}>Challenge a member</h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 200, overflowY: 'auto' }}>
+              {room.members
+                .filter((pid) => pid !== me?.peerId)
+                .map((pid) => (
+                  <li key={pid} style={{ padding: '4px 0' }}>
+                    <button
+                      style={{ width: '100%', textAlign: 'left' }}
+                      onClick={async () => {
+                        setShowMemberPicker(false);
+                        const kind = gameKindPending!;
+                        setGameKindPending(null);
+                        await window.buzzWindows.openGame(pid, kind, true);
+                        await window.buzz.gameInvite({ toPeerId: pid, kind });
+                      }}
+                    >
+                      {nameFor(pid)}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+            <div style={{ marginTop: 8, textAlign: 'right' }}>
+              <button onClick={() => { setShowMemberPicker(false); setGameKindPending(null); }}>Cancel</button>
             </div>
           </div>
         </div>

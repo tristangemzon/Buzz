@@ -22,6 +22,7 @@ import { buddyCodeFor, createNode, MESH_LIBP2P_PORT } from './p2p/node.js';
 import { MeshNode } from './p2p/mesh.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
+import { notifyIm, setNotificationsEnabled } from './notify.js';
 import { IPC } from '@shared/ipc.js';
 import type {
   ImAckEvent,
@@ -316,7 +317,7 @@ export class Session {
     return this.node.peerId.toString();
   }
 
-  async bringUp(
+  private async bringUp(
     id: IdentityMaterial,
     profileId: string,
     screenNameIfNew: string,
@@ -966,27 +967,12 @@ export class Session {
         }
       },
       onBuddyRequest: (peerId, screenName) => {
-        // Persist the incoming request so approveBuddyRequest can find it.
-        repos.upsertBuddyRequest(db, {
-          peerId,
-          direction: 'in',
-          screenName,
-          ts: Date.now(),
-        });
         this.broadcast(IPC.EvtBuddyRequest, {
           kind: 'incoming',
           request: { peerId, screenName, direction: 'in', ts: Date.now() },
         } satisfies BuddyRequestEvent);
       },
-      onBuddyResponse: (peerId, accepted, screenName) => {
-        // Mirror what P2P handleBuddyResp does: persist the result to DB.
-        const req = db.prepare('SELECT screen_name FROM buddy_requests WHERE peer_id=?').get(peerId) as { screen_name?: string } | undefined;
-        db.prepare('DELETE FROM buddy_requests WHERE peer_id=?').run(peerId);
-        if (accepted) {
-          const alias = req?.screen_name?.trim() || screenName?.trim() || `${peerId.slice(0, 8)}…`;
-          repos.addBuddy(db, peerId, alias, 'Buddies');
-          this.forgetDiscovered(peerId);
-        }
+      onBuddyResponse: (peerId, accepted, _screenName) => {
         this.broadcast(IPC.EvtBuddyRequestResolved, { peerId, accepted } satisfies BuddyRequestResolvedEvent);
       },
       onMessage: (fromPeerId, msgId, ts, cipherB64) => {
@@ -1014,6 +1000,12 @@ export class Session {
         this.hiveClient.sendAck(msgId);
         this.broadcast(IPC.EvtImReceived, msg);
         this.broadcastUnread();
+        // Desktop notification if no IM window for this peer is focused.
+        const allFocused = BrowserWindow.getAllWindows().some((w) => w.isFocused());
+        if (!allFocused) {
+          const alias = repos.listBuddies(db).find((b) => b.peerId === fromPeerId)?.alias ?? fromPeerId.slice(0, 12);
+          notifyIm(alias, body);
+        }
       },
       onAck: (msgId) => {
         repos.setMessageStatus(db, msgId, 'delivered');
@@ -1087,27 +1079,8 @@ export class Session {
         this.broadcast(IPC.EvtRoomMembers, { roomId, members } satisfies RoomMembersEvent);
       },
       onTalkSignal: (from, callId, signal, payload) => {
-        // Route through the same handlers as P2P so call state is managed consistently.
-        const p = (payload ?? {}) as Record<string, unknown>;
-        switch (signal) {
-          case 'invite':
-            this.handleTalkInvite(from, callId, String(p.screenName ?? ''), Number(p.ts ?? 0), (p.kind as 'voice' | 'video') ?? 'voice');
-            break;
-          case 'accept':
-            this.handleTalkAccept(from, callId);
-            break;
-          case 'reject':
-            this.handleTalkReject(from, callId, p.reason as string | undefined);
-            break;
-          case 'bye':
-            this.handleTalkBye(from, callId);
-            break;
-          case 'videoState':
-            this.handleTalkVideoState(from, callId, Boolean(p.on));
-            break;
-          default:
-            break;
-        }
+        // Re-use the same talk signal IPC so renderers don't need to know about Hive.
+        this.broadcast(IPC.EvtTalkState, { from, callId, signal, payload });
       },
       onTalkAudio: (from, callId, buf) => {
         this.handleTalkAudio(from, callId, 0, buf);
@@ -1117,6 +1090,27 @@ export class Session {
       },
       onGameSignal: (from, action, kind, path) => {
         this.handleGameFrame(from, { action, kind, path });
+      },
+      onTyping: (from, typing) => {
+        this.broadcast(IPC.EvtTyping, { from, typing });
+      },
+      onReadReceipt: (from, msgId) => {
+        this.broadcast(IPC.EvtReadReceipt, { from, msgId });
+        // Mark the matching outbound message as read in DB.
+        if (this.db) {
+          this.db.prepare("UPDATE messages SET status='read' WHERE id=? AND direction='out'").run(msgId);
+        }
+      },
+      onReaction: (from, msgId, emoji, added) => {
+        // Persist locally.
+        if (this.db) {
+          if (added) repos.upsertReaction(this.db, msgId, from, emoji);
+          else repos.deleteReaction(this.db, msgId, from, emoji);
+        }
+        this.broadcast(IPC.EvtReaction, { msgId, peerId: from, emoji, added });
+      },
+      onRoomReaction: (roomId, from, msgId, emoji, added) => {
+        this.broadcast(IPC.EvtReaction, { roomId, msgId, peerId: from, emoji, added });
       },
     };
 
@@ -1164,12 +1158,6 @@ export class Session {
   cacheRoomMembers(roomId: string, members: string[]): void {
     this.roomMembers.set(roomId, [...members]);
   }
-  getRoomKey(roomId: string): Uint8Array | null {
-    return this.roomKeys.get(roomId) ?? null;
-  }
-  getRoomMembers(roomId: string): string[] {
-    return [...(this.roomMembers.get(roomId) ?? [])];
-  }
   forgetRoom(roomId: string): void {
     this.roomKeys.delete(roomId);
     this.roomMembers.delete(roomId);
@@ -1209,7 +1197,7 @@ export class Session {
     alias: string,
     _group: string,
   ): Promise<void> {
-    if (!this.db) throw new Error('Locked');
+    if (!this.db || !this.im) throw new Error('Locked');
     if (this.db.prepare('SELECT 1 FROM buddies WHERE peer_id=?').get(peerId)) {
       return; // already a buddy
     }
@@ -1220,14 +1208,10 @@ export class Session {
       screenName: alias,
       ts,
     });
-    // Server mode: delegate to HiveClient.
-    if (this.hiveClient) {
-      this.hiveClient.addBuddy(peerId);
-      return;
-    }
-    // P2P mode: best-effort send; peer may be offline.
+    // Best-effort send; if the peer is offline we'll retry next time the
+    // user clicks "Add" (the local pending row is the source of truth).
     try {
-      await this.im?.send(peerId, {
+      await this.im.send(peerId, {
         type: 'buddy-req',
         screenName: this.screenName,
         ts,
@@ -1245,13 +1229,9 @@ export class Session {
     repos.addBuddy(this.db, peerId, alias, 'Buddies');
     repos.deleteBuddyRequest(this.db, peerId);
     this.forgetDiscovered(peerId);
-    if (this.hiveClient) {
-      this.hiveClient.approveBuddy(peerId);
-    } else {
-      void this.im
-        ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
-        .catch(() => {});
-    }
+    void this.im
+      ?.send(peerId, { type: 'buddy-resp', accepted: true, screenName: this.screenName })
+      .catch(() => {});
     this.broadcast(IPC.EvtBuddyRequestResolved, {
       peerId,
       accepted: true,
@@ -1263,13 +1243,9 @@ export class Session {
     const req = repos.getBuddyRequest(this.db, peerId);
     if (!req || req.direction !== 'in') return;
     repos.deleteBuddyRequest(this.db, peerId);
-    if (this.hiveClient) {
-      this.hiveClient.denyBuddy(peerId);
-    } else {
-      void this.im
-        ?.send(peerId, { type: 'buddy-resp', accepted: false })
-        .catch(() => {});
-    }
+    void this.im
+      ?.send(peerId, { type: 'buddy-resp', accepted: false })
+      .catch(() => {});
     this.broadcast(IPC.EvtBuddyRequestResolved, {
       peerId,
       accepted: false,
@@ -1421,7 +1397,7 @@ export class Session {
   }
 
   async startCall(peerId: string, kind: 'voice' | 'video' = 'voice'): Promise<TalkCallState> {
-    if (!this.talk && !this.hiveClient) throw new Error('Locked');
+    if (!this.talk) throw new Error('Locked');
     if (this.currentCall && this.currentCall.state !== 'ended') {
       throw new Error('Another call is already active');
     }
@@ -1439,11 +1415,13 @@ export class Session {
     this.currentCall = state;
     this.broadcast(IPC.EvtTalkState, state);
     try {
-      if (this.hiveClient) {
-        this.hiveClient.sendTalkSignal(peerId, callId, 'invite', { screenName: this.screenName, ts, kind });
-      } else {
-        await this.talk!.send(peerId, { type: 'invite', callId, screenName: this.screenName, ts, kind });
-      }
+      await this.talk.send(peerId, {
+        type: 'invite',
+        callId,
+        screenName: this.screenName,
+        ts,
+        kind,
+      });
     } catch (err) {
       this.endCallLocal(callId, 'unreachable');
       throw err;
@@ -1452,85 +1430,62 @@ export class Session {
   }
 
   async acceptCall(callId: string): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.role !== 'callee') return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkSignal(peerId, callId, 'accept', {});
-    } else {
-      await this.talk!.send(peerId, { type: 'accept', callId }).catch(() => undefined);
-    }
+    await this.talk.send(peerId, { type: 'accept', callId }).catch(() => undefined);
     this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
   }
 
   async rejectCall(callId: string, reason?: string): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkSignal(peerId, callId, 'reject', { reason });
-    } else {
-      await this.talk!.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
-    }
+    await this.talk.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
     this.endCallLocal(callId, reason ?? 'rejected');
   }
 
   async endCall(callId: string): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkSignal(peerId, callId, 'bye', {});
-    } else {
-      await this.talk!.send(peerId, { type: 'bye', callId }).catch(() => undefined);
-    }
+    await this.talk.send(peerId, { type: 'bye', callId }).catch(() => undefined);
     this.endCallLocal(callId, 'ended');
   }
 
   async sendCallAudio(callId: string, data: Uint8Array): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkAudio(peerId, callId, Buffer.from(data));
-    } else {
-      // eslint-disable-next-line no-console
-      console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
-      await this.talk!.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
-        console.warn('[talk] tx send failed', err);
-      });
-    }
+    // eslint-disable-next-line no-console
+    console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
+    // We don't bother numbering on the main side; renderer-side seq is fine.
+    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
+      console.warn('[talk] tx send failed', err);
+    });
   }
 
   async sendCallVideo(callId: string, data: Uint8Array): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkVideo(peerId, callId, Buffer.from(data));
-    } else {
-      await this.talk!.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
-        console.warn('[talk] video tx send failed', err);
-      });
-    }
+    await this.talk.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
+      console.warn('[talk] video tx send failed', err);
+    });
   }
 
   async setCallVideo(callId: string, on: boolean): Promise<void> {
-    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (!this.talk || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    if (this.hiveClient) {
-      this.hiveClient.sendTalkSignal(peerId, callId, 'videoState', { on });
-    } else {
-      await this.talk!.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
-        console.warn('[talk] videoState send failed', err);
-      });
-    }
+    await this.talk.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
+      console.warn('[talk] videoState send failed', err);
+    });
   }
 
   private endCallLocal(callId: string, reason?: string): void {
@@ -1553,14 +1508,10 @@ export class Session {
     _ts: number,
     kind: 'voice' | 'video',
   ): void {
-    if (!this.talk && !this.hiveClient) return;
+    if (!this.talk) return;
     // Reject if already in another call.
     if (this.currentCall && this.currentCall.state !== 'ended') {
-      if (this.hiveClient) {
-        this.hiveClient.sendTalkSignal(peerId, callId, 'reject', { reason: 'busy' });
-      } else {
-        void this.talk!.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
-      }
+      void this.talk.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
       return;
     }
     const state: TalkCallState = {
@@ -1630,7 +1581,7 @@ export class Session {
 
   // ── voice channels ────────────────────────────────────────────────────
   async roomVoiceJoin(roomId: string, channelId: string): Promise<void> {
-    if (!this.rooms) return; // voice channels not available in server mode
+    if (!this.rooms) throw new Error('locked');
     const key = `${roomId}|${channelId}`;
     if (this.localVoiceJoined.has(key)) return;
     this.localVoiceJoined.add(key);

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, nativeImage, session as electronSession, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, protocol, session as electronSession, shell } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { registerIpc } from './ipc/handlers.js';
@@ -15,6 +16,12 @@ const isDev = !!process.env['ELECTRON_RENDERER_URL'];
 // and window titles all read "Buzz" instead of "Electron" in dev.
 app.setName('Buzz');
 process.title = 'Buzz';
+
+// Register buzz-file:// as a privileged scheme so <img> tags can load
+// local files served from the main process without violating the CSP.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'buzz-file', privileges: { secure: true, supportFetchAPI: false, bypassCSP: false } },
+]);
 
 // Resolve the bundled app icon. In dev, `here` is `<repo>/out/main`, so the
 // icon lives two dirs up under `resources/`. In a packaged build, both
@@ -36,7 +43,7 @@ function installCsp(): void {
         "default-src 'self' " + devOrigin,
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' " + devOrigin,
         "style-src 'self' 'unsafe-inline' " + devOrigin,
-        "img-src 'self' data: " + devOrigin,
+        "img-src 'self' data: buzz-file: " + devOrigin,
         "font-src 'self' data: " + devOrigin,
         "connect-src 'self' " + devOrigin + ' ' + devWs,
         "media-src 'self' blob: " + devOrigin,
@@ -45,7 +52,7 @@ function installCsp(): void {
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data: buzz-file:",
         "font-src 'self' data:",
         "connect-src 'self'",
         "media-src 'self' blob:",
@@ -331,6 +338,38 @@ app.whenReady().then(() => {
   // buzz.sqlite) into a profile dir so existing users keep their identity.
   migrateLegacy();
   installCsp();
+
+  // Serve completed file-transfer files via buzz-file://<transferId>.
+  // Only resolves a path if the transfer exists and is 'complete' in the DB.
+  protocol.handle('buzz-file', (request) => {
+    try {
+      const transferId = new URL(request.url).hostname;
+      if (!transferId || !/^[\w-]{1,128}$/.test(transferId)) {
+        return new Response('Bad request', { status: 400 });
+      }
+      const db = session.db;
+      if (!db) return new Response('Not ready', { status: 503 });
+      const row = db.prepare(
+        "SELECT saved_path FROM transfers WHERE id=? AND status='complete'",
+      ).get(transferId) as { saved_path: string } | undefined;
+      if (!row?.saved_path) return new Response('Not found', { status: 404 });
+      // Guard against path traversal: saved_path should be an absolute path
+      // set by the main process. Verify the file exists before serving.
+      const filePath = path.normalize(row.saved_path);
+      if (!fs.existsSync(filePath)) return new Response('Gone', { status: 410 });
+      const data = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).toLowerCase().slice(1);
+      const mimeMap: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+      };
+      const contentType = mimeMap[ext] ?? 'application/octet-stream';
+      return new Response(data, { headers: { 'Content-Type': contentType } });
+    } catch {
+      return new Response('Error', { status: 500 });
+    }
+  });
+
   registerIpc(session, {
     onLocked: () => {
       closeSessionWindows();

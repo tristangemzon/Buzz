@@ -31,9 +31,14 @@ export const IPC = {
 
   // im
   ImSend: 'im:send',
-  ImTyping: 'im:typing',
   ImHistory: 'im:history',
   ImMarkRead: 'im:markRead',
+  ImEdit: 'im:edit',
+  ImDelete: 'im:delete',
+  ImReact: 'im:react',
+  ImUnreact: 'im:unreact',
+  ImSearch: 'im:search',
+  ImListReactions: 'im:listReactions',
 
   // prefs
   PrefsGet: 'prefs:get',
@@ -81,6 +86,10 @@ export const IPC = {
   RoomsVoiceJoin: 'rooms:voiceJoin',
   RoomsVoiceLeave: 'rooms:voiceLeave',
   RoomsVoiceSendAudio: 'rooms:voiceSendAudio',
+  RoomsReact: 'rooms:react',
+  RoomsUnreact: 'rooms:unreact',
+  RoomsEditMsg: 'rooms:editMsg',
+  RoomsDeleteMsg: 'rooms:deleteMsg',
 
   // unread counters
   UnreadGet: 'unread:get',
@@ -98,6 +107,10 @@ export const IPC = {
   EvtImReceived: 'evt:imReceived',
   EvtImAck: 'evt:imAck',
   EvtTyping: 'evt:typing',
+  EvtReadReceipt: 'evt:readReceipt',
+  EvtImEdited: 'evt:imEdited',
+  EvtImDeleted: 'evt:imDeleted',
+  EvtReaction: 'evt:reaction',
   EvtError: 'evt:error',
   EvtPeerProfile: 'evt:peerProfile',
   EvtXferOffered: 'evt:xferOffered',
@@ -144,11 +157,6 @@ export const IPC = {
   EvtGameDeclined: 'evt:gameDeclined',
   EvtGameMove: 'evt:gameMove',
   EvtGameResigned: 'evt:gameResigned',
-
-  // server-mode account management (discovery + registration before WS auth)
-  ServerDiscover: 'server:discover',
-  ServerRegister: 'server:register',
-  ServerUnlockAccount: 'server:unlockAccount',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

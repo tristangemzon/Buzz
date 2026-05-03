@@ -28,10 +28,22 @@ CREATE TABLE IF NOT EXISTS messages (
   direction   TEXT NOT NULL CHECK (direction IN ('in','out')),
   ts          INTEGER NOT NULL,
   body        TEXT NOT NULL,
-  status      TEXT NOT NULL CHECK (status IN ('queued','sent','delivered','read','failed'))
+  status      TEXT NOT NULL CHECK (status IN ('queued','sent','delivered','read','failed')),
+  edited_at   INTEGER,
+  deleted_at  INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_peer_ts ON messages(peer_id, ts DESC);
+
+CREATE TABLE IF NOT EXISTS reactions (
+  msg_id   TEXT NOT NULL,
+  peer_id  TEXT NOT NULL,
+  emoji    TEXT NOT NULL,
+  ts       INTEGER NOT NULL,
+  PRIMARY KEY (msg_id, peer_id, emoji)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reactions_msg ON reactions(msg_id);
 
 CREATE TABLE IF NOT EXISTS prefs (
   k TEXT PRIMARY KEY,
