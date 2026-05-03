@@ -24,6 +24,20 @@ export const UnlockReq = z.object({
 });
 export type UnlockReq = z.infer<typeof UnlockReq>;
 
+export const ServerRegisterReq = z.object({
+  serverUrl: z.string().max(512),
+  screenName: ScreenName,
+  passphrase: Passphrase,
+});
+export type ServerRegisterReq = z.infer<typeof ServerRegisterReq>;
+
+export const ServerUnlockReq = z.object({
+  serverUrl: z.string().max(512),
+  screenName: z.string().min(1).max(64),
+  passphrase: Passphrase,
+});
+export type ServerUnlockReq = z.infer<typeof ServerUnlockReq>;
+
 export const ProfileSummary = z.object({
   id: Uuid,
   screenName: z.string().min(1).max(64),
@@ -104,7 +118,7 @@ export type Profile = z.infer<typeof Profile>;
 // peers — they only affect how this user sees their own windows.
 export const ChatTheme = z.enum(['classic', 'balloons', 'compact']);
 export type ChatTheme = z.infer<typeof ChatTheme>;
-export const WindowTheme = z.enum(['classic', 'aqua', 'graphite', 'aero']);
+export const WindowTheme = z.enum(['classic', 'aqua', 'graphite', 'aero', 'metal']);
 export type WindowTheme = z.infer<typeof WindowTheme>;
 
 export const Theme = z.object({
