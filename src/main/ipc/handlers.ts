@@ -22,8 +22,12 @@ import {
   RoomCreateReq,
   RoomHistoryReq,
   RoomInviteReq,
+  RoomKickReq,
   RoomLeaveReq,
+  RoomPinReq,
   RoomSendReq,
+  RoomSetCategoryReq,
+  RoomSetRoleReq,
   RoomChannelsListReq,
   RoomChannelCreateReq,
   RoomChannelDeleteReq,
@@ -483,18 +487,21 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       isDefault: true,
       createdAt,
     };
+    const myPeerId = session.peerIdStr();
     const { roomId, keyB64, members: full } = await rooms.createRoom({
       name,
       members,
+      ownerPeerId: myPeerId,
       channels: [defaultChannel],
     });
-    repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt });
+    repos.upsertRoom(db, { id: roomId, name, keyB64, createdAt, ownerPeerId: myPeerId });
     repos.setRoomMembers(db, roomId, full);
-    repos.upsertRoomChannel(db, { ...defaultChannel, roomId });
+    repos.setMemberRole(db, roomId, myPeerId, 'owner');
+    repos.upsertRoomChannel(db, { ...defaultChannel, roomId, category: '' });
     const s = await sodium();
     session.cacheRoomKey(roomId, s.from_base64(keyB64, s.base64_variants.ORIGINAL));
     session.cacheRoomMembers(roomId, full);
-    return { id: roomId, name, members: full, createdAt };
+    return { id: roomId, name, members: full, createdAt, ownerPeerId: myPeerId, mods: [] };
   });
   handle(IPC.RoomsInvite, RoomInviteReq, async ({ roomId, peerId }) => {
     const db = requireDb(session);
@@ -509,10 +516,10 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       isDefault: c.isDefault,
       createdAt: c.createdAt,
     }));
-    const members = await rooms.invite(roomId, peerId, room.name, channels);
+    const members = await rooms.invite(roomId, peerId, room.name, channels, room.ownerPeerId);
     repos.setRoomMembers(db, roomId, members);
     session.cacheRoomMembers(roomId, members);
-    return { id: roomId, name: room.name, members, createdAt: room.createdAt };
+    return { id: roomId, name: room.name, members, createdAt: room.createdAt, ownerPeerId: room.ownerPeerId, mods: room.mods };
   });
   handle(IPC.RoomsLeave, RoomLeaveReq, async ({ roomId }) => {
     const db = requireDb(session);
@@ -523,14 +530,14 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     session.forgetRoom(roomId);
     return { ok: true as const };
   });
-  handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, channelId, body }) => {
+  handle(IPC.RoomsSend, RoomSendReq, async ({ roomId, channelId, body, replyToId, mentions }) => {
     const db = requireDb(session);
     const rooms = session.rooms;
     if (!rooms) throw new Error('Locked');
     // Validate the channel belongs to this room.
     const ch = repos.getRoomChannel(db, channelId);
     if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
-    const { id, ts } = await rooms.sendMessage(roomId, channelId, body);
+    const { id, ts } = await rooms.sendMessage(roomId, channelId, body, { replyToId, mentions });
     const stored = {
       id,
       roomId,
@@ -540,6 +547,8 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       direction: 'out' as const,
       ts,
       body,
+      replyToId,
+      mentions,
     };
     repos.insertRoomMessage(db, stored);
     return stored;
@@ -563,6 +572,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       kind: kind ?? 'text',
       isDefault: false,
       createdAt: Date.now(),
+      category: '',
     } as const;
     repos.upsertRoomChannel(db, ch);
     await rooms.broadcastChannelAdd(roomId, ch.id, ch.name, ch.kind);
@@ -598,6 +608,98 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       void session.roomVoiceSendAudio(payload.roomId, payload.channelId, data);
     },
   );
+
+  // ── v0.6.0 moderation handlers ─────────────────────────────────────────
+  handle(IPC.RoomsPin, RoomPinReq, async ({ roomId, msgId, isPinned }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    const hive = session.hiveClient;
+    if (!rooms && !hive) throw new Error('Locked');
+    const myPeerId = session.peerIdStr();
+    const room = repos.getRoom(db, roomId);
+    if (!room) throw new Error('Unknown room');
+    if (rooms) {
+      const memberRows = repos.getRoomMembersWithRoles(db, roomId);
+      const myRole = memberRows.find((m) => m.peerId === myPeerId)?.role ?? 'member';
+      if (myRole === 'member') throw new Error('Insufficient permissions');
+      repos.pinRoomMessage(db, msgId, isPinned);
+      await rooms.broadcastPin(roomId, msgId, isPinned);
+    } else {
+      repos.pinRoomMessage(db, msgId, isPinned);
+      hive!.sendRoomPin(roomId, msgId, isPinned);
+    }
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsListPinned, z.object({ roomId: z.string(), channelId: z.string().uuid().optional() }), ({ roomId, channelId }) =>
+    repos.listPinnedRoomMessages(requireDb(session), roomId, channelId),
+  );
+
+  handle(IPC.RoomsKick, RoomKickReq, async ({ roomId, peerId }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    const hive = session.hiveClient;
+    if (!rooms && !hive) throw new Error('Locked');
+    const myPeerId = session.peerIdStr();
+    const room = repos.getRoom(db, roomId);
+    if (!room) throw new Error('Unknown room');
+    if (rooms) {
+      const memberRows = repos.getRoomMembersWithRoles(db, roomId);
+      const myRole = memberRows.find((m) => m.peerId === myPeerId)?.role ?? 'member';
+      const targetRole = memberRows.find((m) => m.peerId === peerId)?.role ?? 'member';
+      if (myRole === 'member') throw new Error('Insufficient permissions');
+      if (myRole === 'mod' && (targetRole === 'mod' || targetRole === 'owner')) throw new Error('Insufficient permissions');
+      repos.kickRoomMember(db, roomId, peerId);
+      const members = repos.getRoomMembers(db, roomId);
+      session.cacheRoomMembers(roomId, members);
+      await rooms.broadcastKick(roomId, peerId);
+    } else {
+      repos.kickRoomMember(db, roomId, peerId);
+      const members = repos.getRoomMembers(db, roomId);
+      session.cacheRoomMembers(roomId, members);
+      hive!.sendRoomKick(roomId, peerId);
+    }
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsSetRole, RoomSetRoleReq, async ({ roomId, peerId, role }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    const hive = session.hiveClient;
+    if (!rooms && !hive) throw new Error('Locked');
+    const myPeerId = session.peerIdStr();
+    const room = repos.getRoom(db, roomId);
+    if (!room) throw new Error('Unknown room');
+    // Only the owner can change roles.
+    if (room.ownerPeerId !== myPeerId) throw new Error('Only the room owner can change roles');
+    repos.setMemberRole(db, roomId, peerId, role);
+    if (rooms) {
+      await rooms.broadcastRole(roomId, peerId, role);
+    } else {
+      hive!.sendRoomRole(roomId, peerId, role);
+    }
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsSetCategory, RoomSetCategoryReq, async ({ roomId, channelId, category }) => {
+    const db = requireDb(session);
+    const rooms = session.rooms;
+    const hive = session.hiveClient;
+    if (!rooms && !hive) throw new Error('Locked');
+    const myPeerId = session.peerIdStr();
+    const memberRows = repos.getRoomMembersWithRoles(db, roomId);
+    const myRole = memberRows.find((m) => m.peerId === myPeerId)?.role ?? 'member';
+    if (myRole === 'member') throw new Error('Insufficient permissions');
+    const ch = repos.getRoomChannel(db, channelId);
+    if (!ch || ch.roomId !== roomId) throw new Error('Unknown channel');
+    repos.setChannelCategory(db, channelId, category);
+    if (rooms) {
+      await rooms.broadcastCategory(roomId, channelId, category);
+    } else {
+      hive!.sendRoomCategory(roomId, channelId, category);
+    }
+    return { ok: true as const };
+  });
 
   // ── offline mailbox relay ────────────────────────────────────────────────
   handle(IPC.MailboxStats, null, () => {

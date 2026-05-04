@@ -19,8 +19,15 @@
   --c-title-text: #ffffff;
   --c-link: #0033cc;
   --c-text: #000000;
+  --c-text-muted: #333333;
   --c-yellow: #ffd44f; /* AIM running-man yellow */
   --c-input-bg: #ffffff;
+  --c-nav-bg: #ececec;
+  --c-name-me: #b00000;
+  --c-name-them: #0000b0;
+  --c-name-sys: #555555;
+  --c-chat-sidebar-bg: #ece9d8;
+  --c-chat-sidebar-hover: #e0dcc8;
 }
 
 html[data-platform='mac'] {
@@ -500,15 +507,15 @@ button:disabled {
   word-wrap: break-word;
 }
 .chat-log .me {
-  color: #b00000;
+  color: var(--c-name-me, #b00000);
   font-weight: bold;
 }
 .chat-log .them {
-  color: #0000b0;
+  color: var(--c-name-them, #0000b0);
   font-weight: bold;
 }
 .chat-log .sys {
-  color: #555;
+  color: var(--c-name-sys, #555);
   font-style: italic;
 }
 .chat-input {
@@ -791,8 +798,8 @@ button:disabled {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border-right: 1px solid #bbb;
-  background: #ececec;
+  border-right: 1px solid var(--c-bevel-dark, #bbb);
+  background: var(--c-nav-bg, #ececec);
   flex: 0 0 110px;
 }
 .settings-nav-item {
@@ -838,7 +845,7 @@ button:disabled {
 
 .label {
   font-size: 11px;
-  color: #333;
+  color: var(--c-text-muted, #333);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -1417,22 +1424,22 @@ html[data-chat-theme='balloons'] .chat-log {
 }
 .bubble-row.out .bubble {
   background: var(--my-bubble, #d8f0ff);
-  color: #000;
+  color: var(--c-bubble-text, #000);
   border-bottom-right-radius: 4px;
 }
 .bubble-row.in .bubble {
   background: var(--their-bubble, #eeeeee);
-  color: #000;
+  color: var(--c-bubble-text, #000);
   border-bottom-left-radius: 4px;
 }
 .bubble .meta {
   font-size: 10px;
-  color: #666;
+  color: var(--c-bubble-meta, #666);
   margin-top: 2px;
 }
 .bubble-name {
   font-size: 10px;
-  color: #555;
+  color: var(--c-bubble-meta, #555);
   margin: 0 6px 2px;
 }
 
@@ -1524,8 +1531,8 @@ html[data-chat-theme='compact'] .chat-log > div {
   min-width: 120px;
   display: flex;
   flex-direction: column;
-  background: #ece9d8;
-  border-right: 1px solid #999;
+  background: var(--c-chat-sidebar-bg, #ece9d8);
+  border-right: 1px solid var(--c-bevel-dark, #999);
   font-size: 12px;
 }
 .chat-channels-header {
@@ -1537,8 +1544,8 @@ html[data-chat-theme='compact'] .chat-log > div {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: #555;
-  border-bottom: 1px solid #c8c4b0;
+  color: var(--c-text-muted, #555);
+  border-bottom: 1px solid var(--c-bevel-dark, #c8c4b0);
 }
 .chat-channels-add {
   padding: 0 6px;
@@ -1562,7 +1569,7 @@ html[data-chat-theme='compact'] .chat-log > div {
   user-select: none;
 }
 .chat-channel-row:hover {
-  background: #e0dcc8;
+  background: var(--c-chat-sidebar-hover, #e0dcc8);
 }
 .chat-channel-row.active {
   background: #316ac5;
@@ -2442,4 +2449,188 @@ html[data-chat-theme='compact'] .chat-log > div {
 .poker-btn:active:not(:disabled) {
   border-top-color: #808080; border-left-color: #808080;
   border-bottom-color: #fff; border-right-color: #fff;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   COLOR MODE — dark
+   Overrides CSS custom properties + selected hardcoded colors.
+   Applied via html[data-color-mode='dark']; window theme overrides still
+   layer on top (they use the same variables so they naturally adapt).
+   ────────────────────────────────────────────────────────────────────────── */
+html[data-color-mode='dark'] {
+  --c-bg: #1e1e2a;
+  --c-panel: #252533;
+  --c-bevel-light: #3d3d52;
+  --c-bevel-dark: #0d0d18;
+  --c-bevel-darker: #08081a;
+  --c-title-text: #ffffff;
+  --c-link: #7ac0ff;
+  --c-text: #e0e0e0;
+  --c-text-muted: #a0a0bc;
+  --c-input-bg: #16162a;
+  --c-nav-bg: #1a1a26;
+  --c-name-me: #ff8080;
+  --c-name-them: #7ac0ff;
+  --c-name-sys: #8888aa;
+  --c-chat-sidebar-bg: #1a1a26;
+  --c-chat-sidebar-hover: #2a2a3e;
+  --my-bubble: #1e3a5f;
+  --their-bubble: #2a2a3e;
+  --c-bubble-text: #e0e0e0;
+  --c-bubble-meta: #8888aa;
+  color-scheme: dark;
+  color: #e0e0e0;
+}
+
+html[data-color-mode='dark'] body,
+html[data-color-mode='dark'] #root {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+/* Labels and muted text */
+html[data-color-mode='dark'] .muted {
+  color: #6a6a88;
+}
+
+/* Settings nav sidebar */
+html[data-color-mode='dark'] .settings-nav-item:hover {
+  background: #2a2a3e;
+}
+html[data-color-mode='dark'] .settings-nav-item.active {
+  background: #252533;
+  border-color: #3d3d52;
+  color: #e0e0e0;
+}
+html[data-color-mode='dark'] .settings-danger {
+  border-color: #8b2020;
+  background: #2a1010;
+}
+html[data-color-mode='dark'] .settings-content {
+  background: var(--c-bg);
+}
+
+/* List */
+html[data-color-mode='dark'] .list {
+  background: var(--c-input-bg);
+}
+html[data-color-mode='dark'] .list .group {
+  background: #2d2d42;
+  border-bottom-color: #0d0d18;
+  color: #a0a0bc;
+}
+html[data-color-mode='dark'] .list .row:hover {
+  background: #2a2a3e;
+}
+html[data-color-mode='dark'] .list .row.selected {
+  background: #2255aa;
+  color: #ffffff;
+}
+html[data-color-mode='dark'] .list .row.blocked {
+  color: #555568;
+}
+
+/* Buddy-list bars */
+html[data-color-mode='dark'] .bl-selfbar {
+  border-bottom-color: #0d0d18;
+  background: var(--c-panel);
+}
+html[data-color-mode='dark'] .bl-actionbar {
+  border-top-color: #0d0d18;
+  background: var(--c-panel);
+}
+html[data-color-mode='dark'] .bl-status-select {
+  background: var(--c-input-bg);
+  color: var(--c-text);
+  border-color: #3d3d52;
+}
+
+/* Toolbar strip */
+html[data-color-mode='dark'] .toolbar {
+  background: var(--c-panel);
+  border-bottom-color: #0d0d18;
+}
+
+/* Title-bar window-chrome control buttons */
+html[data-color-mode='dark'] .titlebar .controls button {
+  color: #d0d0e0;
+  background: #2d2d42;
+  border-color: #3d3d52 #08081a #08081a #3d3d52;
+}
+html[data-color-mode='dark'] .titlebar .controls button.close:hover {
+  background: #7a2030;
+}
+
+/* Generic buttons */
+html[data-color-mode='dark'] button {
+  background: var(--c-panel);
+  color: var(--c-text);
+  border-color: #3d3d52 #08081a #08081a #3d3d52;
+}
+html[data-color-mode='dark'] button:disabled {
+  color: #505065;
+}
+
+/* Text inputs / textareas */
+html[data-color-mode='dark'] input:not([type='radio']):not([type='checkbox']):not([type='color']):not([type='range']):not([type='submit']):not([type='button']),
+html[data-color-mode='dark'] textarea,
+html[data-color-mode='dark'] select {
+  background: var(--c-input-bg);
+  color: var(--c-text);
+  border-color: #3d3d52;
+}
+
+/* Bevel containers */
+html[data-color-mode='dark'] .bevel-out {
+  border-color: #3d3d52 #08081a #08081a #3d3d52;
+  background: var(--c-panel);
+}
+html[data-color-mode='dark'] .bevel-in {
+  border-color: #08081a #3d3d52 #3d3d52 #08081a;
+  background: var(--c-input-bg);
+}
+
+/* Settings section panels */
+html[data-color-mode='dark'] .settings-section {
+  border-color: #2d2d42;
+  background: var(--c-input-bg);
+}
+
+/* Context menu popups */
+.ctx-menu {
+  background: #ffffff;
+  border: 1px solid #cccccc;
+  color: var(--c-text);
+}
+html[data-color-mode='dark'] .ctx-menu {
+  background: #252533 !important;
+  border-color: #3d3d52 !important;
+  color: #e0e0e0 !important;
+}
+
+/* Modals */
+html[data-color-mode='dark'] .modal {
+  background: #252533 !important;
+  color: #e0e0e0 !important;
+}
+html[data-color-mode='dark'] .modal-backdrop {
+  background: rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Aqua overrides: darken the panel but keep the blue titlebar */
+html[data-color-mode='dark'][data-window-theme='aqua'] {
+  --c-bg: #1a2332;
+  --c-panel: #1e2b3e;
+  --c-input-bg: #141d2b;
+  --c-bevel-light: #2d4060;
+  --c-bevel-darker: #0a1020;
+}
+
+/* Graphite overrides */
+html[data-color-mode='dark'][data-window-theme='graphite'] {
+  --c-bg: #202020;
+  --c-panel: #2c2c2c;
+  --c-input-bg: #181818;
+  --c-bevel-light: #424242;
+  --c-bevel-darker: #0a0a0a;
 }

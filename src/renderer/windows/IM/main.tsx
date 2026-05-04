@@ -13,6 +13,7 @@ import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 const DEFAULT_THEME: Theme = {
   chatTheme: 'classic',
   windowTheme: 'classic',
+  colorMode: 'light',
   myBubbleColor: '#d8f0ff',
   theirBubbleColor: '#eeeeee',
   showTimestamps: true,

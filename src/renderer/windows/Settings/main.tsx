@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
@@ -48,16 +48,18 @@ function App(): JSX.Element {
 
 function ThemesPane(): JSX.Element {
   const [t, setT] = useState<Theme | null>(null);
+  const didMount = useRef(false);
 
   useEffect(() => {
     void window.buzz.getPrefs().then((p) => setT(p.theme));
   }, []);
 
   useEffect(() => {
-    if (t) {
-      applyThemeAttributes(t);
-      void window.buzz.setPrefs({ theme: t }).catch(() => undefined);
-    }
+    if (!t) return;
+    applyThemeAttributes(t);
+    // Don't save on the initial load — only save when the user actually changes something.
+    if (!didMount.current) { didMount.current = true; return; }
+    void window.buzz.setPrefs({ theme: t }).catch(() => undefined);
   }, [t]);
 
   if (!t) return <div className="muted">Loading…</div>;
@@ -68,7 +70,17 @@ function ThemesPane(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div className="label">Window theme</div>
+      <div className="label">Color mode</div>
+      <div className="row" style={{ gap: 8 }}>
+        {(['light', 'dark'] as const).map((cm) => (
+          <label key={cm}>
+            <input type="radio" name="cm" checked={(t.colorMode ?? 'light') === cm} onChange={() => update('colorMode', cm)} />{' '}
+            {cm === 'light' ? '☀ Light' : '🌙 Dark'}
+          </label>
+        ))}
+      </div>
+
+      <div className="label" style={{ marginTop: 6 }}>Window theme</div>
       <div className="row" style={{ gap: 8 }}>
         {(['classic', 'aqua', 'graphite', 'aero', 'metal'] as const).map((wt) => (
           <label key={wt}>
@@ -118,11 +130,11 @@ function ThemesPane(): JSX.Element {
             <>
               <div className="bubble-row in">
                 <div className="bubble-avatar" />
-                <div className="bubble" style={{ background: t.theirBubbleColor }}>Hey there!</div>
+                <div className="bubble" style={{ background: t.colorMode === 'dark' ? '#2a2a3e' : t.theirBubbleColor }}>Hey there!</div>
               </div>
               <div className="bubble-row out">
                 <div className="bubble-avatar" />
-                <div className="bubble" style={{ background: t.myBubbleColor }}>Hi — long time no talk.</div>
+                <div className="bubble" style={{ background: t.colorMode === 'dark' ? '#1e3a5f' : t.myBubbleColor }}>Hi — long time no talk.</div>
               </div>
             </>
           ) : t.chatTheme === 'compact' ? (

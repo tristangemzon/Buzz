@@ -88,6 +88,12 @@ const api: AppApi = {
   roomVoiceSendAudio: async (req, data) => {
     ipcRenderer.send(IPC.RoomsVoiceSendAudio, req, data);
   },
+  // v0.6.0 moderation
+  roomsPin: (req) => ipcRenderer.invoke(IPC.RoomsPin, req),
+  roomsListPinned: (req) => ipcRenderer.invoke(IPC.RoomsListPinned, req),
+  roomsKick: (req) => ipcRenderer.invoke(IPC.RoomsKick, req),
+  roomsSetRole: (req) => ipcRenderer.invoke(IPC.RoomsSetRole, req),
+  roomsSetCategory: (req) => ipcRenderer.invoke(IPC.RoomsSetCategory, req),
 
   mailboxStats: () => ipcRenderer.invoke(IPC.MailboxStats),
   mailboxAddRelay: (req) => ipcRenderer.invoke(IPC.MailboxAddRelay, req),
@@ -116,6 +122,11 @@ const api: AppApi = {
   onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
   onRoomVoicePresence: (cb) => on(IPC.EvtRoomVoicePresence, cb),
   onRoomVoiceAudio: (cb) => on(IPC.EvtRoomVoiceAudio, cb),
+  // v0.6.0 moderation events
+  onRoomPin: (cb) => on(IPC.EvtRoomPin, cb),
+  onRoomKick: (cb) => on(IPC.EvtRoomKick, cb),
+  onRoomRole: (cb) => on(IPC.EvtRoomRole, cb),
+  onRoomCategory: (cb) => on(IPC.EvtRoomCategory, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
   onDiscovered: (cb) => on(IPC.EvtDiscovered, cb),
   onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),

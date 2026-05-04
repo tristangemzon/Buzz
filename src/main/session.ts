@@ -35,10 +35,14 @@ import type {
   DiscoveredPeer,
   PeerProfile,
   RoomChannel,
+  RoomCategoryEvent,
   RoomChannelEvent,
   RoomInvitedEvent,
+  RoomKickEvent,
   RoomMembersEvent,
   RoomMessage,
+  RoomPinEvent,
+  RoomRoleEvent,
   RoomVoicePresenceEvent,
   RoomVoiceAudioEvent,
   UnreadCounts,
@@ -449,6 +453,10 @@ export class Session {
         onRoomChannelDel: (peer, p) => this.rooms?.handleChannelDel(peer, p),
         onRoomVoiceState: (peer, p) => this.rooms?.handleVoiceState(peer, p),
         onRoomVoiceAudio: (peer, p) => this.rooms?.handleVoiceAudio(peer, p),
+        onRoomPin: (peer, p) => this.rooms?.handlePin(peer, p),
+        onRoomKick: (peer, p) => this.rooms?.handleKick(peer, p),
+        onRoomRole: (peer, p) => this.rooms?.handleRole(peer, p),
+        onRoomCategory: (peer, p) => this.rooms?.handleCategory(peer, p),
         onBuddyReq: (peer, p) => this.handleBuddyReq(peer, p),
         onBuddyResp: (peer, p) => this.handleBuddyResp(peer, p),
         onGameFrame: (peer, p) => this.handleGameFrame(peer, p),
@@ -679,8 +687,12 @@ export class Session {
             name: p.name,
             keyB64: p.keyB64,
             createdAt: p.ts,
+            ownerPeerId: p.ownerPeerId ?? '',
           });
           repos.setRoomMembers(this.db, p.roomId, p.members);
+          if (p.ownerPeerId) {
+            repos.setMemberRole(this.db, p.roomId, p.ownerPeerId, 'owner');
+          }
           try {
             this.roomKeys.set(p.roomId, s.from_base64(p.keyB64, s.base64_variants.ORIGINAL));
           } catch {
@@ -699,6 +711,7 @@ export class Session {
                 kind: ch.kind === 'voice' ? 'voice' : 'text',
                 isDefault: ch.isDefault,
                 createdAt: ch.createdAt,
+                category: '',
               });
             }
             // Clean up any pre-existing placeholder default that was created
@@ -731,6 +744,7 @@ export class Session {
               kind: 'text',
               isDefault: true,
               createdAt: p.ts,
+              category: '',
             };
             repos.upsertRoomChannel(this.db, ch);
           }
@@ -761,6 +775,8 @@ export class Session {
             direction: 'in',
             ts: m.ts,
             body: m.body,
+            replyToId: m.replyToId,
+            mentions: m.mentions,
           };
           repos.insertRoomMessage(this.db, stored);
           this.broadcast(IPC.EvtRoomMessage, stored);
@@ -778,6 +794,7 @@ export class Session {
                 name,
                 keyB64: cur.keyB64,
                 createdAt: cur.createdAt,
+                ownerPeerId: cur.ownerPeerId,
               });
             }
           }
@@ -804,6 +821,7 @@ export class Session {
             kind: existing?.kind ?? (p.kind === 'voice' ? 'voice' : 'text'),
             isDefault: existing?.isDefault ?? false,
             createdAt: existing?.createdAt ?? p.ts,
+            category: existing?.category ?? '',
           };
           repos.upsertRoomChannel(this.db, ch);
           this.broadcast(IPC.EvtRoomChannel, {
@@ -863,6 +881,29 @@ export class Session {
             };
             this.broadcast(IPC.EvtRoomVoiceAudio, ev);
           })();
+        },
+        onPin: (_fromPeerId, p) => {
+          if (!this.db) return;
+          repos.pinRoomMessage(this.db, p.msgId, p.isPinned);
+          this.broadcast(IPC.EvtRoomPin, { roomId: p.roomId, msgId: p.msgId, isPinned: p.isPinned } satisfies RoomPinEvent);
+        },
+        onKick: (_fromPeerId, p) => {
+          if (!this.db) return;
+          repos.kickRoomMember(this.db, p.roomId, p.peerId);
+          const members = repos.getRoomMembers(this.db, p.roomId);
+          this.roomMembers.set(p.roomId, members);
+          this.broadcast(IPC.EvtRoomKick, { roomId: p.roomId, peerId: p.peerId } satisfies RoomKickEvent);
+        },
+        onRole: (_fromPeerId, p) => {
+          if (!this.db) return;
+          const role = (p.role === 'owner' || p.role === 'mod' || p.role === 'member' ? p.role : 'member') as 'owner' | 'mod' | 'member';
+          repos.setMemberRole(this.db, p.roomId, p.peerId, role);
+          this.broadcast(IPC.EvtRoomRole, { roomId: p.roomId, peerId: p.peerId, role } satisfies RoomRoleEvent);
+        },
+        onCategory: (_fromPeerId, p) => {
+          if (!this.db) return;
+          repos.setChannelCategory(this.db, p.channelId, p.category);
+          this.broadcast(IPC.EvtRoomCategory, { roomId: p.roomId, channelId: p.channelId, category: p.category } satisfies RoomCategoryEvent);
         },
       },
       {
@@ -1017,8 +1058,12 @@ export class Session {
           name: invite.name,
           keyB64: invite.keyEnvelopeB64,
           createdAt: Date.now(),
+          ownerPeerId: invite.ownerPeerId ?? '',
         });
         repos.setRoomMembers(db, invite.id, invite.members);
+        if (invite.ownerPeerId) {
+          repos.setMemberRole(db, invite.id, invite.ownerPeerId, 'owner');
+        }
         for (const ch of invite.channels) {
           repos.upsertRoomChannel(db, {
             id: ch.id,
@@ -1027,6 +1072,7 @@ export class Session {
             kind: ch.kind ?? 'text',
             isDefault: ch.name === 'general',
             createdAt: Date.now(),
+            category: '',
           });
         }
         this.roomMembers.set(invite.id, [...invite.members]);
@@ -1037,7 +1083,7 @@ export class Session {
           members: invite.members,
         } satisfies RoomInvitedEvent);
       },
-      onRoomMsg: (roomId, channelId, fromPeerId, msgId, ts, cipherB64) => {
+      onRoomMsg: (roomId, channelId, fromPeerId, msgId, ts, cipherB64, opts) => {
         // Room messages are secretbox-encrypted; the body IS the ciphertext from our perspective.
         // For Hive server mode, store cipher and surface as-is — renderers decrypt using room key.
         const networkCfg = loadNetworkConfig();
@@ -1047,17 +1093,20 @@ export class Session {
             roomId,
             channelId,
             fromPeerId,
-            fromName: '',
+            fromName: opts?.fromName ?? '',
             direction: fromPeerId === (this.hiveClient?.getPeerId() ?? '') ? 'out' : 'in',
             ts,
             body: cipherB64,
+            replyToId: opts?.replyToId,
+            mentions: opts?.mentions,
           };
           repos.insertRoomMessage(db, stored);
           this.broadcast(IPC.EvtRoomMessage, stored);
         } else {
           this.broadcast(IPC.EvtRoomMessage, {
-            id: msgId, roomId, channelId, fromPeerId, fromName: '',
+            id: msgId, roomId, channelId, fromPeerId, fromName: opts?.fromName ?? '',
             direction: 'in', ts, body: cipherB64,
+            replyToId: opts?.replyToId, mentions: opts?.mentions,
           } satisfies RoomMessage);
         }
         this.broadcastUnread();
@@ -1111,6 +1160,45 @@ export class Session {
       },
       onRoomReaction: (roomId, from, msgId, emoji, added) => {
         this.broadcast(IPC.EvtReaction, { roomId, msgId, peerId: from, emoji, added });
+      },
+      onRoomPin: (roomId, _from, msgId, isPinned) => {
+        if (!this.db) return;
+        repos.pinRoomMessage(this.db, msgId, isPinned);
+        this.broadcast(IPC.EvtRoomPin, { roomId, msgId, isPinned } satisfies RoomPinEvent);
+      },
+      onRoomKick: (roomId, _from, peerId) => {
+        if (!this.db) return;
+        repos.kickRoomMember(this.db, roomId, peerId);
+        const members = repos.getRoomMembers(this.db, roomId);
+        this.cacheRoomMembers(roomId, members);
+        this.broadcast(IPC.EvtRoomKick, { roomId, peerId } satisfies RoomKickEvent);
+      },
+      onRoomRole: (roomId, _from, peerId, role) => {
+        if (!this.db) return;
+        const r = (role === 'owner' || role === 'mod' || role === 'member' ? role : 'member') as 'owner' | 'mod' | 'member';
+        repos.setMemberRole(this.db, roomId, peerId, r);
+        this.broadcast(IPC.EvtRoomRole, { roomId, peerId, role: r } satisfies RoomRoleEvent);
+      },
+      onRoomCategory: (roomId, channelId, category) => {
+        if (!this.db) return;
+        repos.setChannelCategory(this.db, channelId, category);
+        this.broadcast(IPC.EvtRoomCategory, { roomId, channelId, category } satisfies RoomCategoryEvent);
+      },
+      onRoomChannelAdd: (roomId, channelId, name, kind) => {
+        if (!this.db) return;
+        if (!repos.getRoom(this.db, roomId)) return;
+        const existing = repos.getRoomChannel(this.db, channelId);
+        const ch: RoomChannel = {
+          id: channelId,
+          roomId,
+          name,
+          kind: kind === 'voice' ? 'voice' : 'text',
+          isDefault: existing?.isDefault ?? false,
+          createdAt: existing?.createdAt ?? Date.now(),
+          category: existing?.category ?? '',
+        };
+        repos.upsertRoomChannel(this.db, ch);
+        this.broadcast(IPC.EvtRoomChannel, { kind: 'added', channel: ch } satisfies RoomChannelEvent);
       },
     };
 

@@ -91,6 +91,12 @@ export const IPC = {
   RoomsUnreact: 'rooms:unreact',
   RoomsEditMsg: 'rooms:editMsg',
   RoomsDeleteMsg: 'rooms:deleteMsg',
+  // v0.6.0 moderation
+  RoomsPin: 'rooms:pin',
+  RoomsListPinned: 'rooms:listPinned',
+  RoomsKick: 'rooms:kick',
+  RoomsSetRole: 'rooms:setRole',
+  RoomsSetCategory: 'rooms:setCategory',
 
   // unread counters
   UnreadGet: 'unread:get',
@@ -123,6 +129,11 @@ export const IPC = {
   EvtRoomChannel: 'evt:roomChannel',
   EvtRoomVoicePresence: 'evt:roomVoicePresence',
   EvtRoomVoiceAudio: 'evt:roomVoiceAudio',
+  // v0.6.0 moderation events
+  EvtRoomPin: 'evt:roomPin',
+  EvtRoomKick: 'evt:roomKick',
+  EvtRoomRole: 'evt:roomRole',
+  EvtRoomCategory: 'evt:roomCategory',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
   EvtDiscovered: 'evt:discovered',
   EvtBuddyRequest: 'evt:buddyRequest',

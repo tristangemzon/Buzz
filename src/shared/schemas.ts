@@ -164,6 +164,7 @@ export type WindowTheme = z.infer<typeof WindowTheme>;
 export const Theme = z.object({
   chatTheme: ChatTheme.default('classic'),
   windowTheme: WindowTheme.default('classic'),
+  colorMode: z.enum(['light', 'dark']).default('light'),
   myBubbleColor: z.string().max(32).default('#d8f0ff'),
   theirBubbleColor: z.string().max(32).default('#eeeeee'),
   showTimestamps: z.boolean().default(true),
@@ -201,6 +202,7 @@ export const Prefs = z.object({
   theme: Theme.default({
     chatTheme: 'classic',
     windowTheme: 'classic',
+    colorMode: 'light',
     myBubbleColor: '#d8f0ff',
     theirBubbleColor: '#eeeeee',
     showTimestamps: true,
@@ -372,6 +374,8 @@ export const Room = z.object({
   name: RoomName,
   members: z.array(PeerIdStr).min(1).max(64),
   createdAt: z.number().int().nonnegative(),
+  ownerPeerId: z.string().max(512).default(''),
+  mods: z.array(PeerIdStr).default([]),
 });
 export type Room = z.infer<typeof Room>;
 
@@ -389,6 +393,7 @@ export const RoomChannel = z.object({
   kind: ChannelKind.default('text'),
   isDefault: z.boolean().default(false),
   createdAt: z.number().int().nonnegative(),
+  category: z.string().max(64).default(''),
 });
 export type RoomChannel = z.infer<typeof RoomChannel>;
 
@@ -454,6 +459,11 @@ export const RoomMessage = z.object({
   body: z.string().max(64 * 1024),
   // 'in' if from another peer, 'out' if from us. Local convenience field.
   direction: z.enum(['in', 'out']),
+  replyToId: z.string().uuid().optional(),
+  mentions: z.array(PeerIdStr).optional(),
+  isPinned: z.boolean().optional(),
+  editedAt: z.number().int().nonnegative().optional(),
+  deletedAt: z.number().int().nonnegative().optional(),
 });
 export type RoomMessage = z.infer<typeof RoomMessage>;
 
@@ -476,6 +486,8 @@ export const RoomSendReq = z.object({
   roomId: RoomId,
   channelId: Uuid,
   body: z.string().min(1).max(64 * 1024),
+  replyToId: z.string().uuid().optional(),
+  mentions: z.array(PeerIdStr).optional(),
 });
 export type RoomSendReq = z.infer<typeof RoomSendReq>;
 
@@ -490,6 +502,68 @@ export type RoomHistoryReq = z.infer<typeof RoomHistoryReq>;
 // Events from main → renderer.
 export const RoomMessageEvent = RoomMessage;
 export type RoomMessageEvent = RoomMessage;
+
+// ── Room moderation (v0.6.0) ─────────────────────────────────────────────────
+
+export const RoomMember = z.object({
+  peerId: PeerIdStr,
+  role: z.enum(['owner', 'mod', 'member']),
+});
+export type RoomMember = z.infer<typeof RoomMember>;
+
+export const RoomPinReq = z.object({
+  roomId: RoomId,
+  msgId: Uuid,
+  isPinned: z.boolean(),
+});
+export type RoomPinReq = z.infer<typeof RoomPinReq>;
+
+export const RoomKickReq = z.object({
+  roomId: RoomId,
+  peerId: PeerIdStr,
+});
+export type RoomKickReq = z.infer<typeof RoomKickReq>;
+
+export const RoomSetRoleReq = z.object({
+  roomId: RoomId,
+  peerId: PeerIdStr,
+  role: z.enum(['mod', 'member']),
+});
+export type RoomSetRoleReq = z.infer<typeof RoomSetRoleReq>;
+
+export const RoomSetCategoryReq = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  category: z.string().max(64),
+});
+export type RoomSetCategoryReq = z.infer<typeof RoomSetCategoryReq>;
+
+export const RoomPinEvent = z.object({
+  roomId: RoomId,
+  msgId: Uuid,
+  isPinned: z.boolean(),
+});
+export type RoomPinEvent = z.infer<typeof RoomPinEvent>;
+
+export const RoomKickEvent = z.object({
+  roomId: RoomId,
+  peerId: PeerIdStr,
+});
+export type RoomKickEvent = z.infer<typeof RoomKickEvent>;
+
+export const RoomRoleEvent = z.object({
+  roomId: RoomId,
+  peerId: PeerIdStr,
+  role: z.enum(['owner', 'mod', 'member']),
+});
+export type RoomRoleEvent = z.infer<typeof RoomRoleEvent>;
+
+export const RoomCategoryEvent = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  category: z.string().max(64),
+});
+export type RoomCategoryEvent = z.infer<typeof RoomCategoryEvent>;
 
 export const RoomInvitedEvent = z.object({
   roomId: RoomId,

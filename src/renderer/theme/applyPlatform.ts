@@ -28,6 +28,11 @@ export async function applyPlatformTheme(api: AppApi): Promise<void> {
     // Pre-unlock: no prefs yet, leave platform default.
     document.documentElement.removeAttribute('data-skin');
   }
+
+  // Register a persistent live-update listener for this window so that every
+  // window type (buddy list, IM, game, etc.) reacts to theme changes made in
+  // Settings — even if the component doesn't subscribe separately.
+  api.onThemeChanged((theme) => applyThemeAttributes(theme));
 }
 
 // Pushes theme attributes onto <html>. Called once at startup and again
@@ -36,7 +41,16 @@ export function applyThemeAttributes(theme: Theme): void {
   const html = document.documentElement;
   html.setAttribute('data-window-theme', theme.windowTheme);
   html.setAttribute('data-chat-theme', theme.chatTheme);
-  html.style.setProperty('--my-bubble', theme.myBubbleColor || '#d8f0ff');
-  html.style.setProperty('--their-bubble', theme.theirBubbleColor || '#eeeeee');
+  const colorMode = theme.colorMode || 'light';
+  html.setAttribute('data-color-mode', colorMode);
+  if (colorMode === 'dark') {
+    // In dark mode use dark-appropriate bubble colors so light saved colors
+    // don't override the CSS-variable dark defaults via inline style.
+    html.style.setProperty('--my-bubble', '#1e3a5f');
+    html.style.setProperty('--their-bubble', '#2a2a3e');
+  } else {
+    html.style.setProperty('--my-bubble', theme.myBubbleColor || '#d8f0ff');
+    html.style.setProperty('--their-bubble', theme.theirBubbleColor || '#eeeeee');
+  }
 }
 

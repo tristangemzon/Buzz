@@ -39,6 +39,9 @@ export function openDb(file: string, key: Uint8Array): Db {
   // Migration: add v0.5.0 columns and tables (reactions, edit/delete support).
   migrateV050(db);
 
+  // Migration: add v0.6.0 columns (replies, @mentions, pinning, roles, categories).
+  migrateV060(db);
+
   return db;
 }
 
@@ -178,4 +181,34 @@ function migrateV050(db: Db): void {
     );
     CREATE INDEX IF NOT EXISTS idx_reactions_msg ON reactions(msg_id);
   `);
+}
+
+function migrateV060(db: Db): void {
+  // Idempotently add v0.6.0 columns to existing databases.
+
+  // rooms: add owner_peer_id
+  const roomCols = (db.prepare('PRAGMA table_info(rooms)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!roomCols.includes('owner_peer_id')) {
+    db.exec("ALTER TABLE rooms ADD COLUMN owner_peer_id TEXT NOT NULL DEFAULT ''");
+  }
+
+  // room_members: add role
+  const memberCols = (db.prepare('PRAGMA table_info(room_members)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!memberCols.includes('role')) {
+    db.exec("ALTER TABLE room_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'");
+  }
+
+  // room_messages: add reply_to_id, mentions, is_pinned, edited_at, deleted_at
+  const rmCols = (db.prepare('PRAGMA table_info(room_messages)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!rmCols.includes('reply_to_id'))  db.exec('ALTER TABLE room_messages ADD COLUMN reply_to_id TEXT');
+  if (!rmCols.includes('mentions'))     db.exec('ALTER TABLE room_messages ADD COLUMN mentions TEXT');
+  if (!rmCols.includes('is_pinned'))    db.exec('ALTER TABLE room_messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0');
+  if (!rmCols.includes('edited_at'))    db.exec('ALTER TABLE room_messages ADD COLUMN edited_at INTEGER');
+  if (!rmCols.includes('deleted_at'))   db.exec('ALTER TABLE room_messages ADD COLUMN deleted_at INTEGER');
+
+  // room_channels: add category
+  const chanCols = (db.prepare('PRAGMA table_info(room_channels)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!chanCols.includes('category')) {
+    db.exec("ALTER TABLE room_channels ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  }
 }

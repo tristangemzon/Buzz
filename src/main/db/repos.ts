@@ -3,6 +3,9 @@ import type { Buddy, ImMessage, PeerProfile, Prefs, Room, RoomChannel, RoomMessa
 import { Prefs as PrefsSchema } from '@shared/schemas.js';
 
 export type Reaction = { msgId: string; peerId: string; emoji: string; ts: number };
+export type RoomMemberRow = { peerId: string; role: 'owner' | 'mod' | 'member' };
+
+type RoomRow = { id: string; name: string; keyB64: string; createdAt: number; ownerPeerId: string };
 
 // ── identity ─────────────────────────────────────────────────────────────────
 
@@ -245,13 +248,51 @@ export function updateTransferStatus(
 }
 
 // ── chat rooms ───────────────────────────────────────────────────────────────
+type RoomMessageRow = {
+  id: string;
+  roomId: string;
+  channelId: string;
+  fromPeerId: string;
+  fromName: string;
+  direction: 'in' | 'out';
+  ts: number;
+  body: string;
+  replyToId: string | null;
+  mentions: string | null;
+  isPinned: number;
+  editedAt: number | null;
+  deletedAt: number | null;
+};
 
-export type RoomRow = { id: string; name: string; keyB64: string; createdAt: number };
+function rowToMessage(r: RoomMessageRow): RoomMessage {
+  return {
+    id: r.id,
+    roomId: r.roomId,
+    channelId: r.channelId,
+    fromPeerId: r.fromPeerId,
+    fromName: r.fromName,
+    direction: r.direction,
+    ts: r.ts,
+    body: r.body,
+    isPinned: !!r.isPinned,
+    mentions: r.mentions ? (JSON.parse(r.mentions) as string[]) : undefined,
+    replyToId: r.replyToId ?? undefined,
+    editedAt: r.editedAt ?? undefined,
+    deletedAt: r.deletedAt ?? undefined,
+  };
+}
+
+function getMods(db: Db, roomId: string): string[] {
+  const rows = db
+    .prepare("SELECT peer_id FROM room_members WHERE room_id=? AND role='mod' ORDER BY peer_id")
+    .all(roomId) as Array<{ peer_id: string }>;
+  return rows.map((r) => r.peer_id);
+}
 
 export function listRooms(db: Db): Array<Room & { keyB64: string }> {
   const rows = db
     .prepare(
-      `SELECT id, name, key_b64 as keyB64, created_at as createdAt FROM rooms ORDER BY created_at DESC`,
+      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId FROM rooms ORDER BY created_at DESC`,
     )
     .all() as RoomRow[];
   return rows.map((r) => ({
@@ -259,6 +300,8 @@ export function listRooms(db: Db): Array<Room & { keyB64: string }> {
     name: r.name,
     keyB64: r.keyB64,
     createdAt: r.createdAt,
+    ownerPeerId: r.ownerPeerId ?? '',
+    mods: getMods(db, r.id),
     members: getRoomMembers(db, r.id),
   }));
 }
@@ -266,18 +309,26 @@ export function listRooms(db: Db): Array<Room & { keyB64: string }> {
 export function getRoom(db: Db, id: string): (Room & { keyB64: string }) | null {
   const r = db
     .prepare(
-      `SELECT id, name, key_b64 as keyB64, created_at as createdAt FROM rooms WHERE id=?`,
+      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId FROM rooms WHERE id=?`,
     )
     .get(id) as RoomRow | undefined;
   if (!r) return null;
-  return { id: r.id, name: r.name, keyB64: r.keyB64, createdAt: r.createdAt, members: getRoomMembers(db, r.id) };
+  return {
+    id: r.id,
+    name: r.name,
+    keyB64: r.keyB64,
+    createdAt: r.createdAt,
+    ownerPeerId: r.ownerPeerId ?? '',
+    mods: getMods(db, r.id),
+    members: getRoomMembers(db, r.id),
+  };
 }
 
-export function upsertRoom(db: Db, r: { id: string; name: string; keyB64: string; createdAt: number }): void {
+export function upsertRoom(db: Db, r: { id: string; name: string; keyB64: string; createdAt: number; ownerPeerId?: string }): void {
   db.prepare(
-    `INSERT INTO rooms(id, name, key_b64, created_at) VALUES (?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
-  ).run(r.id, r.name, r.keyB64, r.createdAt);
+    `INSERT INTO rooms(id, name, key_b64, created_at, owner_peer_id) VALUES (?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_peer_id=CASE WHEN excluded.owner_peer_id != '' THEN excluded.owner_peer_id ELSE owner_peer_id END`,
+  ).run(r.id, r.name, r.keyB64, r.createdAt, r.ownerPeerId ?? '');
 }
 
 export function deleteRoom(db: Db, id: string): void {
@@ -294,17 +345,38 @@ export function getRoomMembers(db: Db, roomId: string): string[] {
   return rows.map((r) => r.peerId);
 }
 
+export function getRoomMembersWithRoles(db: Db, roomId: string): RoomMemberRow[] {
+  const rows = db
+    .prepare("SELECT peer_id as peerId, COALESCE(role,'member') as role FROM room_members WHERE room_id=? ORDER BY peer_id")
+    .all(roomId) as Array<{ peerId: string; role: string }>;
+  return rows.map((r) => ({
+    peerId: r.peerId,
+    role: (r.role === 'owner' || r.role === 'mod' ? r.role : 'member') as RoomMemberRow['role'],
+  }));
+}
+
 export function setRoomMembers(db: Db, roomId: string, members: string[]): void {
   const tx = db.transaction((ms: string[]) => {
+    // Preserve existing roles — only delete members not in the new list.
+    const existing = getRoomMembersWithRoles(db, roomId);
+    const existingMap = new Map(existing.map((m) => [m.peerId, m.role]));
     db.prepare('DELETE FROM room_members WHERE room_id=?').run(roomId);
-    const ins = db.prepare('INSERT OR IGNORE INTO room_members(room_id, peer_id) VALUES (?,?)');
-    for (const m of ms) ins.run(roomId, m);
+    const ins = db.prepare("INSERT OR IGNORE INTO room_members(room_id, peer_id, role) VALUES (?,?,?)");
+    for (const m of ms) ins.run(roomId, m, existingMap.get(m) ?? 'member');
   });
   tx(members);
 }
 
-export function addRoomMember(db: Db, roomId: string, peerId: string): void {
-  db.prepare('INSERT OR IGNORE INTO room_members(room_id, peer_id) VALUES (?,?)').run(roomId, peerId);
+export function addRoomMember(db: Db, roomId: string, peerId: string, role: RoomMemberRow['role'] = 'member'): void {
+  db.prepare("INSERT OR IGNORE INTO room_members(room_id, peer_id, role) VALUES (?,?,?)").run(roomId, peerId, role);
+}
+
+export function setMemberRole(db: Db, roomId: string, peerId: string, role: RoomMemberRow['role']): void {
+  db.prepare('UPDATE room_members SET role=? WHERE room_id=? AND peer_id=?').run(role, roomId, peerId);
+}
+
+export function kickRoomMember(db: Db, roomId: string, peerId: string): void {
+  db.prepare('DELETE FROM room_members WHERE room_id=? AND peer_id=?').run(roomId, peerId);
 }
 
 export function removeRoomMember(db: Db, roomId: string, peerId: string): void {
@@ -313,9 +385,16 @@ export function removeRoomMember(db: Db, roomId: string, peerId: string): void {
 
 export function insertRoomMessage(db: Db, m: RoomMessage): void {
   db.prepare(
-    `INSERT OR REPLACE INTO room_messages(id, room_id, channel_id, from_peer_id, from_name, direction, ts, body)
-     VALUES (?,?,?,?,?,?,?,?)`,
-  ).run(m.id, m.roomId, m.channelId, m.fromPeerId, m.fromName, m.direction, m.ts, m.body);
+    `INSERT OR REPLACE INTO room_messages(id, room_id, channel_id, from_peer_id, from_name, direction, ts, body, reply_to_id, mentions, is_pinned, edited_at, deleted_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    m.id, m.roomId, m.channelId, m.fromPeerId, m.fromName, m.direction, m.ts, m.body,
+    m.replyToId ?? null,
+    m.mentions ? JSON.stringify(m.mentions) : null,
+    m.isPinned ? 1 : 0,
+    m.editedAt ?? null,
+    m.deletedAt ?? null,
+  );
 }
 
 export function roomHistory(
@@ -339,11 +418,36 @@ export function roomHistory(
   const rows = db
     .prepare(
       `SELECT id, room_id as roomId, channel_id as channelId, from_peer_id as fromPeerId,
-              from_name as fromName, direction, ts, body
+              from_name as fromName, direction, ts, body,
+              reply_to_id as replyToId, mentions, is_pinned as isPinned,
+              edited_at as editedAt, deleted_at as deletedAt
          FROM room_messages WHERE ${where} ORDER BY ts DESC LIMIT ?`,
     )
-    .all(...params) as RoomMessage[];
-  return rows.reverse();
+    .all(...params) as RoomMessageRow[];
+  return rows.reverse().map(rowToMessage);
+}
+
+export function pinRoomMessage(db: Db, msgId: string, isPinned: boolean): void {
+  db.prepare('UPDATE room_messages SET is_pinned=? WHERE id=?').run(isPinned ? 1 : 0, msgId);
+}
+
+export function listPinnedRoomMessages(db: Db, roomId: string, channelId?: string): RoomMessage[] {
+  const params: unknown[] = [roomId];
+  let where = 'room_id=? AND is_pinned=1';
+  if (channelId) {
+    where += ' AND channel_id=?';
+    params.push(channelId);
+  }
+  const rows = db
+    .prepare(
+      `SELECT id, room_id as roomId, channel_id as channelId, from_peer_id as fromPeerId,
+              from_name as fromName, direction, ts, body,
+              reply_to_id as replyToId, mentions, is_pinned as isPinned,
+              edited_at as editedAt, deleted_at as deletedAt
+         FROM room_messages WHERE ${where} ORDER BY ts ASC`,
+    )
+    .all(...params) as RoomMessageRow[];
+  return rows.map(rowToMessage);
 }
 
 // ── channels (Discord-style sub-threads within a room) ─────────────────────
@@ -351,7 +455,7 @@ export function roomHistory(
 export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
   const rows = db
     .prepare(
-      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind, COALESCE(category,'') as category
          FROM room_channels WHERE room_id=? ORDER BY is_default DESC, created_at ASC`,
     )
     .all(roomId) as Array<{
@@ -361,6 +465,7 @@ export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
       isDefault: number;
       createdAt: number;
       kind: string;
+      category: string;
     }>;
   return rows.map((r) => ({
     id: r.id,
@@ -369,17 +474,18 @@ export function listRoomChannels(db: Db, roomId: string): RoomChannel[] {
     kind: (r.kind === 'voice' ? 'voice' : 'text') as 'text' | 'voice',
     isDefault: r.isDefault === 1,
     createdAt: r.createdAt,
+    category: r.category ?? '',
   }));
 }
 
 export function getRoomChannel(db: Db, channelId: string): RoomChannel | null {
   const r = db
     .prepare(
-      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind
+      `SELECT id, room_id as roomId, name, is_default as isDefault, created_at as createdAt, kind, COALESCE(category,'') as category
          FROM room_channels WHERE id=?`,
     )
     .get(channelId) as
-    | { id: string; roomId: string; name: string; isDefault: number; createdAt: number; kind: string }
+    | { id: string; roomId: string; name: string; isDefault: number; createdAt: number; kind: string; category: string }
     | undefined;
   if (!r) return null;
   return {
@@ -389,6 +495,7 @@ export function getRoomChannel(db: Db, channelId: string): RoomChannel | null {
     kind: (r.kind === 'voice' ? 'voice' : 'text') as 'text' | 'voice',
     isDefault: r.isDefault === 1,
     createdAt: r.createdAt,
+    category: r.category ?? '',
   };
 }
 
@@ -403,10 +510,14 @@ export function getDefaultChannelId(db: Db, roomId: string): string | null {
 
 export function upsertRoomChannel(db: Db, c: RoomChannel): void {
   db.prepare(
-    `INSERT INTO room_channels(id, room_id, name, is_default, created_at, kind)
-     VALUES (?,?,?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind`,
-  ).run(c.id, c.roomId, c.name, c.isDefault ? 1 : 0, c.createdAt, c.kind ?? 'text');
+    `INSERT INTO room_channels(id, room_id, name, is_default, created_at, kind, category)
+     VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, category=excluded.category`,
+  ).run(c.id, c.roomId, c.name, c.isDefault ? 1 : 0, c.createdAt, c.kind ?? 'text', c.category ?? '');
+}
+
+export function setChannelCategory(db: Db, channelId: string, category: string): void {
+  db.prepare('UPDATE room_channels SET category=? WHERE id=?').run(category, channelId);
 }
 
 export function deleteRoomChannel(db: Db, channelId: string): void {

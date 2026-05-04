@@ -38,11 +38,19 @@ import type {
   RoomHistoryReq,
   RoomInvitedEvent,
   RoomInviteReq,
+  RoomKickReq,
   RoomLeaveReq,
   RoomMembersEvent,
   RoomMessage,
   RoomMessageEvent,
+  RoomPinReq,
+  RoomPinEvent,
+  RoomKickEvent,
+  RoomRoleEvent,
+  RoomCategoryEvent,
   RoomSendReq,
+  RoomSetRoleReq,
+  RoomSetCategoryReq,
   MailboxAddRelayReq,
   MailboxDeliveredEvent,
   MailboxRemoveRelayReq,
@@ -207,6 +215,12 @@ export type AppApi = {
   listRoomChannels(req: RoomChannelsListReq): Promise<RoomChannel[]>;
   createRoomChannel(req: RoomChannelCreateReq): Promise<RoomChannel>;
   deleteRoomChannel(req: RoomChannelDeleteReq): Promise<{ ok: true }>;
+  // v0.6.0 moderation
+  roomsPin(req: RoomPinReq): Promise<{ ok: true }>;
+  roomsListPinned(req: { roomId: string; channelId?: string }): Promise<RoomMessage[]>;
+  roomsKick(req: RoomKickReq): Promise<{ ok: true }>;
+  roomsSetRole(req: RoomSetRoleReq): Promise<{ ok: true }>;
+  roomsSetCategory(req: RoomSetCategoryReq): Promise<{ ok: true }>;
 
   roomVoiceJoin(req: RoomVoiceJoinReq): Promise<{ ok: true }>;
   roomVoiceLeave(req: RoomVoiceLeaveReq): Promise<{ ok: true }>;
@@ -243,6 +257,11 @@ export type AppApi = {
   onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
   onRoomVoicePresence(cb: (e: RoomVoicePresenceEvent) => void): () => void;
   onRoomVoiceAudio(cb: (e: RoomVoiceAudioEvent) => void): () => void;
+  // v0.6.0 moderation events
+  onRoomPin(cb: (e: RoomPinEvent) => void): () => void;
+  onRoomKick(cb: (e: RoomKickEvent) => void): () => void;
+  onRoomRole(cb: (e: RoomRoleEvent) => void): () => void;
+  onRoomCategory(cb: (e: RoomCategoryEvent) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
   onDiscovered(cb: (e: DiscoveredEvent) => void): () => void;
   onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;

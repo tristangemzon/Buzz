@@ -49,6 +49,7 @@ export type Frame =
       members: string[];
       keyB64: string; // 32-byte secretbox key, base64
       ts: number;
+      ownerPeerId?: string;
       // Channel list at the time of invite, so the invitee creates the same
       // channel ids the inviter is using (avoids divergent default-channel
       // UUIDs that would otherwise produce ghost "channel" placeholders).
@@ -63,6 +64,8 @@ export type Frame =
       ctB64: string; // secretbox ciphertext
       nonceB64: string; // 24-byte nonce
       fromName?: string;
+      replyToId?: string;
+      mentions?: string[];
     }
   | { type: 'room-leave'; roomId: string }
   | { type: 'room-meta'; roomId: string; name?: string; members?: string[] }
@@ -75,6 +78,11 @@ export type Frame =
       kind?: 'text' | 'voice';
     }
   | { type: 'room-channel-del'; roomId: string; channelId: string }
+  // v0.6.0 moderation frames — broadcast plaintext over Noise-encrypted IM.
+  | { type: 'room-pin'; roomId: string; msgId: string; isPinned: boolean; ts: number }
+  | { type: 'room-kick'; roomId: string; peerId: string; ts: number }
+  | { type: 'room-role'; roomId: string; peerId: string; role: string; ts: number }
+  | { type: 'room-category'; roomId: string; channelId: string; category: string; ts: number }
   // Voice channels: presence beacons + opus/webm audio chunks fanned out to
   // every room member. Audio is *additionally* secret-boxed with the room key
   // (analogous to room-msg) so non-members never see plaintext.
@@ -107,6 +115,7 @@ export type RoomInvitePayload = {
   members: string[];
   keyB64: string;
   ts: number;
+  ownerPeerId?: string;
   channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>;
 };
 export type RoomMsgPayload = {
@@ -117,6 +126,8 @@ export type RoomMsgPayload = {
   ctB64: string;
   nonceB64: string;
   fromName?: string;
+  replyToId?: string;
+  mentions?: string[];
 };
 export type RoomMetaPayload = { roomId: string; name?: string; members?: string[] };
 export type RoomChannelAddPayload = {
@@ -142,6 +153,10 @@ export type RoomVoiceAudioPayload = {
   fromName?: string;
   ts: number;
 };
+export type RoomPinPayload = { roomId: string; msgId: string; isPinned: boolean; ts: number };
+export type RoomKickPayload = { roomId: string; peerId: string; ts: number };
+export type RoomRolePayload = { roomId: string; peerId: string; role: string; ts: number };
+export type RoomCategoryPayload = { roomId: string; channelId: string; category: string; ts: number };
 
 export type ImEvents = {
   onMessage(peerId: string, msg: { id: string; ts: number; body: string }): void;
@@ -156,6 +171,11 @@ export type ImEvents = {
   onRoomChannelDel?(peerId: string, p: RoomChannelDelPayload): void;
   onRoomVoiceState?(peerId: string, p: RoomVoiceStatePayload): void;
   onRoomVoiceAudio?(peerId: string, p: RoomVoiceAudioPayload): void;
+  // v0.6.0 moderation
+  onRoomPin?(peerId: string, p: RoomPinPayload): void;
+  onRoomKick?(peerId: string, p: RoomKickPayload): void;
+  onRoomRole?(peerId: string, p: RoomRolePayload): void;
+  onRoomCategory?(peerId: string, p: RoomCategoryPayload): void;
   onBuddyReq?(peerId: string, p: { screenName: string; ts: number }): void;
   onBuddyResp?(peerId: string, p: { accepted: boolean; screenName?: string }): void;
   onGameFrame?(peerId: string, p: { action: string; kind: string; path?: number[] }): void;
@@ -371,6 +391,7 @@ export class ImService {
             members: f.members,
             keyB64: f.keyB64,
             ts: f.ts,
+            ownerPeerId: typeof f.ownerPeerId === 'string' ? f.ownerPeerId : undefined,
             channels: Array.isArray(f.channels) ? f.channels : undefined,
           });
         }
@@ -392,6 +413,8 @@ export class ImService {
             ctB64: f.ctB64,
             nonceB64: f.nonceB64,
             fromName: f.fromName,
+            replyToId: typeof f.replyToId === 'string' ? f.replyToId : undefined,
+            mentions: Array.isArray(f.mentions) ? (f.mentions as string[]) : undefined,
           });
         }
         break;
@@ -475,6 +498,55 @@ export class ImService {
         if (this.events.onBuddyReq && typeof f.screenName === 'string') {
           this.events.onBuddyReq(peerIdStr, {
             screenName: f.screenName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-pin':
+        if (this.events.onRoomPin && typeof f.roomId === 'string' && typeof f.msgId === 'string') {
+          this.events.onRoomPin(peerIdStr, {
+            roomId: f.roomId,
+            msgId: f.msgId,
+            isPinned: !!f.isPinned,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-kick':
+        if (this.events.onRoomKick && typeof f.roomId === 'string' && typeof f.peerId === 'string') {
+          this.events.onRoomKick(peerIdStr, {
+            roomId: f.roomId,
+            peerId: f.peerId,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-role':
+        if (
+          this.events.onRoomRole &&
+          typeof f.roomId === 'string' &&
+          typeof f.peerId === 'string' &&
+          typeof f.role === 'string'
+        ) {
+          this.events.onRoomRole(peerIdStr, {
+            roomId: f.roomId,
+            peerId: f.peerId,
+            role: f.role,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-category':
+        if (
+          this.events.onRoomCategory &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.category === 'string'
+        ) {
+          this.events.onRoomCategory(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            category: f.category,
             ts: typeof f.ts === 'number' ? f.ts : Date.now(),
           });
         }

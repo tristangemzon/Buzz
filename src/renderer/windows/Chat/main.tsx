@@ -11,6 +11,7 @@ import { GamePicker } from '../../components/GamePicker';
 const DEFAULT_THEME: Theme = {
   chatTheme: 'classic',
   windowTheme: 'classic',
+  colorMode: 'light',
   myBubbleColor: '#d8f0ff',
   theirBubbleColor: '#eeeeee',
   showTimestamps: true,
@@ -44,6 +45,15 @@ function App(): JSX.Element {
   const [showGamePicker, setShowGamePicker] = useState(false);
   const [showMemberPicker, setShowMemberPicker] = useState(false);
   const [gameKindPending, setGameKindPending] = useState<string | null>(null);
+  // v0.6.0 moderation state
+  const [replyingTo, setReplyingTo] = useState<RoomMessage | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ id: string; x: number; y: number; flipX: boolean; flipY: boolean; msgMine: boolean } | null>(null);
+  const [showPins, setShowPins] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<RoomMessage[]>([]);
+  const [memberRoles, setMemberRoles] = useState<Record<string, 'owner' | 'mod' | 'member'>>({});
+  const [memberCtxMenu, setMemberCtxMenu] = useState<{ peerId: string; x: number; y: number; flipX: boolean; flipY: boolean } | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState<{ channelId: string } | null>(null);
+  const [categoryInput, setCategoryInput] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEditorHandle>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
@@ -90,7 +100,17 @@ function App(): JSX.Element {
       })
       .catch(() => undefined);
     void window.buzz.listBuddies().then(setBuddies);
-    void refreshRoom();
+    void refreshRoom().then(async () => {
+      // Build member role map: check room owner + mods from room state.
+      const rooms = await window.buzz.listRooms();
+      const r = rooms.find((x) => x.id === roomId);
+      if (r) {
+        const roleMap: Record<string, 'owner' | 'mod' | 'member'> = {};
+        if (r.ownerPeerId) roleMap[r.ownerPeerId] = 'owner';
+        for (const mod of r.mods ?? []) roleMap[mod] = 'mod';
+        setMemberRoles(roleMap);
+      }
+    });
     void refreshChannels().then((list) => {
       const def = list.find((c) => c.isDefault) ?? list[0];
       if (def) setActiveChannelId(def.id);
@@ -144,12 +164,46 @@ function App(): JSX.Element {
       applyThemeAttributes(t);
     });
 
+    // v0.6.0 moderation events
+    const offPin = window.buzz.onRoomPin((e) => {
+      if (e.roomId !== roomId) return;
+      setMessages((prev) => prev.map((m) => (m.id === e.msgId ? { ...m, isPinned: e.isPinned } : m)));
+      setPinnedMessages((prev) =>
+        e.isPinned
+          ? prev.some((m) => m.id === e.msgId)
+            ? prev
+            : prev // will refresh on next open
+          : prev.filter((m) => m.id !== e.msgId),
+      );
+    });
+    const offKick = window.buzz.onRoomKick((e) => {
+      if (e.roomId !== roomId) return;
+      if (me && e.peerId === me.peerId) {
+        alert('You were removed from this room.');
+        window.close();
+        return;
+      }
+      void refreshRoom();
+    });
+    const offRole = window.buzz.onRoomRole((e) => {
+      if (e.roomId !== roomId) return;
+      setMemberRoles((prev) => ({ ...prev, [e.peerId]: e.role as 'owner' | 'mod' | 'member' }));
+    });
+    const offCategory = window.buzz.onRoomCategory((e) => {
+      if (e.roomId !== roomId) return;
+      setChannels((prev) => prev.map((c) => (c.id === e.channelId ? { ...c, category: e.category } : c)));
+    });
+
     return () => {
       offMsg();
       offMembers();
       offInvited();
       offChannel();
       offTheme();
+      offPin();
+      offKick();
+      offRole();
+      offCategory();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,10 +235,13 @@ function App(): JSX.Element {
         roomId,
         channelId: activeChannelId,
         body,
+        replyToId: replyingTo?.id,
+        mentions: replyingTo?.fromPeerId ? [replyingTo.fromPeerId] : undefined,
       });
       setMessages((prev) => [...prev, stored]);
       editorRef.current?.clear();
       setDraft('');
+      setReplyingTo(null);
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -221,6 +278,10 @@ function App(): JSX.Element {
   const balloons = theme.chatTheme === 'balloons';
   const compact = theme.chatTheme === 'compact';
   const activeChannel = channels.find((c) => c.id === activeChannelId) ?? null;
+  // v0.6.0 derived
+  const isOwner = !!me && room?.ownerPeerId === me.peerId;
+  const isMod = !!me && memberRoles[me.peerId] === 'mod';
+  const isPrivileged = isOwner || isMod;
 
   async function createChannel(): Promise<void> {
     const name = newChannelName.trim();
@@ -239,6 +300,57 @@ function App(): JSX.Element {
       setErr(String((e as Error).message ?? e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function pinMsg(msgId: string, isPinned: boolean): Promise<void> {
+    try {
+      await window.buzz.roomsPin({ roomId, msgId, isPinned });
+      setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, isPinned } : m)));
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+    }
+  }
+
+  async function kickMember(peerId: string): Promise<void> {
+    if (!confirm(`Remove ${nameFor(peerId)} from the room?`)) return;
+    try {
+      await window.buzz.roomsKick({ roomId, peerId });
+      void refreshRoom();
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+    }
+  }
+
+  async function setRole(peerId: string, role: 'mod' | 'member'): Promise<void> {
+    try {
+      await window.buzz.roomsSetRole({ roomId, peerId, role });
+      setMemberRoles((prev) => ({ ...prev, [peerId]: role }));
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+    }
+  }
+
+  async function openPins(): Promise<void> {
+    try {
+      const pins = await window.buzz.roomsListPinned({ roomId, channelId: activeChannelId || undefined });
+      setPinnedMessages(pins);
+      setShowPins(true);
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+    }
+  }
+
+  async function saveCategory(): Promise<void> {
+    if (!showCategoryModal) return;
+    const category = categoryInput.trim();
+    try {
+      await window.buzz.roomsSetCategory({ roomId, channelId: showCategoryModal.channelId, category });
+      setChannels((prev) => prev.map((c) => (c.id === showCategoryModal!.channelId ? { ...c, category } : c)));
+      setShowCategoryModal(null);
+      setCategoryInput('');
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
     }
   }
 
@@ -262,8 +374,24 @@ function App(): JSX.Element {
     }
   }
 
+  // Group channels by category for sidebar rendering.
+  const channelGroups = useMemo(() => {
+    const groups = new Map<string, RoomChannel[]>();
+    for (const c of channels) {
+      const cat = c.category || '';
+      const arr = groups.get(cat) ?? [];
+      arr.push(c);
+      groups.set(cat, arr);
+    }
+    return groups;
+  }, [channels]);
+
   return (
-    <div className="im-window" data-window-theme={theme.windowTheme}>
+    <div
+      className="im-window"
+      data-window-theme={theme.windowTheme}
+      onClick={() => { setCtxMenu(null); setMemberCtxMenu(null); }}
+    >
       <WindowChrome
         title={
           room?.name
@@ -287,19 +415,29 @@ function App(): JSX.Element {
             </button>
           </div>
           <div className="chat-channels-list">
-            {channels.map((c) => (
-              <div
-                key={c.id}
-                className={`chat-channel-row${c.id === activeChannelId ? ' active' : ''}`}
-                onClick={() => setActiveChannelId(c.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  if (!c.isDefault) void deleteChannel(c.id);
-                }}
-                title={c.isDefault ? 'Default channel' : 'Right-click to delete'}
-              >
-                <span className="chat-channel-hash">{c.kind === 'voice' ? '🔊' : '#'}</span>
-                {c.name}
+            {Array.from(channelGroups.entries()).map(([cat, chans]) => (
+              <div key={cat}>
+                {cat && <div style={{ fontSize: 10, opacity: 0.5, padding: '4px 8px 2px', textTransform: 'uppercase', letterSpacing: 1 }}>{cat}</div>}
+                {chans.map((c) => (
+                  <div
+                    key={c.id}
+                    className={`chat-channel-row${c.id === activeChannelId ? ' active' : ''}`}
+                    onClick={() => setActiveChannelId(c.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      if (isPrivileged) {
+                        setShowCategoryModal({ channelId: c.id });
+                        setCategoryInput(c.category ?? '');
+                      } else if (!c.isDefault) {
+                        void deleteChannel(c.id);
+                      }
+                    }}
+                    title={c.isDefault ? 'Default channel' : isPrivileged ? 'Right-click to set category' : 'Right-click to delete'}
+                  >
+                    <span className="chat-channel-hash">{c.kind === 'voice' ? '🔊' : '#'}</span>
+                    {c.name}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -311,6 +449,7 @@ function App(): JSX.Element {
               + Invite
             </button>
             <button onClick={leave}>Leave</button>
+            <button onClick={() => void openPins()} title="Pinned messages">★ Pins</button>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 11, opacity: 0.7 }}>
               {members.length} {members.length === 1 ? 'member' : 'members'}
@@ -318,11 +457,23 @@ function App(): JSX.Element {
           </div>
 
           <div className="im-members" style={{ padding: '0 8px 4px', fontSize: 11, opacity: 0.8 }}>
-            {members.map((m) => (
-              <span key={m} style={{ marginRight: 8 }}>
-                • {nameFor(m)}
-              </span>
-            ))}
+            {members.map((m) => {
+              const role = m === room?.ownerPeerId ? 'owner' : (memberRoles[m] ?? 'member');
+              const badge = role === 'owner' ? ' 👑' : role === 'mod' ? ' ★' : '';
+              return (
+                <span
+                  key={m}
+                  style={{ marginRight: 8, cursor: isPrivileged && m !== me?.peerId ? 'context-menu' : 'default' }}
+                  onContextMenu={(e) => {
+                    if (!isPrivileged || m === me?.peerId) return;
+                    e.preventDefault();
+                    setMemberCtxMenu({ peerId: m, x: e.clientX, y: e.clientY, flipX: e.clientX + 170 > window.innerWidth, flipY: e.clientY + 80 > window.innerHeight });
+                  }}
+                >
+                  • {nameFor(m)}{badge}
+                </span>
+              );
+            })}
           </div>
 
           {activeChannel?.kind === 'voice' ? (
@@ -342,7 +493,11 @@ function App(): JSX.Element {
           >
             {messages.map((m) => {
               const mine = me && m.fromPeerId === me.peerId;
-              const bg = mine ? theme.myBubbleColor : theme.theirBubbleColor;
+              const isDark = theme.colorMode === 'dark';
+              const bg = mine
+                ? (isDark ? '#1e3a5f' : theme.myBubbleColor)
+                : (isDark ? '#2a2a3e' : theme.theirBubbleColor);
+              const replied = m.replyToId ? messages.find((x) => x.id === m.replyToId) : null;
               return (
                 <div
                   key={m.id}
@@ -353,11 +508,26 @@ function App(): JSX.Element {
                     alignItems: mine ? 'flex-end' : 'flex-start',
                     marginBottom: compact ? 2 : 6,
                   }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setCtxMenu({ id: m.id, x: e.clientX, y: e.clientY, flipX: e.clientX + 150 > window.innerWidth, flipY: e.clientY + 80 > window.innerHeight, msgMine: !!mine });
+                  }}
                 >
                   {!compact && (
                     <div style={{ fontSize: 10, opacity: 0.7 }}>
                       <strong>{m.fromName || nameFor(m.fromPeerId)}</strong>
                       {theme.showTimestamps && <span> · {fmtTime(m.ts)}</span>}
+                      {m.isPinned && <span style={{ marginLeft: 4 }}>★</span>}
+                    </div>
+                  )}
+                  {replied && (
+                    <div style={{ fontSize: 10, opacity: 0.6, padding: '2px 6px', borderLeft: '2px solid #888', marginBottom: 2, maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      ↳ {replied.fromName || nameFor(replied.fromPeerId)}: {replied.body.slice(0, 80)}
+                    </div>
+                  )}
+                  {m.replyToId && !replied && (
+                    <div style={{ fontSize: 10, opacity: 0.5, padding: '2px 6px', borderLeft: '2px solid #ccc', marginBottom: 2 }}>
+                      ↳ [message not loaded]
                     </div>
                   )}
                   <div
@@ -380,6 +550,15 @@ function App(): JSX.Element {
           </div>
 
           {err && <div style={{ color: '#a00', padding: '4px 8px', fontSize: 11 }}>{err}</div>}
+
+          {replyingTo && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderTop: '1px solid #ddd', fontSize: 11, background: 'rgba(0,0,0,0.04)' }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                ↳ Replying to <strong>{replyingTo.fromName || nameFor(replyingTo.fromPeerId)}</strong>: {replyingTo.body.slice(0, 80)}
+              </span>
+              <button style={{ padding: '1px 5px', fontSize: 11 }} onClick={() => setReplyingTo(null)}>×</button>
+            </div>
+          )}
 
           <div className="im-composer" style={{ display: 'flex', flexDirection: 'column', padding: '8px 8px 0' }}>
             <RichEditor
@@ -538,6 +717,158 @@ function App(): JSX.Element {
           }}
           onClose={() => setShowGamePicker(false)}
         />
+      )}
+
+      {/* Message context menu */}
+      {ctxMenu && (
+        <div
+          className="ctx-menu"
+          style={{
+            position: 'fixed',
+            top: ctxMenu.flipY ? 'auto' : ctxMenu.y,
+            bottom: ctxMenu.flipY ? window.innerHeight - ctxMenu.y : 'auto',
+            left: ctxMenu.flipX ? 'auto' : ctxMenu.x,
+            right: ctxMenu.flipX ? window.innerWidth - ctxMenu.x : 'auto',
+            borderRadius: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            zIndex: 1000,
+            minWidth: 140,
+            fontSize: 12,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            onClick={() => {
+              const msg = messages.find((m) => m.id === ctxMenu.id);
+              if (msg) setReplyingTo(msg);
+              setCtxMenu(null);
+              editorRef.current?.focus?.();
+            }}
+          >
+            ↩ Reply
+          </div>
+          {isPrivileged && (
+            <div
+              style={{ padding: '6px 12px', cursor: 'pointer' }}
+              onClick={() => {
+                const msg = messages.find((m) => m.id === ctxMenu.id);
+                void pinMsg(ctxMenu.id, !msg?.isPinned);
+                setCtxMenu(null);
+              }}
+            >
+              {messages.find((m) => m.id === ctxMenu.id)?.isPinned ? '★ Unpin' : '☆ Pin'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Member context menu */}
+      {memberCtxMenu && (
+        <div
+          className="ctx-menu"
+          style={{
+            position: 'fixed',
+            top: memberCtxMenu.flipY ? 'auto' : memberCtxMenu.y,
+            bottom: memberCtxMenu.flipY ? window.innerHeight - memberCtxMenu.y : 'auto',
+            left: memberCtxMenu.flipX ? 'auto' : memberCtxMenu.x,
+            right: memberCtxMenu.flipX ? window.innerWidth - memberCtxMenu.x : 'auto',
+            borderRadius: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            zIndex: 1000,
+            minWidth: 160,
+            fontSize: 12,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {isOwner && (
+            <>
+              <div
+                style={{ padding: '6px 12px', cursor: 'pointer' }}
+                onClick={() => {
+                  const cur = memberRoles[memberCtxMenu.peerId] ?? 'member';
+                  void setRole(memberCtxMenu.peerId, cur === 'mod' ? 'member' : 'mod');
+                  setMemberCtxMenu(null);
+                }}
+              >
+                {(memberRoles[memberCtxMenu.peerId] ?? 'member') === 'mod' ? '★ Remove Mod' : '★ Make Mod'}
+              </div>
+            </>
+          )}
+          <div
+            style={{ padding: '6px 12px', cursor: 'pointer', color: '#c00' }}
+            onClick={() => {
+              void kickMember(memberCtxMenu.peerId);
+              setMemberCtxMenu(null);
+            }}
+          >
+            ✕ Kick
+          </div>
+        </div>
+      )}
+
+      {/* Pins modal */}
+      {showPins && (
+        <div
+          className="modal-backdrop"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowPins(false)}
+        >
+          <div
+            className="modal"
+            style={{ background: '#fff', padding: 12, minWidth: 300, maxWidth: 480, maxHeight: 400, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 8 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0 }}>★ Pinned Messages</h3>
+            {pinnedMessages.length === 0 ? (
+              <p style={{ fontSize: 12, opacity: 0.7 }}>No pinned messages.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, overflowY: 'auto', flex: 1 }}>
+                {pinnedMessages.map((m) => (
+                  <li key={m.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee', fontSize: 12 }}>
+                    <strong>{m.fromName || nameFor(m.fromPeerId)}</strong>
+                    <span style={{ opacity: 0.6, marginLeft: 6 }}>{fmtTime(m.ts)}</span>
+                    <div style={{ marginTop: 2 }}>{m.body.slice(0, 200)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div style={{ textAlign: 'right' }}>
+              <button onClick={() => setShowPins(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Category modal */}
+      {showCategoryModal && (
+        <div
+          className="modal-backdrop"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => { setShowCategoryModal(null); setCategoryInput(''); }}
+        >
+          <div
+            className="modal"
+            style={{ background: '#fff', padding: 12, minWidth: 260, borderRadius: 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px' }}>Set Channel Category</h3>
+            <input
+              type="text"
+              autoFocus
+              value={categoryInput}
+              onChange={(e) => setCategoryInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void saveCategory(); }}
+              placeholder="Category name (blank to remove)"
+              style={{ width: '100%' }}
+              maxLength={64}
+            />
+            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+              <button onClick={() => { setShowCategoryModal(null); setCategoryInput(''); }}>Cancel</button>
+              <button onClick={() => void saveCategory()}>Save</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showMemberPicker && gameKindPending && room && (

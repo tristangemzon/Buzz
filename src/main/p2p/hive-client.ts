@@ -51,8 +51,8 @@ type SrvIm = { type: 'im'; from: string; msgId: string; ts: number; cipherB64: s
 type SrvBuddyRequest = { type: 'buddyRequest'; from: string; screenName: string };
 type SrvBuddyResponse = { type: 'buddyResponse'; peerId: string; accepted: boolean; screenName: string; pubKeys?: Record<string, string> };
 type SrvBuddyList = { type: 'buddyList'; buddies: BuddyEntry[]; pubKeys: Record<string, string> };
-type SrvRoomInvite = { type: 'roomInvite'; roomId: string; name: string; from: string; keyEnvelopeB64: string; channels: ChannelEntry[]; members: string[] };
-type SrvRoomMsg = { type: 'roomMsg'; roomId: string; channelId: string; from: string; msgId: string; ts: number; cipherB64: string };
+type SrvRoomInvite = { type: 'roomInvite'; roomId: string; name: string; from: string; keyEnvelopeB64: string; channels: ChannelEntry[]; members: string[]; ownerPeerId?: string };
+type SrvRoomMsg = { type: 'roomMsg'; roomId: string; channelId: string; from: string; msgId: string; ts: number; cipherB64: string; fromName?: string; replyToId?: string; mentions?: string[] };
 type SrvRoomMemberJoin = { type: 'roomMemberJoin'; roomId: string; peerId: string; screenName: string };
 type SrvRoomMemberLeave = { type: 'roomMemberLeave'; roomId: string; peerId: string };
 type SrvTalkSignal = { type: 'talkSignal'; from: string; callId: string; signal: string; payload: unknown };
@@ -62,7 +62,12 @@ type SrvReaction = { type: 'reaction'; from: string; msgId: string; emoji: strin
 type SrvRoomReaction = { type: 'roomReaction'; roomId: string; from: string; msgId: string; emoji: string; added: boolean };
 type SrvTyping = { type: 'typing'; from: string; typing: boolean };
 type SrvReadReceipt = { type: 'readReceipt'; from: string; msgId: string };
-type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError | SrvReaction | SrvRoomReaction | SrvTyping | SrvReadReceipt;
+type SrvRoomPin = { type: 'roomPin'; roomId: string; from: string; msgId: string; isPinned: boolean };
+type SrvRoomKick = { type: 'roomKick'; roomId: string; from: string; peerId: string };
+type SrvRoomRole = { type: 'roomRole'; roomId: string; from: string; peerId: string; role: string };
+type SrvRoomCategory = { type: 'roomCategory'; roomId: string; channelId: string; category: string };
+type SrvRoomChannelAdd = { type: 'roomChannelAdd'; roomId: string; channelId: string; name: string; kind: 'text' | 'voice' };
+type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError | SrvReaction | SrvRoomReaction | SrvTyping | SrvReadReceipt | SrvRoomPin | SrvRoomKick | SrvRoomRole | SrvRoomCategory | SrvRoomChannelAdd;
 
 // Subset of client→server messages that the client sends.
 type CliAuth = { type: 'auth'; peerId: string; screenName: string; pubKeyB64: string; sigB64: string };
@@ -75,7 +80,7 @@ type CliBuddyApprove = { type: 'buddyApprove'; targetPeerId: string };
 type CliBuddyDeny = { type: 'buddyDeny'; targetPeerId: string };
 type CliRoomCreate = { type: 'roomCreate'; roomId: string; name: string; keyEnvelopes: Array<{ peerId: string; cipherB64: string }>; memberPeerIds: string[] };
 type CliRoomInvite = { type: 'roomInvite'; roomId: string; targetPeerId: string; keyEnvelopeB64: string };
-type CliRoomMsg = { type: 'roomMsg'; roomId: string; channelId: string; msgId: string; ts: number; cipherB64: string };
+type CliRoomMsg = { type: 'roomMsg'; roomId: string; channelId: string; msgId: string; ts: number; cipherB64: string; fromName?: string; replyToId?: string; mentions?: string[] };
 type CliRoomChannelAdd = { type: 'roomChannelAdd'; roomId: string; channelId: string; name: string; kind: 'text' | 'voice' };
 type CliGetHistory = { type: 'getHistory'; peerId: string; before?: number; limit?: number };
 type CliGetRoomHistory = { type: 'getRoomHistory'; roomId: string; channelId: string; before?: number; limit?: number };
@@ -87,7 +92,11 @@ type CliRoomReaction = { type: 'roomReaction'; roomId: string; msgId: string; em
 type CliRoomUnreaction = { type: 'roomUnreaction'; roomId: string; msgId: string; emoji: string };
 type CliTyping = { type: 'typing'; to: string; typing: boolean };
 type CliReadReceipt = { type: 'readReceipt'; to: string; msgId: string };
-type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal | CliReaction | CliUnreaction | CliRoomReaction | CliRoomUnreaction | CliTyping | CliReadReceipt;
+type CliRoomPin = { type: 'roomPin'; roomId: string; msgId: string; isPinned: boolean };
+type CliRoomKick = { type: 'roomKick'; roomId: string; peerId: string };
+type CliRoomRole = { type: 'roomRole'; roomId: string; peerId: string; role: string };
+type CliRoomCategory = { type: 'roomCategory'; roomId: string; channelId: string; category: string };
+type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal | CliReaction | CliUnreaction | CliRoomReaction | CliRoomUnreaction | CliTyping | CliReadReceipt | CliRoomPin | CliRoomKick | CliRoomRole | CliRoomCategory;
 
 // Sodium import — same pattern as keystore.ts uses.
 import sodiumPkg from 'libsodium-wrappers-sumo';
@@ -108,8 +117,8 @@ export type HiveCallbacks = {
   onBuddyList: (buddies: BuddyEntry[], pubKeys: Record<string, string>) => void;
   onBuddyRequest: (peerId: string, screenName: string) => void;
   onBuddyResponse: (peerId: string, accepted: boolean, screenName: string) => void;
-  onRoomInvite: (invite: RoomEntry & { keyEnvelopeB64: string; from: string }) => void;
-  onRoomMsg: (roomId: string, channelId: string, from: string, msgId: string, ts: number, cipherB64: string) => void;
+  onRoomInvite: (invite: RoomEntry & { keyEnvelopeB64: string; from: string; ownerPeerId?: string }) => void;
+  onRoomMsg: (roomId: string, channelId: string, from: string, msgId: string, ts: number, cipherB64: string, opts?: { fromName?: string; replyToId?: string; mentions?: string[] }) => void;
   onRoomMemberJoin: (roomId: string, peerId: string, screenName: string) => void;
   onRoomMemberLeave: (roomId: string, peerId: string) => void;
   onTalkSignal: (from: string, callId: string, signal: string, payload: unknown) => void;
@@ -127,6 +136,12 @@ export type HiveCallbacks = {
   onTyping?: (from: string, typing: boolean) => void;
   // Read receipts
   onReadReceipt?: (from: string, msgId: string) => void;
+  // v0.6.0 room moderation
+  onRoomPin?: (roomId: string, from: string, msgId: string, isPinned: boolean) => void;
+  onRoomKick?: (roomId: string, from: string, peerId: string) => void;
+  onRoomRole?: (roomId: string, from: string, peerId: string, role: string) => void;
+  onRoomCategory?: (roomId: string, channelId: string, category: string) => void;
+  onRoomChannelAdd?: (roomId: string, channelId: string, name: string, kind: 'text' | 'voice') => void;
 };
 
 export class HiveClient {
@@ -304,10 +319,16 @@ export class HiveClient {
           channels: msg.channels,
           keyEnvelopeB64: msg.keyEnvelopeB64,
           from: msg.from,
+          ownerPeerId: msg.ownerPeerId,
         });
         break;
       case 'roomMsg':
-        this.callbacks.onRoomMsg(msg.roomId, msg.channelId, msg.from, msg.msgId, msg.ts, msg.cipherB64);
+        this.callbacks.onRoomMsg(
+          msg.roomId, msg.channelId, msg.from, msg.msgId, msg.ts, msg.cipherB64,
+          (msg.fromName !== undefined || msg.replyToId !== undefined || msg.mentions !== undefined)
+            ? { fromName: msg.fromName, replyToId: msg.replyToId, mentions: msg.mentions }
+            : undefined,
+        );
         break;
       case 'roomMemberJoin':
         this.callbacks.onRoomMemberJoin(msg.roomId, msg.peerId, msg.screenName);
@@ -334,6 +355,21 @@ export class HiveClient {
         break;
       case 'readReceipt':
         this.callbacks.onReadReceipt?.(msg.from, msg.msgId);
+        break;
+      case 'roomPin':
+        this.callbacks.onRoomPin?.(msg.roomId, msg.from, msg.msgId, msg.isPinned);
+        break;
+      case 'roomKick':
+        this.callbacks.onRoomKick?.(msg.roomId, msg.from, msg.peerId);
+        break;
+      case 'roomRole':
+        this.callbacks.onRoomRole?.(msg.roomId, msg.from, msg.peerId, msg.role);
+        break;
+      case 'roomCategory':
+        this.callbacks.onRoomCategory?.(msg.roomId, msg.channelId, msg.category);
+        break;
+      case 'roomChannelAdd':
+        this.callbacks.onRoomChannelAdd?.(msg.roomId, msg.channelId, msg.name, msg.kind);
         break;
       case 'error':
         this.callbacks.onError(new Error(`[hive] ${msg.code}: ${msg.message}`));
@@ -500,8 +536,8 @@ export class HiveClient {
     this._send({ type: 'roomInvite', roomId, targetPeerId, keyEnvelopeB64 });
   }
 
-  sendRoomMsg(roomId: string, channelId: string, msgId: string, ts: number, cipherB64: string): void {
-    this._send({ type: 'roomMsg', roomId, channelId, msgId, ts, cipherB64 });
+  sendRoomMsg(roomId: string, channelId: string, msgId: string, ts: number, cipherB64: string, opts?: { fromName?: string; replyToId?: string; mentions?: string[] }): void {
+    this._send({ type: 'roomMsg', roomId, channelId, msgId, ts, cipherB64, ...opts });
   }
 
   addRoomChannel(roomId: string, channelId: string, name: string, kind: 'text' | 'voice'): void {
@@ -573,5 +609,21 @@ export class HiveClient {
 
   sendRoomUnreaction(roomId: string, msgId: string, emoji: string): void {
     this._send({ type: 'roomUnreaction', roomId, msgId, emoji });
+  }
+
+  sendRoomPin(roomId: string, msgId: string, isPinned: boolean): void {
+    this._send({ type: 'roomPin', roomId, msgId, isPinned });
+  }
+
+  sendRoomKick(roomId: string, peerId: string): void {
+    this._send({ type: 'roomKick', roomId, peerId });
+  }
+
+  sendRoomRole(roomId: string, peerId: string, role: string): void {
+    this._send({ type: 'roomRole', roomId, peerId, role });
+  }
+
+  sendRoomCategory(roomId: string, channelId: string, category: string): void {
+    this._send({ type: 'roomCategory', roomId, channelId, category });
   }
 }

@@ -67,15 +67,17 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS idx_transfers_peer_ts ON transfers(peer_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS rooms (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  key_b64     TEXT NOT NULL,
-  created_at  INTEGER NOT NULL
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  key_b64        TEXT NOT NULL,
+  created_at     INTEGER NOT NULL,
+  owner_peer_id  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS room_members (
   room_id  TEXT NOT NULL,
   peer_id  TEXT NOT NULL,
+  role     TEXT NOT NULL DEFAULT 'member',
   PRIMARY KEY (room_id, peer_id)
 );
 CREATE INDEX IF NOT EXISTS idx_room_members_room ON room_members(room_id);
@@ -88,7 +90,12 @@ CREATE TABLE IF NOT EXISTS room_messages (
   direction     TEXT NOT NULL CHECK (direction IN ('in','out')),
   ts            INTEGER NOT NULL,
   body          TEXT NOT NULL,
-  channel_id    TEXT NOT NULL DEFAULT ''
+  channel_id    TEXT NOT NULL DEFAULT '',
+  reply_to_id   TEXT,
+  mentions      TEXT,
+  is_pinned     INTEGER NOT NULL DEFAULT 0,
+  edited_at     INTEGER,
+  deleted_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_room_messages_room_ts ON room_messages(room_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_room_messages_channel_ts ON room_messages(channel_id, ts DESC);
@@ -99,7 +106,8 @@ CREATE TABLE IF NOT EXISTS room_channels (
   name        TEXT NOT NULL,
   is_default  INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL,
-  kind        TEXT NOT NULL DEFAULT 'text'
+  kind        TEXT NOT NULL DEFAULT 'text',
+  category    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_room_channels_room ON room_channels(room_id);
 

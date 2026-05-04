@@ -21,11 +21,15 @@ import { randomUUID } from 'node:crypto';
 import { sodium } from '../crypto/keystore.js';
 import type {
   ImService,
+  RoomCategoryPayload,
   RoomChannelAddPayload,
   RoomChannelDelPayload,
   RoomInvitePayload,
+  RoomKickPayload,
   RoomMsgPayload,
   RoomMetaPayload,
+  RoomPinPayload,
+  RoomRolePayload,
   RoomVoiceStatePayload,
   RoomVoiceAudioPayload,
 } from './im.js';
@@ -34,7 +38,7 @@ export type RoomServiceEvents = {
   onInvite(fromPeerId: string, p: RoomInvitePayload): void;
   onMessage(
     fromPeerId: string,
-    msg: { roomId: string; channelId: string; id: string; ts: number; body: string; fromName: string },
+    msg: { roomId: string; channelId: string; id: string; ts: number; body: string; fromName: string; replyToId?: string; mentions?: string[] },
   ): void;
   onMembers(roomId: string, members: string[], name?: string): void;
   onLeave(fromPeerId: string, roomId: string): void;
@@ -42,6 +46,11 @@ export type RoomServiceEvents = {
   onChannelDel(fromPeerId: string, p: RoomChannelDelPayload): void;
   onVoiceState(fromPeerId: string, p: RoomVoiceStatePayload): void;
   onVoiceAudio(fromPeerId: string, p: RoomVoiceAudioPayload): void;
+  // v0.6.0 moderation
+  onPin(fromPeerId: string, p: RoomPinPayload): void;
+  onKick(fromPeerId: string, p: RoomKickPayload): void;
+  onRole(fromPeerId: string, p: RoomRolePayload): void;
+  onCategory(fromPeerId: string, p: RoomCategoryPayload): void;
 };
 
 export type RoomBridge = {
@@ -90,6 +99,18 @@ export class RoomService {
   readonly handleVoiceAudio = (fromPeerId: string, p: RoomVoiceAudioPayload): void => {
     this.events.onVoiceAudio(fromPeerId, p);
   };
+  readonly handlePin = (fromPeerId: string, p: RoomPinPayload): void => {
+    this.events.onPin(fromPeerId, p);
+  };
+  readonly handleKick = (fromPeerId: string, p: RoomKickPayload): void => {
+    this.events.onKick(fromPeerId, p);
+  };
+  readonly handleRole = (fromPeerId: string, p: RoomRolePayload): void => {
+    this.events.onRole(fromPeerId, p);
+  };
+  readonly handleCategory = (fromPeerId: string, p: RoomCategoryPayload): void => {
+    this.events.onCategory(fromPeerId, p);
+  };
 
   private async decryptAndDispatch(fromPeerId: string, p: RoomMsgPayload): Promise<void> {
     const key = this.bridge.getRoomKey(p.roomId);
@@ -107,6 +128,8 @@ export class RoomService {
         ts: p.ts,
         body,
         fromName: p.fromName ?? '',
+        replyToId: p.replyToId,
+        mentions: p.mentions,
       });
     } catch {
       // Auth failure or stale key — drop.
@@ -122,6 +145,7 @@ export class RoomService {
   async createRoom(opts: {
     name: string;
     members: string[];
+    ownerPeerId?: string;
     channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>;
   }): Promise<{ roomId: string; keyB64: string; createdAt: number; members: string[] }> {
     const s = await sodium();
@@ -143,6 +167,7 @@ export class RoomService {
               members: fullMembers,
               keyB64,
               ts: createdAt,
+              ownerPeerId: opts.ownerPeerId ?? me,
               channels: opts.channels,
             })
             .catch(() => undefined),
@@ -156,6 +181,7 @@ export class RoomService {
     peerId: string,
     name: string,
     channels?: Array<{ id: string; name: string; isDefault: boolean; createdAt: number; kind?: 'text' | 'voice' }>,
+    ownerPeerId?: string,
   ): Promise<string[]> {
     const key = this.bridge.getRoomKey(roomId);
     if (!key) throw new Error('Unknown or non-member room');
@@ -170,6 +196,7 @@ export class RoomService {
         members,
         keyB64,
         ts: Date.now(),
+        ownerPeerId,
         channels,
       })
       .catch(() => undefined);
@@ -177,7 +204,12 @@ export class RoomService {
     return members;
   }
 
-  async sendMessage(roomId: string, channelId: string, body: string): Promise<{ id: string; ts: number }> {
+  async sendMessage(
+    roomId: string,
+    channelId: string,
+    body: string,
+    opts?: { replyToId?: string; mentions?: string[] },
+  ): Promise<{ id: string; ts: number }> {
     const key = this.bridge.getRoomKey(roomId);
     if (!key) throw new Error('Unknown room');
     const s = await sodium();
@@ -195,6 +227,8 @@ export class RoomService {
       ctB64: s.to_base64(ct, s.base64_variants.ORIGINAL),
       nonceB64: s.to_base64(nonce, s.base64_variants.ORIGINAL),
       fromName: this.bridge.myScreenName(),
+      replyToId: opts?.replyToId,
+      mentions: opts?.mentions,
     };
     const me = this.bridge.myPeerId();
     const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
@@ -300,6 +334,50 @@ export class RoomService {
     await Promise.all(
       targets.map((peer) =>
         this.im.send(peer, { type: 'room-meta', ...meta }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastPin(roomId: string, msgId: string, isPinned: boolean): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-pin', roomId, msgId, isPinned, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastKick(roomId: string, peerId: string): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-kick', roomId, peerId, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastRole(roomId: string, peerId: string, role: string): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-role', roomId, peerId, role, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastCategory(roomId: string, channelId: string, category: string): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-category', roomId, channelId, category, ts }).catch(() => undefined),
       ),
     );
   }
