@@ -150,6 +150,7 @@ export type AppApi = {
   sendIm(req: SendImReq): Promise<ImMessage>;
   history(req: HistoryReq): Promise<ImMessage[]>;
   markImRead(peerId: string): Promise<void>;
+  imSendTyping(req: { toPeerId: string; typing: boolean }): Promise<void>;
   imEdit(req: ImEditReq): Promise<{ ok: true; editedAt: number; peerId?: string }>;
   imDelete(req: ImDeleteReq): Promise<{ ok: true; deletedAt: number }>;
   imReact(req: ImReactReq): Promise<{ ok: true }>;

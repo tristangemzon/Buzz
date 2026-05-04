@@ -37,6 +37,7 @@ const api: AppApi = {
   sendIm: (req) => ipcRenderer.invoke(IPC.ImSend, req),
   history: (req) => ipcRenderer.invoke(IPC.ImHistory, req),
   markImRead: (peerId) => ipcRenderer.invoke(IPC.ImMarkRead, peerId),
+  imSendTyping: (req) => ipcRenderer.invoke(IPC.ImSendTyping, req),
   imEdit: (req) => ipcRenderer.invoke(IPC.ImEdit, req),
   imDelete: (req) => ipcRenderer.invoke(IPC.ImDelete, req),
   imReact: (req) => ipcRenderer.invoke(IPC.ImReact, req),

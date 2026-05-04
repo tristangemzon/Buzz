@@ -31,6 +31,7 @@ export const IPC = {
 
   // im
   ImSend: 'im:send',
+  ImSendTyping: 'im:sendTyping',
   ImHistory: 'im:history',
   ImMarkRead: 'im:markRead',
   ImEdit: 'im:edit',

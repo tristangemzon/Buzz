@@ -52,6 +52,8 @@ function App(): JSX.Element {
   const [xfers, setXfers] = useState<XferCard[]>([]);
   const [draft, setDraft] = useState('');
   const editorRef = useRef<RichEditorHandle>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSendingTypingRef = useRef(false);
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [awayMessage, setAwayMessage] = useState<string | undefined>(undefined);
@@ -322,6 +324,12 @@ function App(): JSX.Element {
     }
     const body = (editorRef.current?.getMarkup() ?? '').trim();
     if (!body) return;
+    // Stop typing indicator immediately on send.
+    if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); typingTimerRef.current = null; }
+    if (isSendingTypingRef.current) {
+      isSendingTypingRef.current = false;
+      void window.buzz.imSendTyping({ toPeerId: peerId, typing: false });
+    }
     setBusy(true);
     try {
       const m = await window.buzz.sendIm({ toPeerId: peerId, body });
@@ -611,7 +619,18 @@ function App(): JSX.Element {
             ref={editorRef}
             placeholder={blocked ? 'Unblock this user to send messages.' : 'Type a message and hit Enter…'}
             disabled={busy || blocked}
-            onMarkupChange={setDraft}
+            onMarkupChange={(markup) => {
+              setDraft(markup);
+              if (markup.trim() && !isSendingTypingRef.current) {
+                isSendingTypingRef.current = true;
+                void window.buzz.imSendTyping({ toPeerId: peerId, typing: true });
+              }
+              if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+              typingTimerRef.current = setTimeout(() => {
+                isSendingTypingRef.current = false;
+                void window.buzz.imSendTyping({ toPeerId: peerId, typing: false });
+              }, 4000);
+            }}
             onEnter={() => void send()}
             style={{ width: '100%', minHeight: 100 }}
           />

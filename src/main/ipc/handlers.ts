@@ -202,6 +202,14 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.UnreadGet, null, () => session.unreadSnapshot());
 
+  handle(IPC.ImSendTyping, z.object({ toPeerId: PeerIdStr, typing: z.boolean() }), ({ toPeerId, typing }) => {
+    if (session.im) {
+      void session.im.send(toPeerId, { type: 'typing', typing }).catch(() => undefined);
+    } else if (session.hiveClient) {
+      session.hiveClient.sendTyping(toPeerId, typing);
+    }
+  });
+
   handle(IPC.ImEdit, ImEditReq, ({ id, body }) => {
     const db = requireDb(session);
     repos.editMessage(db, id, body);
