@@ -57,6 +57,8 @@ function App(): JSX.Element {
   const isSendingTypingRef = useRef(false);
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const peerTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [awayMessage, setAwayMessage] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -272,6 +274,14 @@ function App(): JSX.Element {
       setTheme(theme);
       applyThemeAttributes(theme);
     });
+    const offTyping = window.buzz.onTyping((e) => {
+      if (e.peerId !== peerId) return;
+      if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
+      setPeerTyping(e.typing);
+      if (e.typing) {
+        peerTypingTimerRef.current = setTimeout(() => setPeerTyping(false), 6000);
+      }
+    });
     return () => {
       offRecv();
       offAck();
@@ -285,6 +295,8 @@ function App(): JSX.Element {
       offImDeleted();
       offReaction();
       offTheme();
+      offTyping();
+      if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [peerId]);
@@ -612,8 +624,10 @@ function App(): JSX.Element {
       </div>
 
       <div className="im-compose-col">
-        {statusNotice && (
-          <div className="im-status-banner">{statusNotice}</div>
+        {(peerTyping || statusNotice) && (
+          <div className="im-status-banner">
+            {peerTyping ? `${alias} is typing…` : statusNotice}
+          </div>
         )}
         <div className="bevel-in im-compose-wrap">
           <RichEditor

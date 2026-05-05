@@ -1141,7 +1141,7 @@ export class Session {
         this.handleGameFrame(from, { action, kind, path });
       },
       onTyping: (from, typing) => {
-        this.broadcast(IPC.EvtTyping, { from, typing });
+        this.broadcast(IPC.EvtTyping, { peerId: from, typing });
       },
       onReadReceipt: (from, msgId) => {
         this.broadcast(IPC.EvtReadReceipt, { from, msgId });

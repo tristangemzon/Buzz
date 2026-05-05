@@ -18,8 +18,6 @@ export const ProfileSummary = z.object({
   screenName: z.string().min(1).max(64),
   createdAt: z.number().int().nonnegative(),
   mesh: z.boolean().default(false),
-  /** Set for profiles tied to a Hive server account (the wss:// URL). */
-  serverUrl: z.string().max(512).optional(),
 });
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
@@ -67,14 +65,13 @@ export function getProfile(id: string): ProfileSummary | null {
   return readIndex().profiles.find((p) => p.id === id) ?? null;
 }
 
-export function addProfile(screenName: string, mesh = false, serverUrl?: string): ProfileSummary {
+export function addProfile(screenName: string, mesh = false): ProfileSummary {
   const idx = readIndex();
   const profile: ProfileSummary = {
     id: randomUUID(),
     screenName,
     createdAt: Date.now(),
     mesh,
-    serverUrl,
   };
   idx.profiles.push(profile);
   writeIndex(idx);
@@ -100,17 +97,6 @@ export function removeProfile(id: string): void {
   } catch {
     /* ignore */
   }
-}
-
-/**
- * Find an existing profile for the given server URL + screen name combination.
- * Returns null if not found (e.g. first login from this device).
- */
-export function findServerProfile(serverUrl: string, screenName: string): ProfileSummary | null {
-  const idx = readIndex();
-  return idx.profiles.find(
-    (p) => p.serverUrl === serverUrl && p.screenName === screenName,
-  ) ?? null;
 }
 
 // Wipe all local Buzz state: every profile (keystores + encrypted DBs), the
