@@ -20,6 +20,7 @@ import type {
   SelectableStatus,
   SelfPresence,
   UnreadCounts,
+  ConnectionHealth,
 } from '@shared/schemas';
 
 function App(): JSX.Element {
@@ -63,6 +64,7 @@ function App(): JSX.Element {
   const [unread, setUnread] = useState<UnreadCounts>({ peers: {}, rooms: {} });
   const [signingOff, setSigningOff] = useState(false);
   const [isMesh, setIsMesh] = useState(false);
+  const [health, setHealth] = useState<ConnectionHealth | null>(null);
   // Track last seen status per peer so we can play buddy-in / buddy-out
   // only on actual transitions (not on every duplicate broadcast).
   const prevStatusRef = useRef<Record<string, Status>>({});
@@ -70,6 +72,7 @@ function App(): JSX.Element {
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
     void window.buzz.getNetworkConfig().then((cfg) => setIsMesh(cfg.mode === 'exp-p2p'));
+    void window.buzz.getConnectionHealth().then(setHealth).catch(() => undefined);
     void window.buzz.getMyId().then(setMe);
     void window.buzz.listBuddies().then((list) => {
       setBuddies(list);
@@ -120,6 +123,7 @@ function App(): JSX.Element {
       },
     );
     const offUnread = window.buzz.onUnread((c: UnreadCounts) => setUnread(c));
+    const offHealth = window.buzz.onConnectionHealth(setHealth);
     const offDiscovered = window.buzz.onDiscovered((e: DiscoveredEvent) => {
       setNearby((prev) => {
         if (e.kind === 'removed') return prev.filter((p) => p.peerId !== e.peer.peerId);
@@ -167,6 +171,7 @@ function App(): JSX.Element {
       offBuddyReq();
       offBuddyResolved();
       offUnread();
+      offHealth();
       offTalkInvite();
       offGameInvite();
       offTheme();
@@ -383,6 +388,7 @@ function App(): JSX.Element {
           <option value="away">Away…</option>
           <option value="invisible">Invisible</option>
         </select>
+        {health && <HealthPill health={health} />}
       </div>
 
       <div className="buddylist-split">
@@ -919,6 +925,33 @@ function App(): JSX.Element {
         );
       })()}
     </div>
+  );
+}
+
+function HealthPill({ health }: { health: ConnectionHealth }): JSX.Element {
+  const primary = health.mode === 'server' ? health.hive : health.mode === 'exp-p2p' ? health.mesh : health.p2p;
+  const label = health.locked
+    ? 'Offline'
+    : health.summary === 'online'
+      ? primary.label
+      : health.summary === 'degraded'
+        ? `${primary.label} · Limited`
+        : primary.label;
+  const details = [
+    primary.detail,
+    health.mailbox.state !== 'offline' ? health.mailbox.label : undefined,
+    health.call.state !== 'offline' ? health.call.label : undefined,
+    health.roomVoice.state !== 'offline' ? health.roomVoice.label : undefined,
+  ].filter(Boolean).join('\n');
+
+  return (
+    <span
+      className={`bl-health-pill ${health.summary}`}
+      title={details || primary.label}
+    >
+      <span className="bl-health-dot" />
+      <span className="bl-health-label">{label}</span>
+    </span>
   );
 }
 

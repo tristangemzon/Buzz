@@ -49,6 +49,9 @@ export const IPC = {
   NetworkGet: 'network:get',
   NetworkSet: 'network:set',
 
+  // connection health / diagnostics
+  HealthGet: 'health:get',
+
   // presence
   PresenceSetStatus: 'presence:setStatus',
   PresenceGetSelf: 'presence:getSelf',
@@ -142,6 +145,7 @@ export const IPC = {
   EvtBuddyRequest: 'evt:buddyRequest',
   EvtBuddyRequestResolved: 'evt:buddyRequestResolved',
   EvtUnread: 'evt:unread',
+  EvtHealth: 'evt:health',
   EvtTalkInvite: 'evt:talkInvite',
   EvtTalkState: 'evt:talkState',
   EvtTalkEnded: 'evt:talkEnded',

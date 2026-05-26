@@ -54,6 +54,9 @@ import type {
   TalkAudioEvent,
   TalkVideoEvent,
   TalkVideoStateEvent,
+  ConnectionHealth,
+  HealthState,
+  TransportHealth,
 } from '@shared/schemas.js';
 import { sodium } from './crypto/keystore.js';
 
@@ -307,6 +310,7 @@ export class Session {
     this.peerStatuses.clear();
     this.profileId = null;
     this.state = 'locked';
+    this.broadcastHealth();
   }
 
   buddyCode(): string {
@@ -858,6 +862,7 @@ export class Session {
             screenName: p.fromName ?? '',
             joined: p.joined,
           } satisfies RoomVoicePresenceEvent);
+          this.broadcastHealth();
           // If we're locally joined to this voice channel, re-announce so the
           // peer learns we're here too. Cheap: a single small frame.
           if (p.joined && this.localVoiceJoined.has(key)) {
@@ -953,6 +958,7 @@ export class Session {
     void this.mailbox.pollAll().catch(() => undefined);
 
     this.state = 'unlocked';
+    this.broadcastHealth();
   }
 
   /**
@@ -1007,13 +1013,16 @@ export class Session {
       onConnected: () => {
         // Send our current status to the server.
         this.hiveClient?.setStatus(prefs.lastStatus === 'invisible' ? 'invisible' : 'online', prefs.awayMessage || undefined);
+        this.broadcastHealth();
       },
       onDisconnected: () => {
         // Notify renderers that the server connection dropped.
         this.broadcast(IPC.EvtError, { message: 'Disconnected from Hive server. Reconnecting…' });
+        this.broadcastHealth();
       },
       onError: (err) => {
         console.error('[hive-client]', err.message);
+        this.broadcastHealth();
       },
       onBuddyStatus: (peerId, status, awayMessage) => {
         const ev: BuddyStatusEvent = { peerId, status, awayMessage };
@@ -1240,6 +1249,7 @@ export class Session {
     await this.hiveClient.connect();
 
     this.state = 'unlocked';
+    this.broadcastHealth();
   }
 
   // Deliver a sealed-and-verified mailbox envelope as if it had arrived live.
@@ -1567,6 +1577,7 @@ export class Session {
     };
     this.currentCall = state;
     this.broadcast(IPC.EvtTalkState, state);
+    this.broadcastHealth();
     try {
       await this.talk.send(peerId, {
         type: 'invite',
@@ -1590,6 +1601,7 @@ export class Session {
     await this.talk.send(peerId, { type: 'accept', callId }).catch(() => undefined);
     this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
+    this.broadcastHealth();
   }
 
   async rejectCall(callId: string, reason?: string): Promise<void> {
@@ -1646,11 +1658,13 @@ export class Session {
     const peerId = this.currentCall.peerId;
     this.currentCall = { ...this.currentCall, state: 'ended' };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
+    this.broadcastHealth();
     const ev: TalkEndedEvent = { callId, peerId, reason };
     this.broadcast(IPC.EvtTalkEnded, ev);
     // Clear cached call after a tick so renderers can settle.
     setTimeout(() => {
       if (this.currentCall && this.currentCall.callId === callId) this.currentCall = null;
+      this.broadcastHealth();
     }, 50);
   }
 
@@ -1679,6 +1693,7 @@ export class Session {
     this.currentCall = state;
     this.broadcast(IPC.EvtTalkInvite, state);
     this.broadcast(IPC.EvtTalkState, state);
+    this.broadcastHealth();
   }
 
   private handleTalkAccept(peerId: string, callId: string): void {
@@ -1686,6 +1701,7 @@ export class Session {
     if (this.currentCall.peerId !== peerId) return;
     this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
+    this.broadcastHealth();
   }
 
   private handleTalkReject(peerId: string, callId: string, reason?: string): void {
@@ -1739,6 +1755,7 @@ export class Session {
     if (this.localVoiceJoined.has(key)) return;
     this.localVoiceJoined.add(key);
     await this.rooms.broadcastVoiceState(roomId, channelId, true);
+    this.broadcastHealth();
   }
 
   async roomVoiceLeave(roomId: string, channelId: string): Promise<void> {
@@ -1747,6 +1764,7 @@ export class Session {
     if (!this.localVoiceJoined.has(key)) return;
     this.localVoiceJoined.delete(key);
     await this.rooms.broadcastVoiceState(roomId, channelId, false);
+    this.broadcastHealth();
   }
 
   async roomVoiceSendAudio(roomId: string, channelId: string, data: Uint8Array): Promise<void> {
@@ -1760,6 +1778,67 @@ export class Session {
   roomVoicePresence(roomId: string, channelId: string): string[] {
     const key = `${roomId}|${channelId}`;
     return Array.from(this.roomVoiceMembers.get(key) ?? new Set<string>());
+  }
+
+  connectionHealth(): ConnectionHealth {
+    const network = loadNetworkConfig();
+    const updatedAt = Date.now();
+    const locked = this.state !== 'unlocked';
+    const p2pPeers = this.node?.getConnections().length ?? 0;
+    const hiveInfo = this.hiveClient?.getConnectionInfo();
+    const meshStatus = MeshNode.instance.status;
+    const mailboxRelays = this.db ? repos.getPrefs(this.db).mailboxRelays.length : 0;
+    const lastMailboxPoll = Object.values(this.mailbox?.lastPolledAt() ?? {}).sort((a, b) => b - a)[0];
+    const activeVoiceChannels = this.localVoiceJoined.size;
+    const remoteVoicePeers = Array.from(this.roomVoiceMembers.values()).reduce((sum, peers) => sum + peers.size, 0);
+
+    const p2p: TransportHealth = locked || network.mode === 'server'
+      ? { state: 'offline', label: 'P2P offline', detail: network.mode === 'server' ? 'Hive server mode is active.' : 'Sign on to start P2P.' }
+      : { state: 'online', label: 'P2P online', detail: `${p2pPeers} peer connection${p2pPeers === 1 ? '' : 's'}`, count: p2pPeers };
+
+    const hive: TransportHealth = network.mode !== 'server'
+      ? { state: 'offline', label: 'Hive off', detail: 'Server mode is not active.' }
+      : hiveInfo
+        ? {
+            state: hiveInfo.state === 'online' ? 'online' : hiveInfo.state === 'error' ? 'error' : hiveInfo.state,
+            label: hiveInfo.state === 'online' ? 'Hive connected' : hiveInfo.state === 'error' ? 'Hive error' : 'Hive connecting',
+            detail: hiveInfo.lastError ?? hiveInfo.serverUrl,
+            lastOkAt: hiveInfo.lastConnectedAt,
+          }
+        : { state: locked ? 'offline' : 'connecting', label: locked ? 'Hive offline' : 'Hive starting', detail: network.serverUrl || undefined };
+
+    const mesh: TransportHealth = network.mode !== 'exp-p2p'
+      ? { state: 'offline', label: 'Mesh off', detail: 'Experimental mesh mode is not active.' }
+      : meshStatus.state === 'connected'
+        ? { state: 'online', label: 'Mesh connected', detail: (meshStatus as { ip: string }).ip }
+        : meshStatus.state === 'error'
+          ? { state: 'error', label: 'Mesh error', detail: (meshStatus as { message: string }).message }
+          : { state: meshStatus.state === 'connecting' ? 'connecting' : 'offline', label: meshStatus.state === 'connecting' ? 'Mesh connecting' : 'Mesh stopped' };
+
+    const mailbox: TransportHealth = this.mailbox
+      ? { state: mailboxRelays > 0 ? 'online' : 'degraded', label: mailboxRelays > 0 ? 'Mailbox ready' : 'No mailbox relays', count: mailboxRelays, lastOkAt: lastMailboxPoll }
+      : { state: locked || network.mode === 'server' ? 'offline' : 'degraded', label: locked ? 'Mailbox offline' : network.mode === 'server' ? 'Hive handles offline delivery' : 'Mailbox not started' };
+
+    const call: TransportHealth = this.currentCall
+      ? { state: 'online', label: `${this.currentCall.kind === 'video' ? 'Video' : 'Voice'} call active`, detail: this.currentCall.state, count: 1 }
+      : { state: 'offline', label: 'No active call' };
+
+    const roomVoice: TransportHealth = activeVoiceChannels > 0 || remoteVoicePeers > 0
+      ? { state: 'online', label: 'Room voice active', detail: `${activeVoiceChannels} joined, ${remoteVoicePeers} remote`, count: activeVoiceChannels + remoteVoicePeers }
+      : { state: 'offline', label: 'No room voice' };
+
+    const primary = network.mode === 'server' ? hive.state : network.mode === 'exp-p2p' ? mesh.state : p2p.state;
+    const summary: HealthState = locked
+      ? 'offline'
+      : primary === 'online'
+        ? mailbox.state === 'degraded' ? 'degraded' : 'online'
+        : primary;
+
+    return { mode: network.mode, locked, summary, updatedAt, p2p, hive, mesh, mailbox, call, roomVoice };
+  }
+
+  private broadcastHealth(): void {
+    this.broadcast(IPC.EvtHealth, this.connectionHealth());
   }
 
   private broadcast(channel: string, payload: unknown): void {

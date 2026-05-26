@@ -60,6 +60,7 @@ import type {
   MailboxRemoveRelayReq,
   MailboxStats,
   NetworkConfig,
+  ConnectionHealth,
   SelfPresence,
   SendImReq,
   SetPrefsReq,
@@ -182,6 +183,9 @@ export type AppApi = {
   getNetworkConfig(): Promise<NetworkConfig>;
   setNetworkConfig(cfg: NetworkConfig): Promise<NetworkConfig>;
 
+  // connection health
+  getConnectionHealth(): Promise<ConnectionHealth>;
+
   // presence
   setStatus(req: PresenceSetStatusReq): Promise<SelfPresence>;
   getSelfPresence(): Promise<SelfPresence>;
@@ -279,6 +283,7 @@ export type AppApi = {
   onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;
   onBuddyRequestResolved(cb: (e: BuddyRequestResolvedEvent) => void): () => void;
   onUnread(cb: (e: UnreadCounts) => void): () => void;
+  onConnectionHealth(cb: (e: ConnectionHealth) => void): () => void;
   onTalkInvite(cb: (e: TalkInviteEvent) => void): () => void;
   onTalkState(cb: (e: TalkStateEvent) => void): () => void;
   onTalkEnded(cb: (e: TalkEndedEvent) => void): () => void;

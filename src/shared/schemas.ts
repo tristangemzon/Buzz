@@ -269,6 +269,34 @@ export const NetworkConfig = z
   });
 export type NetworkConfig = z.infer<typeof NetworkConfig>;
 
+// ── Connection health ───────────────────────────────────────────────────────
+
+export const HealthState = z.enum(['offline', 'connecting', 'online', 'degraded', 'error']);
+export type HealthState = z.infer<typeof HealthState>;
+
+export const TransportHealth = z.object({
+  state: HealthState,
+  label: z.string().min(1).max(64),
+  detail: z.string().max(256).optional(),
+  count: z.number().int().nonnegative().optional(),
+  lastOkAt: z.number().int().nonnegative().optional(),
+});
+export type TransportHealth = z.infer<typeof TransportHealth>;
+
+export const ConnectionHealth = z.object({
+  mode: z.enum(['p2p', 'server', 'exp-p2p']),
+  locked: z.boolean(),
+  summary: HealthState,
+  updatedAt: z.number().int().nonnegative(),
+  p2p: TransportHealth,
+  hive: TransportHealth,
+  mesh: TransportHealth,
+  mailbox: TransportHealth,
+  call: TransportHealth,
+  roomVoice: TransportHealth,
+});
+export type ConnectionHealth = z.infer<typeof ConnectionHealth>;
+
 // ── Presence ─────────────────────────────────────────────────────────────────
 
 // Only states the user can directly select. 'idle' is auto-derived from

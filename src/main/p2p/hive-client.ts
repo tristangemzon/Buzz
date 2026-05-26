@@ -150,6 +150,14 @@ export type HiveCallbacks = {
   onRoomChannelAdd?: (roomId: string, channelId: string, name: string, kind: 'text' | 'voice') => void;
 };
 
+export type HiveConnectionInfo = {
+  state: 'offline' | 'connecting' | 'online' | 'error';
+  serverUrl: string;
+  lastConnectedAt?: number;
+  lastError?: string;
+  nextReconnectAt?: number;
+};
+
 export class HiveClient {
   private ws: WebSocket | null = null;
   private identity: IdentityMaterial;
@@ -175,6 +183,10 @@ export class HiveClient {
   private screenName: string;
   // Accept invalid TLS certs for self-signed Hive servers.
   private rejectUnauthorized: boolean;
+  private connectionState: HiveConnectionInfo['state'] = 'offline';
+  private lastConnectedAt: number | undefined;
+  private lastError: string | undefined;
+  private nextReconnectAt: number | undefined;
 
   constructor(
     identity: IdentityMaterial,
@@ -191,6 +203,8 @@ export class HiveClient {
   }
 
   async connect(): Promise<void> {
+    this.stopped = false;
+    this.connectionState = 'connecting';
     await sodium.ready;
 
     // Derive peerId from the Ed25519 seed stored in identity.
@@ -211,6 +225,8 @@ export class HiveClient {
 
   private _connect(): void {
     if (this.stopped) return;
+    this.connectionState = 'connecting';
+    this.nextReconnectAt = undefined;
 
     this.ws = new WebSocket(this.serverUrl, {
       rejectUnauthorized: this.rejectUnauthorized,
@@ -235,24 +251,43 @@ export class HiveClient {
       this.authed = false;
       this.callbacks.onDisconnected();
       if (!this.stopped) {
+        this.connectionState = 'connecting';
+        this.nextReconnectAt = Date.now() + this.backoff;
         this.reconnectTimer = setTimeout(() => this._connect(), this.backoff);
         this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
+      } else {
+        this.connectionState = 'offline';
+        this.nextReconnectAt = undefined;
       }
     });
 
     this.ws.on('error', (err) => {
+      this.connectionState = 'error';
+      this.lastError = err.message;
       this.callbacks.onError(err);
     });
   }
 
   disconnect(): void {
     this.stopped = true;
+    this.connectionState = 'offline';
+    this.nextReconnectAt = undefined;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     this._stopPing();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  getConnectionInfo(): HiveConnectionInfo {
+    return {
+      state: this.connectionState,
+      serverUrl: this.serverUrl,
+      lastConnectedAt: this.lastConnectedAt,
+      lastError: this.lastError,
+      nextReconnectAt: this.nextReconnectAt,
+    };
   }
 
   // ── Ping keepalive ─────────────────────────────────────────────────────────
@@ -288,6 +323,10 @@ export class HiveClient {
         break;
       case 'authed':
         this.authed = true;
+        this.connectionState = 'online';
+        this.lastConnectedAt = Date.now();
+        this.lastError = undefined;
+        this.nextReconnectAt = undefined;
         for (const [pid, pk] of Object.entries(msg.pubKeys)) {
           this.peerPubKeys.set(pid, pk);
         }

@@ -318,6 +318,9 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   handle(IPC.NetworkGet, null, () => loadNetworkConfig());
   handle(IPC.NetworkSet, NetworkConfig, (cfg) => saveNetworkConfig(cfg));
 
+  // ── connection health ────────────────────────────────────────────────────
+  handle(IPC.HealthGet, null, () => session.connectionHealth());
+
   // ── presence ─────────────────────────────────────────────────────────────────────────────────────────
   handle(IPC.PresenceSetStatus, PresenceSetStatusReq, async ({ status, awayMessage }) => {
     const p = session.presence;

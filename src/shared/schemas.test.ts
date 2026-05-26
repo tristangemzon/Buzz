@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HistoryReq, Profile, RoomDeleteMsgReq, RoomEditMsgReq, RoomHistoryReq, RoomMessage, RoomSendReq, ScreenName } from './schemas.js';
+import { ConnectionHealth, HistoryReq, Profile, RoomDeleteMsgReq, RoomEditMsgReq, RoomHistoryReq, RoomMessage, RoomSendReq, ScreenName } from './schemas.js';
 
 describe('shared schemas', () => {
   const roomId = '11111111-1111-4111-8111-111111111111';
@@ -79,5 +79,31 @@ describe('shared schemas', () => {
       deletedAt: 789,
       fromName: '',
     });
+  });
+
+  it('validates connection health snapshots', () => {
+    expect(ConnectionHealth.parse({
+      mode: 'server',
+      locked: false,
+      summary: 'online',
+      updatedAt: 1000,
+      p2p: { state: 'offline', label: 'P2P offline' },
+      hive: { state: 'online', label: 'Hive connected', detail: 'wss://hive.local', lastOkAt: 900 },
+      mesh: { state: 'offline', label: 'Mesh off' },
+      mailbox: { state: 'offline', label: 'Hive handles offline delivery' },
+      call: { state: 'offline', label: 'No active call' },
+      roomVoice: { state: 'offline', label: 'No room voice' },
+    })).toMatchObject({
+      mode: 'server',
+      summary: 'online',
+      hive: { label: 'Hive connected' },
+    });
+
+    expect(() => ConnectionHealth.parse({
+      mode: 'server',
+      locked: false,
+      summary: 'maybe',
+      updatedAt: 1000,
+    })).toThrow();
   });
 });

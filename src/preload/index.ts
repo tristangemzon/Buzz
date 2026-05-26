@@ -54,6 +54,8 @@ const api: AppApi = {
   getNetworkConfig: () => ipcRenderer.invoke(IPC.NetworkGet),
   setNetworkConfig: (cfg) => ipcRenderer.invoke(IPC.NetworkSet, cfg),
 
+  getConnectionHealth: () => ipcRenderer.invoke(IPC.HealthGet),
+
   setStatus: (req) => ipcRenderer.invoke(IPC.PresenceSetStatus, req),
   getSelfPresence: () => ipcRenderer.invoke(IPC.PresenceGetSelf),
   getPeerStatus: (peerId) => ipcRenderer.invoke(IPC.PresenceGetPeer, peerId),
@@ -140,6 +142,7 @@ const api: AppApi = {
   onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),
   onBuddyRequestResolved: (cb) => on(IPC.EvtBuddyRequestResolved, cb),
   onUnread: (cb) => on(IPC.EvtUnread, cb),
+  onConnectionHealth: (cb) => on(IPC.EvtHealth, cb),
   onTalkInvite: (cb) => on(IPC.EvtTalkInvite, cb),
   onTalkState: (cb) => on(IPC.EvtTalkState, cb),
   onTalkEnded: (cb) => on(IPC.EvtTalkEnded, cb),
