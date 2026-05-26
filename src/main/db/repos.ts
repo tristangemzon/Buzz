@@ -6,6 +6,7 @@ export type Reaction = { msgId: string; peerId: string; emoji: string; ts: numbe
 export type RoomMemberRow = { peerId: string; role: 'owner' | 'mod' | 'member' };
 
 type RoomRow = { id: string; name: string; keyB64: string; createdAt: number; ownerPeerId: string };
+type RoomMemberLookupRow = { roomId: string; peerId: string; role: string };
 
 // ── identity ─────────────────────────────────────────────────────────────────
 
@@ -295,14 +296,37 @@ export function listRooms(db: Db): Array<Room & { keyB64: string }> {
       `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId FROM rooms ORDER BY created_at DESC`,
     )
     .all() as RoomRow[];
+  if (rows.length === 0) return [];
+
+  const placeholders = rows.map(() => '?').join(',');
+  const memberRows = db
+    .prepare(
+      `SELECT room_id as roomId, peer_id as peerId, COALESCE(role,'member') as role
+         FROM room_members WHERE room_id IN (${placeholders}) ORDER BY room_id, peer_id`,
+    )
+    .all(...rows.map((r) => r.id)) as RoomMemberLookupRow[];
+
+  const membersByRoom = new Map<string, string[]>();
+  const modsByRoom = new Map<string, string[]>();
+  for (const member of memberRows) {
+    const members = membersByRoom.get(member.roomId) ?? [];
+    members.push(member.peerId);
+    membersByRoom.set(member.roomId, members);
+    if (member.role === 'mod') {
+      const mods = modsByRoom.get(member.roomId) ?? [];
+      mods.push(member.peerId);
+      modsByRoom.set(member.roomId, mods);
+    }
+  }
+
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     keyB64: r.keyB64,
     createdAt: r.createdAt,
     ownerPeerId: r.ownerPeerId ?? '',
-    mods: getMods(db, r.id),
-    members: getRoomMembers(db, r.id),
+    mods: modsByRoom.get(r.id) ?? [],
+    members: membersByRoom.get(r.id) ?? [],
   }));
 }
 
@@ -431,12 +455,14 @@ export function pinRoomMessage(db: Db, msgId: string, isPinned: boolean): void {
   db.prepare('UPDATE room_messages SET is_pinned=? WHERE id=?').run(isPinned ? 1 : 0, msgId);
 }
 
-export function editRoomMessage(db: Db, msgId: string, body: string): void {
-  db.prepare('UPDATE room_messages SET body=?, edited_at=? WHERE id=?').run(body, Date.now(), msgId);
+export function editRoomMessage(db: Db, msgId: string, body: string, editedAt = Date.now()): boolean {
+  const result = db.prepare('UPDATE room_messages SET body=?, edited_at=? WHERE id=? AND deleted_at IS NULL').run(body, editedAt, msgId);
+  return result.changes > 0;
 }
 
-export function deleteRoomMessage(db: Db, msgId: string): void {
-  db.prepare('UPDATE room_messages SET deleted_at=? WHERE id=?').run(Date.now(), msgId);
+export function deleteRoomMessage(db: Db, msgId: string, deletedAt = Date.now()): boolean {
+  const result = db.prepare('UPDATE room_messages SET deleted_at=? WHERE id=? AND deleted_at IS NULL').run(deletedAt, msgId);
+  return result.changes > 0;
 }
 
 export function listPinnedRoomMessages(db: Db, roomId: string, channelId?: string): RoomMessage[] {

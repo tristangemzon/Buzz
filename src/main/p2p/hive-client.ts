@@ -60,6 +60,8 @@ type SrvGameSignal = { type: 'gameSignal'; from: string; action: string; kind: s
 type SrvError = { type: 'error'; code: string; message: string };
 type SrvReaction = { type: 'reaction'; from: string; msgId: string; emoji: string; added: boolean };
 type SrvRoomReaction = { type: 'roomReaction'; roomId: string; from: string; msgId: string; emoji: string; added: boolean };
+type SrvRoomEditMsg = { type: 'roomEditMsg'; roomId: string; from: string; msgId: string; ts: number; cipherB64: string };
+type SrvRoomDeleteMsg = { type: 'roomDeleteMsg'; roomId: string; from: string; msgId: string; ts: number };
 type SrvTyping = { type: 'typing'; from: string; typing: boolean };
 type SrvReadReceipt = { type: 'readReceipt'; from: string; msgId: string };
 type SrvRoomPin = { type: 'roomPin'; roomId: string; from: string; msgId: string; isPinned: boolean };
@@ -67,7 +69,7 @@ type SrvRoomKick = { type: 'roomKick'; roomId: string; from: string; peerId: str
 type SrvRoomRole = { type: 'roomRole'; roomId: string; from: string; peerId: string; role: string };
 type SrvRoomCategory = { type: 'roomCategory'; roomId: string; channelId: string; category: string };
 type SrvRoomChannelAdd = { type: 'roomChannelAdd'; roomId: string; channelId: string; name: string; kind: 'text' | 'voice' };
-type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError | SrvReaction | SrvRoomReaction | SrvTyping | SrvReadReceipt | SrvRoomPin | SrvRoomKick | SrvRoomRole | SrvRoomCategory | SrvRoomChannelAdd;
+type ServerMessage = SrvChallenge | SrvAuthed | SrvPresenceUpdate | SrvIm | SrvBuddyRequest | SrvBuddyResponse | SrvBuddyList | SrvRoomInvite | SrvRoomMsg | SrvRoomMemberJoin | SrvRoomMemberLeave | SrvTalkSignal | SrvGameSignal | SrvError | SrvReaction | SrvRoomReaction | SrvRoomEditMsg | SrvRoomDeleteMsg | SrvTyping | SrvReadReceipt | SrvRoomPin | SrvRoomKick | SrvRoomRole | SrvRoomCategory | SrvRoomChannelAdd;
 
 // Subset of client→server messages that the client sends.
 type CliAuth = { type: 'auth'; peerId: string; screenName: string; pubKeyB64: string; sigB64: string };
@@ -90,13 +92,15 @@ type CliReaction = { type: 'reaction'; to: string; msgId: string; emoji: string 
 type CliUnreaction = { type: 'unreaction'; to: string; msgId: string; emoji: string };
 type CliRoomReaction = { type: 'roomReaction'; roomId: string; msgId: string; emoji: string };
 type CliRoomUnreaction = { type: 'roomUnreaction'; roomId: string; msgId: string; emoji: string };
+type CliRoomEditMsg = { type: 'roomEditMsg'; roomId: string; msgId: string; ts: number; cipherB64: string };
+type CliRoomDeleteMsg = { type: 'roomDeleteMsg'; roomId: string; msgId: string; ts: number };
 type CliTyping = { type: 'typing'; to: string; typing: boolean };
 type CliReadReceipt = { type: 'readReceipt'; to: string; msgId: string };
 type CliRoomPin = { type: 'roomPin'; roomId: string; msgId: string; isPinned: boolean };
 type CliRoomKick = { type: 'roomKick'; roomId: string; peerId: string };
 type CliRoomRole = { type: 'roomRole'; roomId: string; peerId: string; role: string };
 type CliRoomCategory = { type: 'roomCategory'; roomId: string; channelId: string; category: string };
-type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal | CliReaction | CliUnreaction | CliRoomReaction | CliRoomUnreaction | CliTyping | CliReadReceipt | CliRoomPin | CliRoomKick | CliRoomRole | CliRoomCategory;
+type ClientMessage = CliAuth | CliSetStatus | CliIm | CliAck | CliBuddyAdd | CliBuddyRemove | CliBuddyApprove | CliBuddyDeny | CliRoomCreate | CliRoomInvite | CliRoomMsg | CliRoomChannelAdd | CliGetHistory | CliGetRoomHistory | CliTalkSignal | CliGameSignal | CliReaction | CliUnreaction | CliRoomReaction | CliRoomUnreaction | CliRoomEditMsg | CliRoomDeleteMsg | CliTyping | CliReadReceipt | CliRoomPin | CliRoomKick | CliRoomRole | CliRoomCategory;
 
 // Sodium import — same pattern as keystore.ts uses.
 import sodiumPkg from 'libsodium-wrappers-sumo';
@@ -132,6 +136,8 @@ export type HiveCallbacks = {
   // Reactions
   onReaction?: (from: string, msgId: string, emoji: string, added: boolean) => void;
   onRoomReaction?: (roomId: string, from: string, msgId: string, emoji: string, added: boolean) => void;
+  onRoomEditMsg?: (roomId: string, from: string, msgId: string, ts: number, cipherB64: string) => void;
+  onRoomDeleteMsg?: (roomId: string, from: string, msgId: string, ts: number) => void;
   // Typing indicator
   onTyping?: (from: string, typing: boolean) => void;
   // Read receipts
@@ -349,6 +355,12 @@ export class HiveClient {
         break;
       case 'roomReaction':
         this.callbacks.onRoomReaction?.(msg.roomId, msg.from, msg.msgId, msg.emoji, msg.added);
+        break;
+      case 'roomEditMsg':
+        this.callbacks.onRoomEditMsg?.(msg.roomId, msg.from, msg.msgId, msg.ts, msg.cipherB64);
+        break;
+      case 'roomDeleteMsg':
+        this.callbacks.onRoomDeleteMsg?.(msg.roomId, msg.from, msg.msgId, msg.ts);
         break;
       case 'typing':
         this.callbacks.onTyping?.(msg.from, msg.typing);
@@ -609,6 +621,14 @@ export class HiveClient {
 
   sendRoomUnreaction(roomId: string, msgId: string, emoji: string): void {
     this._send({ type: 'roomUnreaction', roomId, msgId, emoji });
+  }
+
+  sendRoomEditMsg(roomId: string, msgId: string, ts: number, cipherB64: string): void {
+    this._send({ type: 'roomEditMsg', roomId, msgId, ts, cipherB64 });
+  }
+
+  sendRoomDeleteMsg(roomId: string, msgId: string, ts: number): void {
+    this._send({ type: 'roomDeleteMsg', roomId, msgId, ts });
   }
 
   sendRoomPin(roomId: string, msgId: string, isPinned: boolean): void {

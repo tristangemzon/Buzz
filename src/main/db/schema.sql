@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_peer_ts ON messages(peer_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(direction, status, peer_id);
 
 CREATE TABLE IF NOT EXISTS reactions (
   msg_id   TEXT NOT NULL,

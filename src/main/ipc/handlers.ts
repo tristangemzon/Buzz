@@ -734,27 +734,31 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 
   handle(IPC.RoomsEditMsg, RoomEditMsgReq, async ({ roomId, msgId, body }) => {
     const db = requireDb(session);
-    repos.editRoomMessage(db, msgId, body);
     const editedAt = Date.now();
+    const changed = repos.editRoomMessage(db, msgId, body, editedAt);
+    if (!changed) throw new Error('Message is no longer editable');
     const evt = { roomId, msgId, body, editedAt };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.EvtRoomEdited, evt);
     }
     if (session.rooms) await session.rooms.broadcastEditMsg(roomId, msgId, body);
-    // Note: Hive server mode room message edits not yet supported (requires Hive wire protocol extension)
+    else if (session.hiveClient) {
+      const cipherB64 = await session.encryptHiveRoomBody(roomId, body);
+      session.hiveClient.sendRoomEditMsg(roomId, msgId, editedAt, cipherB64);
+    }
     return { ok: true as const };
   });
 
   handle(IPC.RoomsDeleteMsg, RoomDeleteMsgReq, async ({ roomId, msgId }) => {
     const db = requireDb(session);
-    repos.deleteRoomMessage(db, msgId);
     const deletedAt = Date.now();
+    repos.deleteRoomMessage(db, msgId, deletedAt);
     const evt = { roomId, msgId, deletedAt };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.EvtRoomDeleted, evt);
     }
     if (session.rooms) await session.rooms.broadcastDeleteMsg(roomId, msgId);
-    // Note: Hive server mode room message deletes not yet supported (requires Hive wire protocol extension)
+    else if (session.hiveClient) session.hiveClient.sendRoomDeleteMsg(roomId, msgId, deletedAt);
     return { ok: true as const };
   });
 

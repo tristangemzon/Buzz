@@ -73,12 +73,17 @@ function socks5Connect(
 
         // Send CONNECT request for IPv4 target
         const ip = targetHost.split('.').map(Number);
+        if (ip.length !== 4 || ip.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+          socket.destroy();
+          return reject(new Error(`SOCKS5 target is not a valid IPv4 address: ${targetHost}`));
+        }
+        const [a, b, c, d] = ip as [number, number, number, number];
         const req = Buffer.alloc(10);
         req[0] = 0x05; // VER
         req[1] = 0x01; // CMD=CONNECT
         req[2] = 0x00; // RSV
         req[3] = 0x01; // ATYP=IPv4
-        req[4] = ip[0]; req[5] = ip[1]; req[6] = ip[2]; req[7] = ip[3];
+        req[4] = a; req[5] = b; req[6] = c; req[7] = d;
         req.writeUInt16BE(targetPort, 8);
         socket.write(req);
         state = 'connecting';
@@ -106,7 +111,7 @@ function socketToMultiaddrConnection(
   socket: net.Socket,
   remoteAddr: Multiaddr,
 ): MultiaddrConnection {
-  const timeline = { open: Date.now() };
+  const timeline: MultiaddrConnection['timeline'] = { open: Date.now() };
 
   const maConn: MultiaddrConnection = {
     // Async iterable source: yields Uint8Array chunks from the socket.
@@ -172,9 +177,7 @@ function socketToMultiaddrConnection(
 
 // ── Transport factory ─────────────────────────────────────────────────────────
 
-export interface MeshTcpComponents {
-  // No required components — the transport is self-contained.
-}
+export type MeshTcpComponents = object;
 
 /**
  * Returns a libp2p transport that dials Tailscale 100.x.x.x addresses through
@@ -209,11 +212,15 @@ export function meshTcpTransport(socksPort: number) {
       const parts = str.split('/');
       const ip4Idx = parts.indexOf('ip4');
       const tcpIdx = parts.indexOf('tcp');
-      if (ip4Idx === -1 || tcpIdx === -1) {
+      const targetIp = parts[ip4Idx + 1];
+      const targetPortRaw = parts[tcpIdx + 1];
+      if (ip4Idx === -1 || tcpIdx === -1 || !targetIp || !targetPortRaw) {
         throw new Error(`meshTcpTransport: cannot parse multiaddr: ${str}`);
       }
-      const targetIp = parts[ip4Idx + 1];
-      const targetPort = parseInt(parts[tcpIdx + 1], 10);
+      const targetPort = parseInt(targetPortRaw, 10);
+      if (!Number.isInteger(targetPort) || targetPort <= 0 || targetPort > 65_535) {
+        throw new Error(`meshTcpTransport: invalid tcp port in multiaddr: ${str}`);
+      }
 
       const socket = await socks5Connect('127.0.0.1', socksPort, targetIp, targetPort);
 

@@ -143,14 +143,18 @@ export type Reaction = z.infer<typeof Reaction>;
 // and background image bytes individually.
 const AVATAR_MAX = 96_000; // ~64 KB binary
 const BG_IMAGE_MAX = 200_000; // ~128 KB binary
+const imageDataUrl = (max: number) => z.string().max(max).refine(
+  (value) => value === '' || /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/i.test(value),
+  'Expected an image data URL',
+);
 
 export const Profile = z.object({
   aboutText: z.string().max(2000).default(''),
   textColor: z.string().max(32).default('#000000'),
   bgColor: z.string().max(32).default('#ffffff'),
   fontFamily: z.string().max(64).default(''),
-  avatarDataUrl: z.string().max(AVATAR_MAX).default(''),
-  bgImageDataUrl: z.string().max(BG_IMAGE_MAX).default(''),
+  avatarDataUrl: imageDataUrl(AVATAR_MAX).default(''),
+  bgImageDataUrl: imageDataUrl(BG_IMAGE_MAX).default(''),
 });
 export type Profile = z.infer<typeof Profile>;
 
@@ -543,7 +547,7 @@ export const RoomReactReq = z.object({ roomId: RoomId, msgId: Uuid, emoji: z.str
 export type RoomReactReq = z.infer<typeof RoomReactReq>;
 export const RoomUnreactReq = z.object({ roomId: RoomId, msgId: Uuid, emoji: z.string().min(1).max(8) });
 export type RoomUnreactReq = z.infer<typeof RoomUnreactReq>;
-export const RoomEditMsgReq = z.object({ roomId: RoomId, msgId: Uuid, body: z.string().min(1).max(8192) });
+export const RoomEditMsgReq = z.object({ roomId: RoomId, msgId: Uuid, body: z.string().min(1).max(64 * 1024) });
 export type RoomEditMsgReq = z.infer<typeof RoomEditMsgReq>;
 export const RoomDeleteMsgReq = z.object({ roomId: RoomId, msgId: Uuid });
 export type RoomDeleteMsgReq = z.infer<typeof RoomDeleteMsgReq>;

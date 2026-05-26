@@ -15,6 +15,7 @@ type Token =
 const ALLOWED_TAGS = new Set(['b', 'i', 'u', 'mark', 'small', 'big', 'a']);
 const URL_RE = /^(https?:|mailto:)/i;
 const TAG_RE = /<\s*(\/?)\s*([a-zA-Z]+)(\s+href\s*=\s*"([^"<>]*)")?\s*\/?\s*>/g;
+const MAX_RICH_TEXT_DEPTH = 100;
 
 function tokenize(input: string): Token[] {
   const out: Token[] = [];
@@ -69,6 +70,10 @@ export function RichText({ body }: { body: string }): JSX.Element {
         parent.children.push(renderTag(frame.tag, frame.href, frame.children, key++));
       }
     } else {
+      if (stack.length > MAX_RICH_TEXT_DEPTH) {
+        top.children.push(tk.href ? `<${tk.tag} href="${tk.href}">` : `<${tk.tag}>`);
+        continue;
+      }
       stack.push({ tag: tk.tag, href: tk.href, children: [] });
     }
   }

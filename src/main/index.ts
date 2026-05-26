@@ -33,6 +33,10 @@ if (process.platform === 'darwin' && app.dock && !APP_ICON.isEmpty()) {
   app.dock.setIcon(APP_ICON);
 }
 
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+let shutdownStarted = false;
+let shutdownMayQuit = false;
+
 // CSP — strict in production, relaxed in dev so Vite's HMR + react-refresh
 // inline bootstrap can run. The dev server origin is whatever Vite gave us.
 function installCsp(): void {
@@ -88,6 +92,22 @@ const videoCallWindows = new Map<string, BrowserWindow>();
 const gameWindows = new Map<string, BrowserWindow>();
 let settingsWin: BrowserWindow | null = null;
 let meshDebugWin: BrowserWindow | null = null;
+
+function beginShutdown(): void {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  const timeout = setTimeout(() => {
+    console.warn('[main] Shutdown timeout; forcing app exit.');
+    app.exit(0);
+  }, SHUTDOWN_TIMEOUT_MS);
+  void session.lock()
+    .catch((err) => console.warn('[main] Error while locking session during shutdown:', err))
+    .finally(() => {
+      clearTimeout(timeout);
+      shutdownMayQuit = true;
+      app.quit();
+    });
+}
 
 function commonWebPrefs() {
   return {
@@ -355,10 +375,14 @@ app.whenReady().then(() => {
       if (!row?.saved_path) return new Response('Not found', { status: 404 });
       // Guard against path traversal: saved_path should be an absolute path
       // set by the main process. Verify the file exists before serving.
-      const filePath = path.normalize(row.saved_path);
+      if (row.saved_path.includes('\0') || !path.isAbsolute(row.saved_path)) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      const filePath = path.resolve(row.saved_path);
       if (!fs.existsSync(filePath)) return new Response('Gone', { status: 410 });
-      const data = fs.readFileSync(filePath);
-      const ext = path.extname(filePath).toLowerCase().slice(1);
+      const realPath = fs.realpathSync(filePath);
+      const data = fs.readFileSync(realPath);
+      const ext = path.extname(realPath).toLowerCase().slice(1);
       const mimeMap: Record<string, string> = {
         png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
         gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
@@ -436,7 +460,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    void session.lock().finally(() => app.quit());
+    beginShutdown();
   }
 });
 
@@ -444,6 +468,8 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) openSignOn();
 });
 
-app.on('before-quit', () => {
-  void session.lock().catch(() => {});
+app.on('before-quit', (event) => {
+  if (shutdownMayQuit) return;
+  event.preventDefault();
+  beginShutdown();
 });

@@ -916,12 +916,13 @@ export class Session {
         },
         onEditMsg: (_fromPeerId, p) => {
           if (!this.db) return;
-          repos.editRoomMessage(this.db, p.msgId, p.body);
-          this.broadcast(IPC.EvtRoomEdited, { roomId: p.roomId, msgId: p.msgId, body: p.body, editedAt: p.ts });
+          if (repos.editRoomMessage(this.db, p.msgId, p.body, p.ts)) {
+            this.broadcast(IPC.EvtRoomEdited, { roomId: p.roomId, msgId: p.msgId, body: p.body, editedAt: p.ts });
+          }
         },
         onDeleteMsg: (_fromPeerId, p) => {
           if (!this.db) return;
-          repos.deleteRoomMessage(this.db, p.msgId);
+          repos.deleteRoomMessage(this.db, p.msgId, p.ts);
           this.broadcast(IPC.EvtRoomDeleted, { roomId: p.roomId, msgId: p.msgId, deletedAt: p.ts });
         },
       },
@@ -1180,6 +1181,20 @@ export class Session {
       onRoomReaction: (roomId, from, msgId, emoji, added) => {
         this.broadcast(IPC.EvtReaction, { roomId, msgId, peerId: from, emoji, added });
       },
+      onRoomEditMsg: (roomId, _from, msgId, ts, cipherB64) => {
+        if (!this.db) return;
+        void this.decryptHiveRoomBody(roomId, cipherB64).then((body) => {
+          if (!body || !this.db) return;
+          if (repos.editRoomMessage(this.db, msgId, body, ts)) {
+            this.broadcast(IPC.EvtRoomEdited, { roomId, msgId, body, editedAt: ts });
+          }
+        });
+      },
+      onRoomDeleteMsg: (roomId, _from, msgId, ts) => {
+        if (!this.db) return;
+        repos.deleteRoomMessage(this.db, msgId, ts);
+        this.broadcast(IPC.EvtRoomDeleted, { roomId, msgId, deletedAt: ts });
+      },
       onRoomPin: (roomId, _from, msgId, isPinned) => {
         if (!this.db) return;
         repos.pinRoomMessage(this.db, msgId, isPinned);
@@ -1262,6 +1277,37 @@ export class Session {
   cacheRoomKey(roomId: string, key: Uint8Array): void {
     this.roomKeys.set(roomId, key);
   }
+
+  async encryptHiveRoomBody(roomId: string, body: string): Promise<string> {
+    const key = this.roomKeys.get(roomId);
+    if (!key) throw new Error('Unknown room');
+    const s = await sodium();
+    const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
+    const plain = s.from_string(body);
+    const ct = s.crypto_secretbox_easy(plain, nonce, key);
+    const framed = new Uint8Array(nonce.length + ct.length);
+    framed.set(nonce, 0);
+    framed.set(ct, nonce.length);
+    return s.to_base64(framed, s.base64_variants.ORIGINAL);
+  }
+
+  private async decryptHiveRoomBody(roomId: string, cipherB64: string): Promise<string | null> {
+    const key = this.roomKeys.get(roomId);
+    if (!key) return null;
+    try {
+      const s = await sodium();
+      const framed = s.from_base64(cipherB64, s.base64_variants.ORIGINAL);
+      const nonceBytes = s.crypto_secretbox_NONCEBYTES;
+      if (framed.length <= nonceBytes) return null;
+      const nonce = framed.slice(0, nonceBytes);
+      const ct = framed.slice(nonceBytes);
+      const plain = s.crypto_secretbox_open_easy(ct, nonce, key);
+      return s.to_string(plain);
+    } catch {
+      return null;
+    }
+  }
+
   cacheRoomMembers(roomId: string, members: string[]): void {
     this.roomMembers.set(roomId, [...members]);
   }

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_peer_ts ON messages(peer_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(direction, status, peer_id);
 
 CREATE TABLE IF NOT EXISTS prefs (
   k TEXT PRIMARY KEY,
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS room_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_room_messages_room_ts ON room_messages(room_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_room_messages_channel_ts ON room_messages(channel_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_room_messages_from_peer ON room_messages(from_peer_id);
 
 CREATE TABLE IF NOT EXISTS room_channels (
   id          TEXT PRIMARY KEY,
@@ -120,6 +122,7 @@ CREATE TABLE IF NOT EXISTS mailbox (
   stored_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_ts ON mailbox(recipient, ts ASC);
+CREATE INDEX IF NOT EXISTS idx_mailbox_stored_at ON mailbox(stored_at);
 
 CREATE TABLE IF NOT EXISTS buddy_requests (
   peer_id     TEXT PRIMARY KEY,
