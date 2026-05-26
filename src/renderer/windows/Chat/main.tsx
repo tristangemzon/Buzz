@@ -54,6 +54,12 @@ function App(): JSX.Element {
   const [memberCtxMenu, setMemberCtxMenu] = useState<{ peerId: string; x: number; y: number; flipX: boolean; flipY: boolean } | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState<{ channelId: string } | null>(null);
   const [categoryInput, setCategoryInput] = useState('');
+  // v0.7.0 message action state
+  const [reactions, setReactions] = useState<Map<string, { emoji: string; count: number; mine: boolean }[]>>(new Map());
+  const [emojiPickerPos, setEmojiPickerPos] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const myPeerIdRef = useRef<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEditorHandle>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
@@ -89,7 +95,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
-    void window.buzz.getMyId().then(setMe);
+    void window.buzz.getMyId().then((id) => { setMe(id); myPeerIdRef.current = id.peerId; });
     void window.buzz
       .getPrefs()
       .then((p) => {
@@ -194,6 +200,41 @@ function App(): JSX.Element {
       setChannels((prev) => prev.map((c) => (c.id === e.channelId ? { ...c, category: e.category } : c)));
     });
 
+    // v0.7.0 message action events
+    const offReaction = window.buzz.onReaction(({ msgId, peerId: reactorId, emoji, added, roomId: rxnRoomId }) => {
+      if (rxnRoomId !== roomId) return;
+      setReactions((prev) => {
+        const next = new Map(prev);
+        const list = [...(next.get(msgId) ?? [])];
+        const idx = list.findIndex((x) => x.emoji === emoji);
+        if (added) {
+          if (idx >= 0) {
+            const entry = { ...list[idx]!, count: list[idx]!.count + 1 };
+            if (reactorId === myPeerIdRef.current) entry.mine = true;
+            list[idx] = entry;
+          } else {
+            list.push({ emoji, count: 1, mine: reactorId === myPeerIdRef.current });
+          }
+        } else {
+          if (idx >= 0) {
+            const entry = { ...list[idx]!, count: Math.max(0, list[idx]!.count - 1) };
+            if (reactorId === myPeerIdRef.current) entry.mine = false;
+            if (entry.count > 0) list[idx] = entry; else list.splice(idx, 1);
+          }
+        }
+        next.set(msgId, list);
+        return next;
+      });
+    });
+    const offRoomEdited = window.buzz.onRoomEdited((e) => {
+      if (e.roomId !== roomId) return;
+      setMessages((prev) => prev.map((m) => m.id === e.msgId ? { ...m, body: e.body, editedAt: e.editedAt } : m));
+    });
+    const offRoomDeleted = window.buzz.onRoomDeleted((e) => {
+      if (e.roomId !== roomId) return;
+      setMessages((prev) => prev.map((m) => m.id === e.msgId ? { ...m, deletedAt: e.deletedAt } : m));
+    });
+
     return () => {
       offMsg();
       offMembers();
@@ -204,6 +245,9 @@ function App(): JSX.Element {
       offKick();
       offRole();
       offCategory();
+      offReaction();
+      offRoomEdited();
+      offRoomDeleted();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,7 +261,25 @@ function App(): JSX.Element {
     }
     void window.buzz
       .roomHistory({ roomId, channelId: activeChannelId, limit: 200 })
-      .then(setMessages);
+      .then((msgs) => {
+        setMessages(msgs);
+        // Load reactions for all loaded messages.
+        void window.buzz.imListReactions(msgs.map((m) => m.id)).then((rows) => {
+          const map = new Map<string, { emoji: string; count: number; mine: boolean }[]>();
+          for (const r of rows) {
+            const list = map.get(r.msgId) ?? [];
+            const existing = list.find((x) => x.emoji === r.emoji);
+            if (existing) {
+              existing.count++;
+              if (r.peerId === myPeerIdRef.current) existing.mine = true;
+            } else {
+              list.push({ emoji: r.emoji, count: 1, mine: r.peerId === myPeerIdRef.current });
+            }
+            map.set(r.msgId, list);
+          }
+          setReactions(map);
+        });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChannelId, roomId]);
 
@@ -310,6 +372,30 @@ function App(): JSX.Element {
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     }
+  }
+
+  async function toggleReaction(msgId: string, emoji: string): Promise<void> {
+    const myId = myPeerIdRef.current;
+    if (!myId) return;
+    const list = reactions.get(msgId) ?? [];
+    const existing = list.find((x) => x.emoji === emoji);
+    if (existing?.mine) {
+      await window.buzz.roomsUnreact({ roomId, msgId, emoji }).catch(() => undefined);
+    } else {
+      await window.buzz.roomsReact({ roomId, msgId, emoji }).catch(() => undefined);
+    }
+  }
+
+  async function commitEdit(msgId: string): Promise<void> {
+    if (!editDraft.trim()) return;
+    await window.buzz.roomsEditMsg({ roomId, msgId, body: editDraft.trim() }).catch(() => undefined);
+    setEditingId(null);
+    setEditDraft('');
+  }
+
+  async function deleteMsg(msgId: string): Promise<void> {
+    if (!confirm('Delete this message?')) return;
+    await window.buzz.roomsDeleteMsg({ roomId, msgId }).catch(() => undefined);
   }
 
   async function kickMember(peerId: string): Promise<void> {
@@ -542,8 +628,36 @@ function App(): JSX.Element {
                     }}
                   >
                     {compact && <strong style={{ marginRight: 4 }}>{m.fromName || nameFor(m.fromPeerId)}:</strong>}
-                    <RichText body={m.body} />
+                    {editingId === m.id ? (
+                      <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input
+                          autoFocus
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void commitEdit(m.id);
+                            if (e.key === 'Escape') { setEditingId(null); setEditDraft(''); }
+                          }}
+                          style={{ flex: 1, fontSize: 'inherit' }}
+                        />
+                        <button style={{ fontSize: 10 }} onClick={() => void commitEdit(m.id)}>Save</button>
+                        <button style={{ fontSize: 10 }} onClick={() => { setEditingId(null); setEditDraft(''); }}>✕</button>
+                      </span>
+                    ) : m.deletedAt ? (
+                      <span style={{ opacity: 0.5, fontStyle: 'italic' }}>[deleted]</span>
+                    ) : (
+                      <>
+                        <RichText body={m.body} />
+                        {m.editedAt && <span style={{ opacity: 0.5, fontSize: 10 }}> (edited)</span>}
+                      </>
+                    )}
                   </div>
+                  {!m.deletedAt && (
+                    <RoomReactionPills
+                      pills={reactions.get(m.id) ?? []}
+                      onToggle={(emoji) => void toggleReaction(m.id, emoji)}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -760,6 +874,38 @@ function App(): JSX.Element {
               {messages.find((m) => m.id === ctxMenu.id)?.isPinned ? '★ Unpin' : '☆ Pin'}
             </div>
           )}
+          {ctxMenu.msgMine && (
+            <div
+              style={{ padding: '6px 12px', cursor: 'pointer' }}
+              onClick={() => {
+                const msg = messages.find((m) => m.id === ctxMenu.id);
+                if (msg) { setEditingId(msg.id); setEditDraft(msg.body); }
+                setCtxMenu(null);
+              }}
+            >
+              ✏️ Edit
+            </div>
+          )}
+          {(ctxMenu.msgMine || isPrivileged) && (
+            <div
+              style={{ padding: '6px 12px', cursor: 'pointer', color: '#c00' }}
+              onClick={() => {
+                void deleteMsg(ctxMenu.id);
+                setCtxMenu(null);
+              }}
+            >
+              🗑️ Delete
+            </div>
+          )}
+          <div
+            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            onClick={() => {
+              setEmojiPickerPos({ id: ctxMenu.id, x: ctxMenu.x, y: ctxMenu.y });
+              setCtxMenu(null);
+            }}
+          >
+            😀 React
+          </div>
         </div>
       )}
 
@@ -805,6 +951,19 @@ function App(): JSX.Element {
             ✕ Kick
           </div>
         </div>
+      )}
+
+      {/* Emoji picker for room reactions */}
+      {emojiPickerPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setEmojiPickerPos(null)} onContextMenu={(e) => { e.preventDefault(); setEmojiPickerPos(null); }} />
+          <RoomEmojiPickerPopover
+            x={emojiPickerPos.x}
+            y={emojiPickerPos.y}
+            onPick={(emoji) => { void toggleReaction(emojiPickerPos.id, emoji); setEmojiPickerPos(null); }}
+            onClose={() => setEmojiPickerPos(null)}
+          />
+        </>
       )}
 
       {/* Pins modal */}
@@ -914,6 +1073,56 @@ function App(): JSX.Element {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+const ROOM_EMOJI_LIST = ['👍','👎','❤️','😂','😮','😢','🔥','🎉','👀','💯','✅','❌','🤔','💀','🙏','🫡','💪','🤝','😎','🚀'];
+
+function RoomEmojiPickerPopover({ x, y, onPick, onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'fixed', left: x, top: y, zIndex: 1000, background: '#fff', border: '1px solid #aaa',
+        borderRadius: 4, padding: 4, display: 'flex', flexWrap: 'wrap', width: 160, gap: 2,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {ROOM_EMOJI_LIST.map((e) => (
+        <span
+          key={e}
+          style={{ cursor: 'pointer', fontSize: 16, padding: '1px 2px', borderRadius: 2 }}
+          title={e}
+          onClick={() => onPick(e)}
+        >{e}</span>
+      ))}
+    </div>
+  );
+}
+
+function RoomReactionPills({
+  pills, onToggle,
+}: {
+  pills: { emoji: string; count: number; mine: boolean }[];
+  onToggle: (emoji: string) => void;
+}) {
+  if (pills.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 2 }}>
+      {pills.map((p) => (
+        <button
+          key={p.emoji}
+          style={{
+            fontSize: 12, padding: '0 5px', border: p.mine ? '1px solid #316ac5' : '1px solid #bbb',
+            background: p.mine ? '#dce8f8' : '#f0f0f0', borderRadius: 10, cursor: 'pointer',
+          }}
+          title={p.mine ? 'Remove reaction' : 'Add reaction'}
+          onClick={() => onToggle(p.emoji)}
+        >
+          {p.emoji} {p.count}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function VoiceChannelPane(props: {
   roomId: string;

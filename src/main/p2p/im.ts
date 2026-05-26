@@ -83,6 +83,11 @@ export type Frame =
   | { type: 'room-kick'; roomId: string; peerId: string; ts: number }
   | { type: 'room-role'; roomId: string; peerId: string; role: string; ts: number }
   | { type: 'room-category'; roomId: string; channelId: string; category: string; ts: number }
+  // v0.7.0 message actions
+  | { type: 'room-reaction'; roomId: string; msgId: string; emoji: string; ts: number }
+  | { type: 'room-unreaction'; roomId: string; msgId: string; emoji: string; ts: number }
+  | { type: 'room-edit-msg'; roomId: string; msgId: string; body: string; ts: number }
+  | { type: 'room-delete-msg'; roomId: string; msgId: string; ts: number }
   // Voice channels: presence beacons + opus/webm audio chunks fanned out to
   // every room member. Audio is *additionally* secret-boxed with the room key
   // (analogous to room-msg) so non-members never see plaintext.
@@ -157,6 +162,9 @@ export type RoomPinPayload = { roomId: string; msgId: string; isPinned: boolean;
 export type RoomKickPayload = { roomId: string; peerId: string; ts: number };
 export type RoomRolePayload = { roomId: string; peerId: string; role: string; ts: number };
 export type RoomCategoryPayload = { roomId: string; channelId: string; category: string; ts: number };
+export type RoomReactionPayload = { roomId: string; msgId: string; emoji: string; added: boolean; ts: number };
+export type RoomEditMsgPayload = { roomId: string; msgId: string; body: string; ts: number };
+export type RoomDeleteMsgPayload = { roomId: string; msgId: string; ts: number };
 
 export type ImEvents = {
   onMessage(peerId: string, msg: { id: string; ts: number; body: string }): void;
@@ -176,6 +184,10 @@ export type ImEvents = {
   onRoomKick?(peerId: string, p: RoomKickPayload): void;
   onRoomRole?(peerId: string, p: RoomRolePayload): void;
   onRoomCategory?(peerId: string, p: RoomCategoryPayload): void;
+  // v0.7.0 message actions
+  onRoomReaction?(peerId: string, p: RoomReactionPayload): void;
+  onRoomEditMsg?(peerId: string, p: RoomEditMsgPayload): void;
+  onRoomDeleteMsg?(peerId: string, p: RoomDeleteMsgPayload): void;
   onBuddyReq?(peerId: string, p: { screenName: string; ts: number }): void;
   onBuddyResp?(peerId: string, p: { accepted: boolean; screenName?: string }): void;
   onGameFrame?(peerId: string, p: { action: string; kind: string; path?: number[] }): void;
@@ -547,6 +559,66 @@ export class ImService {
             roomId: f.roomId,
             channelId: f.channelId,
             category: f.category,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-reaction':
+        if (
+          this.events.onRoomReaction &&
+          typeof f.roomId === 'string' &&
+          typeof f.msgId === 'string' &&
+          typeof f.emoji === 'string'
+        ) {
+          this.events.onRoomReaction(peerIdStr, {
+            roomId: f.roomId,
+            msgId: f.msgId,
+            emoji: f.emoji,
+            added: true,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-unreaction':
+        if (
+          this.events.onRoomReaction &&
+          typeof f.roomId === 'string' &&
+          typeof f.msgId === 'string' &&
+          typeof f.emoji === 'string'
+        ) {
+          this.events.onRoomReaction(peerIdStr, {
+            roomId: f.roomId,
+            msgId: f.msgId,
+            emoji: f.emoji,
+            added: false,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-edit-msg':
+        if (
+          this.events.onRoomEditMsg &&
+          typeof f.roomId === 'string' &&
+          typeof f.msgId === 'string' &&
+          typeof f.body === 'string'
+        ) {
+          this.events.onRoomEditMsg(peerIdStr, {
+            roomId: f.roomId,
+            msgId: f.msgId,
+            body: f.body,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-delete-msg':
+        if (
+          this.events.onRoomDeleteMsg &&
+          typeof f.roomId === 'string' &&
+          typeof f.msgId === 'string'
+        ) {
+          this.events.onRoomDeleteMsg(peerIdStr, {
+            roomId: f.roomId,
+            msgId: f.msgId,
             ts: typeof f.ts === 'number' ? f.ts : Date.now(),
           });
         }

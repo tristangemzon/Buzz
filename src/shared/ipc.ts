@@ -134,6 +134,9 @@ export const IPC = {
   EvtRoomKick: 'evt:roomKick',
   EvtRoomRole: 'evt:roomRole',
   EvtRoomCategory: 'evt:roomCategory',
+  // v0.7.0 message action events
+  EvtRoomEdited: 'evt:roomEdited',
+  EvtRoomDeleted: 'evt:roomDeleted',
   EvtMailboxDelivered: 'evt:mailboxDelivered',
   EvtDiscovered: 'evt:discovered',
   EvtBuddyRequest: 'evt:buddyRequest',

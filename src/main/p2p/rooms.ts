@@ -32,6 +32,9 @@ import type {
   RoomRolePayload,
   RoomVoiceStatePayload,
   RoomVoiceAudioPayload,
+  RoomReactionPayload,
+  RoomEditMsgPayload,
+  RoomDeleteMsgPayload,
 } from './im.js';
 
 export type RoomServiceEvents = {
@@ -51,6 +54,10 @@ export type RoomServiceEvents = {
   onKick(fromPeerId: string, p: RoomKickPayload): void;
   onRole(fromPeerId: string, p: RoomRolePayload): void;
   onCategory(fromPeerId: string, p: RoomCategoryPayload): void;
+  // v0.7.0 message actions
+  onReaction(fromPeerId: string, p: RoomReactionPayload): void;
+  onEditMsg(fromPeerId: string, p: RoomEditMsgPayload): void;
+  onDeleteMsg(fromPeerId: string, p: RoomDeleteMsgPayload): void;
 };
 
 export type RoomBridge = {
@@ -110,6 +117,15 @@ export class RoomService {
   };
   readonly handleCategory = (fromPeerId: string, p: RoomCategoryPayload): void => {
     this.events.onCategory(fromPeerId, p);
+  };
+  readonly handleReaction = (fromPeerId: string, p: RoomReactionPayload): void => {
+    this.events.onReaction(fromPeerId, p);
+  };
+  readonly handleEditMsg = (fromPeerId: string, p: RoomEditMsgPayload): void => {
+    this.events.onEditMsg(fromPeerId, p);
+  };
+  readonly handleDeleteMsg = (fromPeerId: string, p: RoomDeleteMsgPayload): void => {
+    this.events.onDeleteMsg(fromPeerId, p);
   };
 
   private async decryptAndDispatch(fromPeerId: string, p: RoomMsgPayload): Promise<void> {
@@ -378,6 +394,40 @@ export class RoomService {
     await Promise.all(
       recipients.map((peer) =>
         this.im.send(peer, { type: 'room-category', roomId, channelId, category, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastReaction(roomId: string, msgId: string, emoji: string, added: boolean): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const type = added ? 'room-reaction' : 'room-unreaction';
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type, roomId, msgId, emoji, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastEditMsg(roomId: string, msgId: string, body: string): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-edit-msg', roomId, msgId, body, ts }).catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastDeleteMsg(roomId: string, msgId: string): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im.send(peer, { type: 'room-delete-msg', roomId, msgId, ts }).catch(() => undefined),
       ),
     );
   }

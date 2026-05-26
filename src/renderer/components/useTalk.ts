@@ -14,7 +14,9 @@ const MIME = 'audio/webm;codecs=opus';
 const TIMESLICE_MS = 80;
 // Early-2000s vibe video: 160x120 @ 10fps, 64 kbps VP8.
 const VIDEO_MIME = 'video/webm;codecs=vp8';
-const VIDEO_TIMESLICE_MS = 250;
+// 100ms gives video chunks close in frequency to audio (80ms), cutting
+// worst-case chunk latency from 250ms and reducing audio/video drift.
+const VIDEO_TIMESLICE_MS = 100;
 const VIDEO_BITS_PER_SEC = 64_000;
 const VIDEO_WIDTH = 160;
 const VIDEO_HEIGHT = 120;
@@ -152,7 +154,12 @@ class PlaybackSink {
     void audio.play().catch((err) => console.warn('[talk] play() rejected (initial)', err));
     ms.addEventListener('sourceopen', () => {
       try {
+        // Signal live-stream mode: suppress aggressive prefetch buffering.
+        ms.duration = Infinity;
         const sb = ms.addSourceBuffer(MIME);
+        // Sequence mode: ignore embedded WebM timestamps and assign them
+        // monotonically, eliminating stalls from MediaRecorder clock drift.
+        sb.mode = 'sequence';
         sb.addEventListener('updateend', () => this.drain());
         this.sourceBuffer = sb;
         this.opened = true;
@@ -321,7 +328,11 @@ class VideoPlaybackSink {
     void v.play().catch(() => undefined);
     ms.addEventListener('sourceopen', () => {
       try {
+        // Signal live-stream mode: suppress aggressive prefetch buffering.
+        ms.duration = Infinity;
         const sb = ms.addSourceBuffer(VIDEO_MIME);
+        // Sequence mode: ignore embedded WebM timestamps, assign monotonically.
+        sb.mode = 'sequence';
         sb.addEventListener('updateend', () => this.drain());
         this.sourceBuffer = sb;
         this.opened = true;
@@ -347,8 +358,31 @@ class VideoPlaybackSink {
   private drain(): void {
     const sb = this.sourceBuffer;
     if (!sb || sb.updating) return;
+    const v = this.video;
+    // Trim buffered content more than 2s behind current playback position to
+    // prevent unbounded buffer growth. remove() is async — updateend fires
+    // again once done, re-invoking drain() to continue.
+    if (v && v.buffered.length > 0) {
+      const trimTo = v.currentTime - 2.0;
+      if (trimTo > v.buffered.start(0)) {
+        try {
+          sb.remove(v.buffered.start(0), trimTo);
+          return;
+        } catch { /* ignore */ }
+      }
+    }
     const next = this.queue.shift();
-    if (!next) return;
+    if (!next) {
+      // Queue drained — nudge to live edge if currentTime has drifted > 500ms
+      // behind the latest buffered data (e.g. after a stall or slow chunk).
+      if (v && v.buffered.length > 0) {
+        const edge = v.buffered.end(v.buffered.length - 1);
+        if (edge - v.currentTime > 0.5) {
+          v.currentTime = Math.max(0, edge - 0.1);
+        }
+      }
+      return;
+    }
     try {
       sb.appendBuffer(next);
     } catch (err) {

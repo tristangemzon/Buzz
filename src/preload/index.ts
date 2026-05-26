@@ -94,6 +94,11 @@ const api: AppApi = {
   roomsKick: (req) => ipcRenderer.invoke(IPC.RoomsKick, req),
   roomsSetRole: (req) => ipcRenderer.invoke(IPC.RoomsSetRole, req),
   roomsSetCategory: (req) => ipcRenderer.invoke(IPC.RoomsSetCategory, req),
+  // v0.7.0 message actions
+  roomsReact: (req) => ipcRenderer.invoke(IPC.RoomsReact, req),
+  roomsUnreact: (req) => ipcRenderer.invoke(IPC.RoomsUnreact, req),
+  roomsEditMsg: (req) => ipcRenderer.invoke(IPC.RoomsEditMsg, req),
+  roomsDeleteMsg: (req) => ipcRenderer.invoke(IPC.RoomsDeleteMsg, req),
 
   mailboxStats: () => ipcRenderer.invoke(IPC.MailboxStats),
   mailboxAddRelay: (req) => ipcRenderer.invoke(IPC.MailboxAddRelay, req),
@@ -127,6 +132,9 @@ const api: AppApi = {
   onRoomKick: (cb) => on(IPC.EvtRoomKick, cb),
   onRoomRole: (cb) => on(IPC.EvtRoomRole, cb),
   onRoomCategory: (cb) => on(IPC.EvtRoomCategory, cb),
+  // v0.7.0 message action events
+  onRoomEdited: (cb) => on(IPC.EvtRoomEdited, cb),
+  onRoomDeleted: (cb) => on(IPC.EvtRoomDeleted, cb),
   onMailboxDelivered: (cb) => on(IPC.EvtMailboxDelivered, cb),
   onDiscovered: (cb) => on(IPC.EvtDiscovered, cb),
   onBuddyRequest: (cb) => on(IPC.EvtBuddyRequest, cb),

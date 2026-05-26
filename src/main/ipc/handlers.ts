@@ -33,6 +33,10 @@ import {
   RoomChannelDeleteReq,
   RoomVoiceJoinReq,
   RoomVoiceLeaveReq,
+  RoomReactReq,
+  RoomUnreactReq,
+  RoomEditMsgReq,
+  RoomDeleteMsgReq,
   MailboxAddRelayReq,
   MailboxRemoveRelayReq,
   NetworkConfig,
@@ -698,6 +702,59 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     } else {
       hive!.sendRoomCategory(roomId, channelId, category);
     }
+    return { ok: true as const };
+  });
+
+  // ── v0.7.0 room message actions ────────────────────────────────────────
+  handle(IPC.RoomsReact, RoomReactReq, async ({ roomId, msgId, emoji }) => {
+    const db = requireDb(session);
+    const myPeerId = session.peerIdStr();
+    repos.upsertReaction(db, msgId, myPeerId, emoji);
+    const evt = { roomId, msgId, peerId: myPeerId, emoji, added: true };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtReaction, evt);
+    }
+    if (session.rooms) await session.rooms.broadcastReaction(roomId, msgId, emoji, true);
+    else if (session.hiveClient) session.hiveClient.sendRoomReaction(roomId, msgId, emoji);
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsUnreact, RoomUnreactReq, async ({ roomId, msgId, emoji }) => {
+    const db = requireDb(session);
+    const myPeerId = session.peerIdStr();
+    repos.deleteReaction(db, msgId, myPeerId, emoji);
+    const evt = { roomId, msgId, peerId: myPeerId, emoji, added: false };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtReaction, evt);
+    }
+    if (session.rooms) await session.rooms.broadcastReaction(roomId, msgId, emoji, false);
+    else if (session.hiveClient) session.hiveClient.sendRoomUnreaction(roomId, msgId, emoji);
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsEditMsg, RoomEditMsgReq, async ({ roomId, msgId, body }) => {
+    const db = requireDb(session);
+    repos.editRoomMessage(db, msgId, body);
+    const editedAt = Date.now();
+    const evt = { roomId, msgId, body, editedAt };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtRoomEdited, evt);
+    }
+    if (session.rooms) await session.rooms.broadcastEditMsg(roomId, msgId, body);
+    // Note: Hive server mode room message edits not yet supported (requires Hive wire protocol extension)
+    return { ok: true as const };
+  });
+
+  handle(IPC.RoomsDeleteMsg, RoomDeleteMsgReq, async ({ roomId, msgId }) => {
+    const db = requireDb(session);
+    repos.deleteRoomMessage(db, msgId);
+    const deletedAt = Date.now();
+    const evt = { roomId, msgId, deletedAt };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.EvtRoomDeleted, evt);
+    }
+    if (session.rooms) await session.rooms.broadcastDeleteMsg(roomId, msgId);
+    // Note: Hive server mode room message deletes not yet supported (requires Hive wire protocol extension)
     return { ok: true as const };
   });
 

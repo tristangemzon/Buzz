@@ -253,7 +253,7 @@ function App(): JSX.Element {
         const idx = list.findIndex((x) => x.emoji === emoji);
         if (added) {
           if (idx >= 0) {
-            const entry = { ...list[idx], count: list[idx].count + 1 };
+            const entry = { ...list[idx]!, count: list[idx]!.count + 1 };
             if (reactorId === myPeerIdRef.current) entry.mine = true;
             list[idx] = entry;
           } else {
@@ -261,7 +261,7 @@ function App(): JSX.Element {
           }
         } else {
           if (idx >= 0) {
-            const entry = { ...list[idx], count: Math.max(0, list[idx].count - 1) };
+            const entry = { ...list[idx]!, count: Math.max(0, list[idx]!.count - 1) };
             if (reactorId === myPeerIdRef.current) entry.mine = false;
             if (entry.count > 0) list[idx] = entry; else list.splice(idx, 1);
           }

@@ -1,14 +1,14 @@
 {
   "name": "buzz",
   "productName": "Buzz",
-  "version": "0.5.9",
+  "version": "0.7.0",
   "description": "Buzz — secure, AIM/AOL-flavoured P2P chat client (Electron + libp2p + SQLCipher).",
   "main": "out/main/index.js",
   "type": "module",
   "private": true,
   "author": {
     "name": "Tristan Gemzon",
-    "email": "tristangemzon@gmail.com"
+    "email": "tristangemzon@outlook.com"
   },
   "license": "MIT",
   "scripts": {

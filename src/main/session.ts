@@ -457,6 +457,9 @@ export class Session {
         onRoomKick: (peer, p) => this.rooms?.handleKick(peer, p),
         onRoomRole: (peer, p) => this.rooms?.handleRole(peer, p),
         onRoomCategory: (peer, p) => this.rooms?.handleCategory(peer, p),
+        onRoomReaction: (peer, p) => this.rooms?.handleReaction(peer, p),
+        onRoomEditMsg: (peer, p) => this.rooms?.handleEditMsg(peer, p),
+        onRoomDeleteMsg: (peer, p) => this.rooms?.handleDeleteMsg(peer, p),
         onBuddyReq: (peer, p) => this.handleBuddyReq(peer, p),
         onBuddyResp: (peer, p) => this.handleBuddyResp(peer, p),
         onGameFrame: (peer, p) => this.handleGameFrame(peer, p),
@@ -904,6 +907,22 @@ export class Session {
           if (!this.db) return;
           repos.setChannelCategory(this.db, p.channelId, p.category);
           this.broadcast(IPC.EvtRoomCategory, { roomId: p.roomId, channelId: p.channelId, category: p.category } satisfies RoomCategoryEvent);
+        },
+        onReaction: (_fromPeerId, p) => {
+          if (!this.db) return;
+          if (p.added) repos.upsertReaction(this.db, p.msgId, _fromPeerId, p.emoji);
+          else repos.deleteReaction(this.db, p.msgId, _fromPeerId, p.emoji);
+          this.broadcast(IPC.EvtReaction, { roomId: p.roomId, msgId: p.msgId, peerId: _fromPeerId, emoji: p.emoji, added: p.added });
+        },
+        onEditMsg: (_fromPeerId, p) => {
+          if (!this.db) return;
+          repos.editRoomMessage(this.db, p.msgId, p.body);
+          this.broadcast(IPC.EvtRoomEdited, { roomId: p.roomId, msgId: p.msgId, body: p.body, editedAt: p.ts });
+        },
+        onDeleteMsg: (_fromPeerId, p) => {
+          if (!this.db) return;
+          repos.deleteRoomMessage(this.db, p.msgId);
+          this.broadcast(IPC.EvtRoomDeleted, { roomId: p.roomId, msgId: p.msgId, deletedAt: p.ts });
         },
       },
       {

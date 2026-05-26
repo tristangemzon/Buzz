@@ -51,6 +51,10 @@ import type {
   RoomSendReq,
   RoomSetRoleReq,
   RoomSetCategoryReq,
+  RoomReactReq,
+  RoomUnreactReq,
+  RoomEditMsgReq,
+  RoomDeleteMsgReq,
   MailboxAddRelayReq,
   MailboxDeliveredEvent,
   MailboxRemoveRelayReq,
@@ -221,6 +225,11 @@ export type AppApi = {
   roomsKick(req: RoomKickReq): Promise<{ ok: true }>;
   roomsSetRole(req: RoomSetRoleReq): Promise<{ ok: true }>;
   roomsSetCategory(req: RoomSetCategoryReq): Promise<{ ok: true }>;
+  // v0.7.0 message actions
+  roomsReact(req: RoomReactReq): Promise<{ ok: true }>;
+  roomsUnreact(req: RoomUnreactReq): Promise<{ ok: true }>;
+  roomsEditMsg(req: RoomEditMsgReq): Promise<{ ok: true }>;
+  roomsDeleteMsg(req: RoomDeleteMsgReq): Promise<{ ok: true }>;
 
   roomVoiceJoin(req: RoomVoiceJoinReq): Promise<{ ok: true }>;
   roomVoiceLeave(req: RoomVoiceLeaveReq): Promise<{ ok: true }>;
@@ -262,6 +271,9 @@ export type AppApi = {
   onRoomKick(cb: (e: RoomKickEvent) => void): () => void;
   onRoomRole(cb: (e: RoomRoleEvent) => void): () => void;
   onRoomCategory(cb: (e: RoomCategoryEvent) => void): () => void;
+  // v0.7.0 message action events
+  onRoomEdited(cb: (e: { roomId: string; msgId: string; body: string; editedAt: number }) => void): () => void;
+  onRoomDeleted(cb: (e: { roomId: string; msgId: string; deletedAt: number }) => void): () => void;
   onMailboxDelivered(cb: (e: MailboxDeliveredEvent) => void): () => void;
   onDiscovered(cb: (e: DiscoveredEvent) => void): () => void;
   onBuddyRequest(cb: (e: BuddyRequestEvent) => void): () => void;

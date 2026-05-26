@@ -431,6 +431,14 @@ export function pinRoomMessage(db: Db, msgId: string, isPinned: boolean): void {
   db.prepare('UPDATE room_messages SET is_pinned=? WHERE id=?').run(isPinned ? 1 : 0, msgId);
 }
 
+export function editRoomMessage(db: Db, msgId: string, body: string): void {
+  db.prepare('UPDATE room_messages SET body=?, edited_at=? WHERE id=?').run(body, Date.now(), msgId);
+}
+
+export function deleteRoomMessage(db: Db, msgId: string): void {
+  db.prepare('UPDATE room_messages SET deleted_at=? WHERE id=?').run(Date.now(), msgId);
+}
+
 export function listPinnedRoomMessages(db: Db, roomId: string, channelId?: string): RoomMessage[] {
   const params: unknown[] = [roomId];
   let where = 'room_id=? AND is_pinned=1';

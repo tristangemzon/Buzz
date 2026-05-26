@@ -538,6 +538,16 @@ export const RoomSetCategoryReq = z.object({
 });
 export type RoomSetCategoryReq = z.infer<typeof RoomSetCategoryReq>;
 
+// v0.7.0 message action requests
+export const RoomReactReq = z.object({ roomId: RoomId, msgId: Uuid, emoji: z.string().min(1).max(8) });
+export type RoomReactReq = z.infer<typeof RoomReactReq>;
+export const RoomUnreactReq = z.object({ roomId: RoomId, msgId: Uuid, emoji: z.string().min(1).max(8) });
+export type RoomUnreactReq = z.infer<typeof RoomUnreactReq>;
+export const RoomEditMsgReq = z.object({ roomId: RoomId, msgId: Uuid, body: z.string().min(1).max(8192) });
+export type RoomEditMsgReq = z.infer<typeof RoomEditMsgReq>;
+export const RoomDeleteMsgReq = z.object({ roomId: RoomId, msgId: Uuid });
+export type RoomDeleteMsgReq = z.infer<typeof RoomDeleteMsgReq>;
+
 export const RoomPinEvent = z.object({
   roomId: RoomId,
   msgId: Uuid,
