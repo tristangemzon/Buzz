@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, BrowserWindow } from 'electron';
+import { app, desktopCapturer, dialog, ipcMain, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, type ZodTypeAny } from 'zod';
@@ -37,6 +37,7 @@ import {
   RoomUnreactReq,
   RoomEditMsgReq,
   RoomDeleteMsgReq,
+  TalkScreenStateReq,
   MailboxAddRelayReq,
   MailboxRemoveRelayReq,
   NetworkConfig,
@@ -471,6 +472,31 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       await session.setCallVideo(callId, on);
     },
   );
+  handle(IPC.TalkScreenSources, null, async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 220, height: 140 },
+      fetchWindowIcons: false,
+    });
+    return {
+      sources: sources.map((source) => ({
+        id: source.id,
+        name: source.name,
+        kind: source.id.startsWith('screen:') ? 'screen' as const : 'window' as const,
+        thumbnailDataUrl: source.thumbnail.isEmpty() ? undefined : source.thumbnail.toDataURL(),
+      })),
+    };
+  });
+  handle(
+    IPC.TalkScreen,
+    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
+    async ({ callId, data }) => {
+      await session.sendCallScreen(callId, data);
+    },
+  );
+  handle(IPC.TalkScreenState, TalkScreenStateReq, async ({ callId, on, sourceName, resolution }) => {
+    await session.setCallScreen(callId, on, sourceName, resolution);
+  });
   handle(IPC.TalkGetActive, z.object({ peerId: PeerIdStr }), ({ peerId }) =>
     session.getActiveCall(peerId),
   );

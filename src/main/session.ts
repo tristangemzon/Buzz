@@ -54,6 +54,9 @@ import type {
   TalkAudioEvent,
   TalkVideoEvent,
   TalkVideoStateEvent,
+  TalkScreenEvent,
+  TalkScreenStateEvent,
+  ScreenShareResolution,
   ConnectionHealth,
   HealthState,
   TransportHealth,
@@ -532,6 +535,9 @@ export class Session {
         onAudio: (peerId, callId, seq, data) => this.handleTalkAudio(peerId, callId, seq, data),
         onVideo: (peerId, callId, seq, data) => this.handleTalkVideo(peerId, callId, seq, data),
         onVideoState: (peerId, callId, on) => this.handleTalkVideoState(peerId, callId, on),
+        onScreen: (peerId, callId, seq, data) => this.handleTalkScreen(peerId, callId, seq, data),
+        onScreenState: (peerId, callId, on, sourceName, resolution) =>
+          this.handleTalkScreenState(peerId, callId, on, sourceName, resolution),
       },
       (peerId) => (this.db ? repos.isBlocked(this.db, peerId) : false),
     );
@@ -1157,14 +1163,16 @@ export class Session {
         this.broadcast(IPC.EvtRoomMembers, { roomId, members } satisfies RoomMembersEvent);
       },
       onTalkSignal: (from, callId, signal, payload) => {
-        // Re-use the same talk signal IPC so renderers don't need to know about Hive.
-        this.broadcast(IPC.EvtTalkState, { from, callId, signal, payload });
+        this.handleHiveTalkSignal(from, callId, signal, payload);
       },
       onTalkAudio: (from, callId, buf) => {
         this.handleTalkAudio(from, callId, 0, buf);
       },
       onTalkVideo: (from, callId, buf) => {
         this.handleTalkVideo(from, callId, 0, buf);
+      },
+      onTalkScreen: (from, callId, buf) => {
+        this.handleTalkScreen(from, callId, 0, buf);
       },
       onGameSignal: (from, action, kind, path) => {
         this.handleGameFrame(from, { action, kind, path });
@@ -1559,8 +1567,99 @@ export class Session {
     return this.currentCall;
   }
 
-  async startCall(peerId: string, kind: 'voice' | 'video' = 'voice'): Promise<TalkCallState> {
+  private async sendTalkControl(peerId: string, callId: string, signal: 'invite' | 'accept' | 'reject' | 'bye' | 'videoState' | 'screenState', payload?: unknown): Promise<void> {
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkSignal(peerId, callId, signal, payload ?? null);
+      return;
+    }
     if (!this.talk) throw new Error('Locked');
+    switch (signal) {
+      case 'invite': {
+        const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+        await this.talk.send(peerId, {
+          type: 'invite',
+          callId,
+          screenName: typeof p['screenName'] === 'string' ? p['screenName'] : this.screenName,
+          ts: typeof p['ts'] === 'number' ? p['ts'] : Date.now(),
+          kind: p['kind'] === 'video' ? 'video' : 'voice',
+        });
+        return;
+      }
+      case 'accept':
+        await this.talk.send(peerId, { type: 'accept', callId });
+        return;
+      case 'reject': {
+        const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+        await this.talk.send(peerId, { type: 'reject', callId, reason: typeof p['reason'] === 'string' ? p['reason'] : undefined });
+        return;
+      }
+      case 'bye':
+        await this.talk.send(peerId, { type: 'bye', callId });
+        return;
+      case 'videoState': {
+        const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+        await this.talk.send(peerId, { type: 'videoState', callId, on: p['on'] === true });
+        return;
+      }
+      case 'screenState': {
+        const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+        const resolution = p['resolution'] === '480p' || p['resolution'] === '720p' || p['resolution'] === '1080p'
+          ? p['resolution']
+          : undefined;
+        await this.talk.send(peerId, {
+          type: 'screenState',
+          callId,
+          on: p['on'] === true,
+          sourceName: typeof p['sourceName'] === 'string' ? p['sourceName'] : undefined,
+          resolution,
+        });
+        return;
+      }
+    }
+  }
+
+  private handleHiveTalkSignal(peerId: string, callId: string, signal: string, payload: unknown): void {
+    const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    switch (signal) {
+      case 'invite': {
+        const screenName = typeof p['screenName'] === 'string' ? p['screenName'] : peerId;
+        const ts = typeof p['ts'] === 'number' ? p['ts'] : Date.now();
+        const kind = p['kind'] === 'video' ? 'video' : 'voice';
+        this.handleTalkInvite(peerId, callId, screenName, ts, kind);
+        return;
+      }
+      case 'accept':
+        this.handleTalkAccept(peerId, callId);
+        return;
+      case 'reject':
+        this.handleTalkReject(peerId, callId, typeof p['reason'] === 'string' ? p['reason'] : undefined);
+        return;
+      case 'bye':
+        this.handleTalkBye(peerId, callId);
+        return;
+      case 'videoState':
+        this.handleTalkVideoState(peerId, callId, p['on'] === true);
+        return;
+      case 'screenState': {
+        const resolution = p['resolution'] === '480p' || p['resolution'] === '720p' || p['resolution'] === '1080p'
+          ? p['resolution']
+          : undefined;
+        this.handleTalkScreenState(
+          peerId,
+          callId,
+          p['on'] === true,
+          typeof p['sourceName'] === 'string' ? p['sourceName'] : undefined,
+          resolution,
+        );
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  async startCall(peerId: string, kind: 'voice' | 'video' = 'voice'): Promise<TalkCallState> {
+    if (!this.talk && !this.hiveClient) throw new Error('Locked');
     if (this.currentCall && this.currentCall.state !== 'ended') {
       throw new Error('Another call is already active');
     }
@@ -1579,13 +1678,7 @@ export class Session {
     this.broadcast(IPC.EvtTalkState, state);
     this.broadcastHealth();
     try {
-      await this.talk.send(peerId, {
-        type: 'invite',
-        callId,
-        screenName: this.screenName,
-        ts,
-        kind,
-      });
+      await this.sendTalkControl(peerId, callId, 'invite', { screenName: this.screenName, ts, kind });
     } catch (err) {
       this.endCallLocal(callId, 'unreachable');
       throw err;
@@ -1594,62 +1687,94 @@ export class Session {
   }
 
   async acceptCall(callId: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.role !== 'callee') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'accept', callId }).catch(() => undefined);
+    await this.sendTalkControl(peerId, callId, 'accept').catch(() => undefined);
     this.currentCall = { ...this.currentCall, state: 'active', startedAt: Date.now() };
     this.broadcast(IPC.EvtTalkState, this.currentCall);
     this.broadcastHealth();
   }
 
   async rejectCall(callId: string, reason?: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'reject', callId, reason }).catch(() => undefined);
+    await this.sendTalkControl(peerId, callId, 'reject', { reason }).catch(() => undefined);
     this.endCallLocal(callId, reason ?? 'rejected');
   }
 
   async endCall(callId: string): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'bye', callId }).catch(() => undefined);
+    await this.sendTalkControl(peerId, callId, 'bye').catch(() => undefined);
     this.endCallLocal(callId, 'ended');
   }
 
   async sendCallAudio(callId: string, data: Uint8Array): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
     // eslint-disable-next-line no-console
     console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkAudio(peerId, callId, Buffer.from(data));
+      return;
+    }
     // We don't bother numbering on the main side; renderer-side seq is fine.
-    await this.talk.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
+    await this.talk?.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
       console.warn('[talk] tx send failed', err);
     });
   }
 
   async sendCallVideo(callId: string, data: Uint8Array): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkVideo(peerId, callId, Buffer.from(data));
+      return;
+    }
+    await this.talk?.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
       console.warn('[talk] video tx send failed', err);
     });
   }
 
   async setCallVideo(callId: string, on: boolean): Promise<void> {
-    if (!this.talk || !this.currentCall) return;
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    await this.talk.send(peerId, { type: 'videoState', callId, on }).catch((err) => {
+    await this.sendTalkControl(peerId, callId, 'videoState', { on }).catch((err) => {
       console.warn('[talk] videoState send failed', err);
+    });
+  }
+
+  async sendCallScreen(callId: string, data: Uint8Array): Promise<void> {
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.state !== 'active') return;
+    const peerId = this.currentCall.peerId;
+    if (this.hiveClient) {
+      this.hiveClient.sendTalkScreen(peerId, callId, Buffer.from(data));
+      return;
+    }
+    await this.talk?.send(peerId, { type: 'screen', callId, seq: 0, data }).catch((err) => {
+      console.warn('[talk] screen tx send failed', err);
+    });
+  }
+
+  async setCallScreen(callId: string, on: boolean, sourceName?: string, resolution?: ScreenShareResolution): Promise<void> {
+    if ((!this.talk && !this.hiveClient) || !this.currentCall) return;
+    if (this.currentCall.callId !== callId) return;
+    if (this.currentCall.state !== 'active') return;
+    const peerId = this.currentCall.peerId;
+    await this.sendTalkControl(peerId, callId, 'screenState', { on, sourceName, resolution }).catch((err) => {
+      console.warn('[talk] screenState send failed', err);
     });
   }
 
@@ -1675,10 +1800,9 @@ export class Session {
     _ts: number,
     kind: 'voice' | 'video',
   ): void {
-    if (!this.talk) return;
     // Reject if already in another call.
     if (this.currentCall && this.currentCall.state !== 'ended') {
-      void this.talk.send(peerId, { type: 'reject', callId, reason: 'busy' }).catch(() => undefined);
+      void this.sendTalkControl(peerId, callId, 'reject', { reason: 'busy' }).catch(() => undefined);
       return;
     }
     const state: TalkCallState = {
@@ -1746,6 +1870,25 @@ export class Session {
     if (this.currentCall.state !== 'active') return;
     const ev: TalkVideoStateEvent = { callId, peerId, on };
     this.broadcast(IPC.EvtTalkVideoState, ev);
+  }
+
+  private handleTalkScreen(peerId: string, callId: string, seq: number, data: Uint8Array): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    if (this.currentCall.state !== 'active') return;
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    const ev: TalkScreenEvent = { callId, peerId, seq, data: copy };
+    this.broadcast(IPC.EvtTalkScreen, ev);
+  }
+
+  private handleTalkScreenState(peerId: string, callId: string, on: boolean, sourceName?: string, resolution?: ScreenShareResolution): void {
+    if (!this.currentCall || this.currentCall.callId !== callId) return;
+    if (this.currentCall.peerId !== peerId) return;
+    if (this.currentCall.state !== 'active') return;
+    const ev: TalkScreenStateEvent = { callId, peerId, on, sourceName, resolution };
+    this.broadcast(IPC.EvtTalkScreenState, ev);
+    this.broadcastHealth();
   }
 
   // ── voice channels ────────────────────────────────────────────────────

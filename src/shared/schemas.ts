@@ -775,3 +775,50 @@ export const TalkVideoStateEvent = z.object({
   on: z.boolean(),
 });
 export type TalkVideoStateEvent = z.infer<typeof TalkVideoStateEvent>;
+
+export const ScreenShareResolution = z.enum(['480p', '720p', '1080p']);
+export type ScreenShareResolution = z.infer<typeof ScreenShareResolution>;
+
+export const ScreenShareSource = z.object({
+  id: z.string().min(1).max(512),
+  name: z.string().min(1).max(256),
+  kind: z.enum(['screen', 'window']),
+  thumbnailDataUrl: z.string().max(2 * 1024 * 1024).optional(),
+});
+export type ScreenShareSource = z.infer<typeof ScreenShareSource>;
+
+export const TalkScreenSourcesResult = z.object({
+  sources: z.array(ScreenShareSource),
+});
+export type TalkScreenSourcesResult = z.infer<typeof TalkScreenSourcesResult>;
+
+export const TalkScreenReq = z.object({
+  callId: Uuid,
+  data: z.instanceof(Uint8Array),
+});
+export type TalkScreenReq = z.infer<typeof TalkScreenReq>;
+
+export const TalkScreenStateReq = z.object({
+  callId: Uuid,
+  on: z.boolean(),
+  sourceName: z.string().min(1).max(256).optional(),
+  resolution: ScreenShareResolution.optional(),
+});
+export type TalkScreenStateReq = z.infer<typeof TalkScreenStateReq>;
+
+export const TalkScreenEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  seq: z.number().int().nonnegative(),
+  data: z.instanceof(Uint8Array),
+});
+export type TalkScreenEvent = z.infer<typeof TalkScreenEvent>;
+
+export const TalkScreenStateEvent = z.object({
+  callId: Uuid,
+  peerId: PeerIdStr,
+  on: z.boolean(),
+  sourceName: z.string().min(1).max(256).optional(),
+  resolution: ScreenShareResolution.optional(),
+});
+export type TalkScreenStateEvent = z.infer<typeof TalkScreenStateEvent>;

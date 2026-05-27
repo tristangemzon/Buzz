@@ -74,6 +74,9 @@ export const IPC = {
   TalkAudio: 'talk:audio',
   TalkVideo: 'talk:video',
   TalkVideoState: 'talk:videoState',
+  TalkScreenSources: 'talk:screenSources',
+  TalkScreen: 'talk:screen',
+  TalkScreenState: 'talk:screenState',
   TalkGetActive: 'talk:getActive',
 
   // chat rooms
@@ -152,6 +155,8 @@ export const IPC = {
   EvtTalkAudio: 'evt:talkAudio',
   EvtTalkVideo: 'evt:talkVideo',
   EvtTalkVideoState: 'evt:talkVideoState',
+  EvtTalkScreen: 'evt:talkScreen',
+  EvtTalkScreenState: 'evt:talkScreenState',
 
   // auto-update (electron-updater / GitHub Releases)
   UpdatesCheck: 'updates:check',

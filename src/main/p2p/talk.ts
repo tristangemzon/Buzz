@@ -10,6 +10,7 @@
 //   { type: 'reject', callId, reason? }
 //   { type: 'bye',    callId }
 //   { type: 'audio',  callId, seq, data }   - opus-in-webm chunk
+//   { type: 'screen', callId, seq, data }   - VP8/WebM screen chunk
 //
 // Codec is hardcoded to audio/webm;codecs=opus. Both sides agree on this in
 // MVP; a future revision can negotiate via 'invite'/'accept' fields.
@@ -32,7 +33,9 @@ export type TalkFrame =
   | { type: 'bye'; callId: string }
   | { type: 'audio'; callId: string; seq: number; data: Uint8Array }
   | { type: 'video'; callId: string; seq: number; data: Uint8Array }
-  | { type: 'videoState'; callId: string; on: boolean };
+  | { type: 'videoState'; callId: string; on: boolean }
+  | { type: 'screen'; callId: string; seq: number; data: Uint8Array }
+  | { type: 'screenState'; callId: string; on: boolean; sourceName?: string; resolution?: '480p' | '720p' | '1080p' };
 
 export type TalkEvents = {
   onInvite(peerId: string, callId: string, screenName: string, ts: number, kind: 'voice' | 'video'): void;
@@ -42,6 +45,8 @@ export type TalkEvents = {
   onAudio(peerId: string, callId: string, seq: number, data: Uint8Array): void;
   onVideo(peerId: string, callId: string, seq: number, data: Uint8Array): void;
   onVideoState(peerId: string, callId: string, on: boolean): void;
+  onScreen(peerId: string, callId: string, seq: number, data: Uint8Array): void;
+  onScreenState(peerId: string, callId: string, on: boolean, sourceName?: string, resolution?: '480p' | '720p' | '1080p'): void;
 };
 
 type ConnState = {
@@ -236,6 +241,23 @@ export class TalkService {
       case 'videoState':
         if (typeof f.callId === 'string' && typeof f.on === 'boolean') {
           this.events.onVideoState(peerIdStr, f.callId, f.on);
+        }
+        break;
+      case 'screen':
+        if (
+          typeof f.callId === 'string' &&
+          typeof f.seq === 'number' &&
+          f.data instanceof Uint8Array
+        ) {
+          this.events.onScreen(peerIdStr, f.callId, f.seq, f.data);
+        }
+        break;
+      case 'screenState':
+        if (typeof f.callId === 'string' && typeof f.on === 'boolean') {
+          const resolution = f.resolution === '480p' || f.resolution === '720p' || f.resolution === '1080p'
+            ? f.resolution
+            : undefined;
+          this.events.onScreenState(peerIdStr, f.callId, f.on, f.sourceName, resolution);
         }
         break;
     }

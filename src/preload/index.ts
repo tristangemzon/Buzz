@@ -74,6 +74,10 @@ const api: AppApi = {
   talkSendAudio: (callId, data) => ipcRenderer.invoke(IPC.TalkAudio, { callId, data }),
   talkSendVideo: (callId, data) => ipcRenderer.invoke(IPC.TalkVideo, { callId, data }),
   talkSetVideo: (callId, on) => ipcRenderer.invoke(IPC.TalkVideoState, { callId, on }),
+  talkGetScreenSources: () => ipcRenderer.invoke(IPC.TalkScreenSources),
+  talkSendScreen: (callId, data) => ipcRenderer.invoke(IPC.TalkScreen, { callId, data }),
+  talkSetScreen: (callId, on, sourceName, resolution) =>
+    ipcRenderer.invoke(IPC.TalkScreenState, { callId, on, sourceName, resolution }),
   talkGetActive: (peerId) => ipcRenderer.invoke(IPC.TalkGetActive, { peerId }),
 
   listRooms: () => ipcRenderer.invoke(IPC.RoomsList),
@@ -149,6 +153,8 @@ const api: AppApi = {
   onTalkAudio: (cb) => on(IPC.EvtTalkAudio, cb),
   onTalkVideo: (cb) => on(IPC.EvtTalkVideo, cb),
   onTalkVideoState: (cb) => on(IPC.EvtTalkVideoState, cb),
+  onTalkScreen: (cb) => on(IPC.EvtTalkScreen, cb),
+  onTalkScreenState: (cb) => on(IPC.EvtTalkScreenState, cb),
 
   updatesCheck: () => ipcRenderer.invoke(IPC.UpdatesCheck),
   updatesDownload: () => ipcRenderer.invoke(IPC.UpdatesDownload),

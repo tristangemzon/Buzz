@@ -113,6 +113,7 @@ const PING_TIMEOUT_MS = 20_000;
 // Binary frame type bytes (must match Hive server/handlers.ts).
 const BINARY_AUDIO = 0xa1;
 const BINARY_VIDEO = 0xa2;
+const BINARY_SCREEN = 0xa3;
 
 export type HiveCallbacks = {
   onMessage: (peerId: string, msgId: string, ts: number, cipherB64: string) => void;
@@ -128,6 +129,7 @@ export type HiveCallbacks = {
   onTalkSignal: (from: string, callId: string, signal: string, payload: unknown) => void;
   onTalkAudio: (from: string, callId: string, buf: Buffer) => void;
   onTalkVideo: (from: string, callId: string, buf: Buffer) => void;
+  onTalkScreen: (from: string, callId: string, buf: Buffer) => void;
   onGameSignal?: (from: string, action: string, kind: string, path?: number[]) => void;
   onAuthed: (peerId: string, buddies: BuddyEntry[], pendingRequests: BuddyRequest[], pubKeys: Record<string, string>) => void;
   onConnected: () => void;
@@ -433,7 +435,7 @@ export class HiveClient {
   private _handleBinary(buf: Buffer): void {
     if (buf.length < 3) return;
     const type = buf[0];
-    if (type !== BINARY_AUDIO && type !== BINARY_VIDEO) return;
+    if (type !== BINARY_AUDIO && type !== BINARY_VIDEO && type !== BINARY_SCREEN) return;
 
     // Parse: [1 type][2 fromPeerIdLen][fromPeerId][2 callIdLen][callId][...payload]
     let offset = 1;
@@ -449,8 +451,10 @@ export class HiveClient {
 
     if (type === BINARY_AUDIO) {
       this.callbacks.onTalkAudio(from, callId, payload);
-    } else {
+    } else if (type === BINARY_VIDEO) {
       this.callbacks.onTalkVideo(from, callId, payload);
+    } else {
+      this.callbacks.onTalkScreen(from, callId, payload);
     }
   }
 
@@ -616,7 +620,7 @@ export class HiveClient {
    *
    * Frame: [1 byte type][2 LE toPeerIdLen][toPeerId][2 LE callIdLen][callId][payload]
    */
-  private _sendMediaFrame(type: typeof BINARY_AUDIO | typeof BINARY_VIDEO, to: string, callId: string, payload: Buffer): void {
+  private _sendMediaFrame(type: typeof BINARY_AUDIO | typeof BINARY_VIDEO | typeof BINARY_SCREEN, to: string, callId: string, payload: Buffer): void {
     const toBytes = Buffer.from(to, 'utf8');
     const callIdBytes = Buffer.from(callId, 'utf8');
     const buf = Buffer.allocUnsafe(1 + 2 + toBytes.length + 2 + callIdBytes.length + payload.length);
@@ -636,6 +640,10 @@ export class HiveClient {
 
   sendTalkVideo(to: string, callId: string, payload: Buffer): void {
     this._sendMediaFrame(BINARY_VIDEO, to, callId, payload);
+  }
+
+  sendTalkScreen(to: string, callId: string, payload: Buffer): void {
+    this._sendMediaFrame(BINARY_SCREEN, to, callId, payload);
   }
 
   sendTyping(to: string, typing: boolean): void {

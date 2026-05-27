@@ -9,6 +9,7 @@ import { WindowChrome } from '../../components/WindowChrome';
 import { CallVideoLocal, CallVideoRemote } from '../../components/CallVideo';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
+import { ScreenSourcePicker } from '../../components/ScreenSourcePicker';
 
 function getPeerIdFromHash(): string {
   return decodeURIComponent(window.location.hash.replace(/^#/, '')).trim();
@@ -17,6 +18,7 @@ function getPeerIdFromHash(): string {
 function App(): JSX.Element {
   const peerId = getPeerIdFromHash();
   const [alias, setAlias] = useState<string>(peerId.slice(0, 12) + '…');
+  const [screenPickerOpen, setScreenPickerOpen] = useState(false);
   const talk = useTalk(peerId, { kind: 'video' });
 
   useEffect(() => {
@@ -63,12 +65,18 @@ function App(): JSX.Element {
       <WindowChrome title={`Video Chat — ${alias}`} />
       <div className="vc-body">
         <div className="vc-stage">
-          {active && talk.remoteVideoOn ? (
+          {active && talk.remoteScreenOn ? (
+            <>
+              <CallVideoRemote getEl={talk.getRemoteScreenEl} />
+              {talk.remoteScreenLabel && <div className="vc-screen-label">{talk.remoteScreenLabel}</div>}
+            </>
+          ) : active && talk.remoteVideoOn ? (
             <CallVideoRemote getEl={talk.getRemoteVideoEl} />
           ) : (
             <div className="vc-stage-placeholder">
               {ringing && <span><b>{talk.call?.screenName || alias}</b> wants to video chat.</span>}
               {inviting && <span>Calling {alias}…</span>}
+              {active && talk.remoteScreenOn && <span>Waiting for {alias}'s screen…</span>}
               {active && !talk.remoteVideoOn && <span>Waiting for {alias}'s camera…</span>}
               {!talk.call && <span>Call ended.</span>}
             </div>
@@ -76,6 +84,12 @@ function App(): JSX.Element {
           {active && talk.videoOn && (
             <div className="vc-self">
               <CallVideoLocal getStream={talk.getLocalVideoStream} />
+            </div>
+          )}
+          {active && talk.screenOn && (
+            <div className="vc-screen-self">
+              <CallVideoLocal getStream={talk.getLocalScreenStream} />
+              <span>Sharing screen</span>
             </div>
           )}
         </div>
@@ -116,12 +130,25 @@ function App(): JSX.Element {
                   <button onClick={() => void talk.toggleVideo()}>
                     {talk.videoOn ? 'Camera Off' : 'Camera On'}
                   </button>
+                  {talk.screenOn ? (
+                    <button onClick={() => void talk.stopScreenShare()}>Stop Sharing</button>
+                  ) : (
+                    <button onClick={() => setScreenPickerOpen(true)}>Share Screen</button>
+                  )}
                 </>
               )}
               <button onClick={() => void talk.endCall()}>End</button>
             </>
           )}
         </div>
+        <ScreenSourcePicker
+          open={screenPickerOpen}
+          onCancel={() => setScreenPickerOpen(false)}
+          onShare={(source, resolution) => {
+            setScreenPickerOpen(false);
+            void talk.startScreenShare(source, resolution);
+          }}
+        />
         {talk.error && <div className="error" style={{ margin: '4px 8px' }}>{talk.error}</div>}
       </div>
     </div>

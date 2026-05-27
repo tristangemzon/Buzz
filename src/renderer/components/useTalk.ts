@@ -7,8 +7,9 @@
 // Wire format is opaque WebM/Opus chunks; the main process just relays them.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TalkCallState } from '@shared/schemas';
+import type { ScreenShareResolution, ScreenShareSource, TalkCallState } from '@shared/schemas';
 import { playSound } from '../sounds/synth';
+import { ScreenCaptureSink } from './useScreenCapture';
 
 const MIME = 'audio/webm;codecs=opus';
 const TIMESLICE_MS = 80;
@@ -412,6 +413,9 @@ export type CallUi = {
   muted: boolean;
   videoOn: boolean;
   remoteVideoOn: boolean;
+  screenOn: boolean;
+  remoteScreenOn: boolean;
+  remoteScreenLabel: string;
   error: string;
   elapsedSec: number;
   // Live AudioWorklet-style analysers — may be null when no call is active.
@@ -422,12 +426,16 @@ export type CallUi = {
   // Live MediaStream / video element references for the UI tiles.
   getLocalVideoStream: () => MediaStream | null;
   getRemoteVideoEl: () => HTMLVideoElement | null;
+  getLocalScreenStream: () => MediaStream | null;
+  getRemoteScreenEl: () => HTMLVideoElement | null;
   startCall: (kind?: 'voice' | 'video') => Promise<void>;
   acceptIncoming: () => Promise<void>;
   rejectIncoming: () => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
   toggleVideo: () => Promise<void>;
+  startScreenShare: (source: ScreenShareSource, resolution: ScreenShareResolution) => Promise<void>;
+  stopScreenShare: () => Promise<void>;
 };
 
 // Hook bound to a single peer. The main process tracks at most one global call
@@ -448,12 +456,17 @@ export function useTalk(
   const [muted, setMuted] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
   const [remoteVideoOn, setRemoteVideoOn] = useState(false);
+  const [screenOn, setScreenOn] = useState(false);
+  const [remoteScreenOn, setRemoteScreenOn] = useState(false);
+  const [remoteScreenLabel, setRemoteScreenLabel] = useState('');
   const [error, setError] = useState('');
   const [elapsedSec, setElapsedSec] = useState(0);
   const capture = useMemo(() => new CaptureSink(), []);
   const playback = useMemo(() => new PlaybackSink(), []);
   const videoCapture = useMemo(() => new VideoCaptureSink(), []);
   const videoPlayback = useMemo(() => new VideoPlaybackSink(), []);
+  const screenCapture = useMemo(() => new ScreenCaptureSink(), []);
+  const screenPlayback = useMemo(() => new VideoPlaybackSink(), []);
   const ringTimer = useRef<number | null>(null);
 
   // On mount, sync any in-progress call state for this peer.
@@ -500,6 +513,17 @@ export function useTalk(
       if (!e.on) videoPlayback.stop();
       else videoPlayback.start();
     });
+    const offScreen = window.buzz.onTalkScreen((e) => {
+      if (e.peerId !== peerId) return;
+      screenPlayback.push(e.data);
+    });
+    const offScreenState = window.buzz.onTalkScreenState((e) => {
+      if (e.peerId !== peerId) return;
+      setRemoteScreenOn(e.on);
+      setRemoteScreenLabel(e.on ? [e.sourceName, e.resolution].filter(Boolean).join(' • ') : '');
+      if (!e.on) screenPlayback.stop();
+      else screenPlayback.start();
+    });
 
     return () => {
       cancelled = true;
@@ -509,16 +533,20 @@ export function useTalk(
       offAudio();
       offVideo();
       offVideoState();
+      offScreen();
+      offScreenState();
       capture.stop();
       playback.stop();
       videoCapture.stop();
       videoPlayback.stop();
+      screenCapture.stop();
+      screenPlayback.stop();
       if (ringTimer.current !== null) {
         window.clearInterval(ringTimer.current);
         ringTimer.current = null;
       }
     };
-  }, [peerId, capture, playback, videoCapture, videoPlayback]);
+  }, [peerId, capture, playback, videoCapture, videoPlayback, screenCapture, screenPlayback]);
 
   // Drive ringing sound on the callee side.
   useEffect(() => {
@@ -541,8 +569,13 @@ export function useTalk(
       playback.stop();
       videoCapture.stop();
       videoPlayback.stop();
+      screenCapture.stop();
+      screenPlayback.stop();
       setVideoOn(false);
       setRemoteVideoOn(false);
+      setScreenOn(false);
+      setRemoteScreenOn(false);
+      setRemoteScreenLabel('');
       return;
     }
     playback.start();
@@ -587,7 +620,7 @@ export function useTalk(
     return () => {
       cancelled = true;
     };
-  }, [call?.state, call?.callId, call?.kind, capture, playback, videoCapture, videoPlayback]);
+  }, [call?.state, call?.callId, call?.kind, capture, playback, videoCapture, videoPlayback, screenCapture, screenPlayback]);
 
   // Apply mute changes to the live capture.
   useEffect(() => {
@@ -611,12 +644,17 @@ export function useTalk(
     muted,
     videoOn,
     remoteVideoOn,
+    screenOn,
+    remoteScreenOn,
+    remoteScreenLabel,
     error,
     elapsedSec,
     getMicAnalyser: () => capture.analyser,
     getRemoteAnalyser: () => playback.analyser,
     getLocalVideoStream: () => videoCapture.stream$,
     getRemoteVideoEl: () => videoPlayback.videoEl,
+    getLocalScreenStream: () => screenCapture.stream$,
+    getRemoteScreenEl: () => screenPlayback.videoEl,
     startCall: async (kind: 'voice' | 'video' = 'voice') => {
       setError('');
       // Prime the playback element NOW while we still have a user gesture,
@@ -686,6 +724,39 @@ export function useTalk(
         setError(e instanceof Error ? e.message : 'Camera unavailable');
         videoCapture.stop();
         setVideoOn(false);
+      }
+    },
+    startScreenShare: async (source: ScreenShareSource, resolution: ScreenShareResolution) => {
+      if (!call || call.state !== 'active') return;
+      try {
+        await screenCapture.start(
+          source,
+          resolution,
+          async (data) => {
+            try {
+              await window.buzz.talkSendScreen(call.callId, data);
+            } catch {
+              /* peer disconnected */
+            }
+          },
+          () => {
+            setScreenOn(false);
+            void window.buzz.talkSetScreen(call.callId, false).catch(() => undefined);
+          },
+        );
+        setScreenOn(true);
+        await window.buzz.talkSetScreen(call.callId, true, source.name, resolution).catch(() => undefined);
+      } catch (e) {
+        screenCapture.stop();
+        setScreenOn(false);
+        setError(e instanceof Error ? e.message : 'Screen sharing unavailable');
+      }
+    },
+    stopScreenShare: async () => {
+      screenCapture.stop();
+      setScreenOn(false);
+      if (call?.state === 'active') {
+        await window.buzz.talkSetScreen(call.callId, false).catch(() => undefined);
       }
     },
   };

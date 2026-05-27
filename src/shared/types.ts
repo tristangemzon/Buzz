@@ -76,6 +76,10 @@ import type {
   TalkAudioEvent,
   TalkVideoEvent,
   TalkVideoStateEvent,
+  TalkScreenEvent,
+  TalkScreenSourcesResult,
+  TalkScreenStateEvent,
+  ScreenShareResolution,
   Theme,
 } from './schemas.js';
 
@@ -211,6 +215,9 @@ export type AppApi = {
   talkSendAudio(callId: string, data: Uint8Array): Promise<void>;
   talkSendVideo(callId: string, data: Uint8Array): Promise<void>;
   talkSetVideo(callId: string, on: boolean): Promise<void>;
+  talkGetScreenSources(): Promise<TalkScreenSourcesResult>;
+  talkSendScreen(callId: string, data: Uint8Array): Promise<void>;
+  talkSetScreen(callId: string, on: boolean, sourceName?: string, resolution?: ScreenShareResolution): Promise<void>;
   talkGetActive(peerId: string): Promise<TalkCallState | null>;
 
   // chat rooms
@@ -290,6 +297,8 @@ export type AppApi = {
   onTalkAudio(cb: (e: TalkAudioEvent) => void): () => void;
   onTalkVideo(cb: (e: TalkVideoEvent) => void): () => void;
   onTalkVideoState(cb: (e: TalkVideoStateEvent) => void): () => void;
+  onTalkScreen(cb: (e: TalkScreenEvent) => void): () => void;
+  onTalkScreenState(cb: (e: TalkScreenStateEvent) => void): () => void;
 
   // auto-updates
   updatesCheck(): Promise<UpdateStatus>;

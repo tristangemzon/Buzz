@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ConnectionHealth, HistoryReq, Profile, RoomDeleteMsgReq, RoomEditMsgReq, RoomHistoryReq, RoomMessage, RoomSendReq, ScreenName } from './schemas.js';
+import { fitWithinBounds } from '@renderer/components/useScreenCapture';
+import { ConnectionHealth, HistoryReq, Profile, RoomDeleteMsgReq, RoomEditMsgReq, RoomHistoryReq, RoomMessage, RoomSendReq, ScreenName, ScreenShareSource, TalkScreenEvent, TalkScreenStateReq } from './schemas.js';
 
 describe('shared schemas', () => {
   const roomId = '11111111-1111-4111-8111-111111111111';
@@ -105,5 +106,39 @@ describe('shared schemas', () => {
       summary: 'maybe',
       updatedAt: 1000,
     })).toThrow();
+  });
+
+  it('validates screenshare contracts', () => {
+    expect(ScreenShareSource.parse({
+      id: 'screen:1:0',
+      name: 'Built-in Display',
+      kind: 'screen',
+      thumbnailDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+    })).toMatchObject({ kind: 'screen' });
+
+    expect(TalkScreenStateReq.parse({
+      callId: msgId,
+      on: true,
+      sourceName: 'Code Window',
+      resolution: '1080p',
+    })).toMatchObject({ on: true, resolution: '1080p' });
+
+    const data = new Uint8Array([1, 2, 3]);
+    expect(TalkScreenEvent.parse({
+      callId: msgId,
+      peerId: 'peer-12345678',
+      seq: 0,
+      data,
+    })).toMatchObject({ data });
+
+    expect(() => ScreenShareSource.parse({ id: '', name: 'x', kind: 'screen' })).toThrow();
+    expect(() => TalkScreenStateReq.parse({ callId: msgId, on: true, resolution: '4k' })).toThrow();
+  });
+
+  it('caps screenshare dimensions without upscaling', () => {
+    expect(fitWithinBounds(3840, 2160, 1920, 1080)).toEqual({ width: 1920, height: 1080 });
+    expect(fitWithinBounds(2560, 1080, 1920, 1080)).toEqual({ width: 1920, height: 810 });
+    expect(fitWithinBounds(1280, 720, 1920, 1080)).toEqual({ width: 1280, height: 720 });
+    expect(fitWithinBounds(1080, 1920, 1920, 1080)).toEqual({ width: 606, height: 1080 });
   });
 });
