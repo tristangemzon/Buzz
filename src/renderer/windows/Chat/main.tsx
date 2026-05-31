@@ -1060,6 +1060,18 @@ function App(): JSX.Element {
                         setGameKindPending(null);
                         await window.buzzWindows.openGame(pid, kind, true);
                         await window.buzz.gameInvite({ toPeerId: pid, kind });
+                        if (activeChannelId) {
+                          const label = kind.charAt(0).toUpperCase() + kind.slice(1);
+                          const body = `🎲 challenged ${nameFor(pid)} to ${label}`;
+                          try {
+                            const stored = await window.buzz.sendRoomMessage({
+                              roomId,
+                              channelId: activeChannelId,
+                              body,
+                            });
+                            setMessages((prev) => [...prev, stored]);
+                          } catch { /* announcement is best-effort */ }
+                        }
                       }}
                     >
                       {nameFor(pid)}
