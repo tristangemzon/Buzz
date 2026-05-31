@@ -272,6 +272,24 @@ export function updateTransferStatus(
   }
 }
 
+export type TransferHistoryRow = TransferRow & { alias: string | null };
+
+export function listTransfers(db: Db, limit = 200): TransferHistoryRow[] {
+  return db
+    .prepare(
+      `SELECT t.id as id, t.peer_id as peerId, t.direction as direction,
+              t.file_name as fileName, t.file_size as fileSize, t.file_hash as fileHash,
+              t.status as status, t.saved_path as savedPath,
+              t.created_at as createdAt, t.updated_at as updatedAt,
+              b.alias as alias
+         FROM transfers t
+         LEFT JOIN buddies b ON b.peer_id = t.peer_id
+        ORDER BY t.created_at DESC
+        LIMIT ?`,
+    )
+    .all(limit) as TransferHistoryRow[];
+}
+
 // ── chat rooms ───────────────────────────────────────────────────────────────
 type RoomMessageRow = {
   id: string;

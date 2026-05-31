@@ -69,8 +69,9 @@ const api: AppApi = {
   setMyProfile: (patch) => ipcRenderer.invoke(IPC.ProfileSetMy, patch),
   getPeerProfile: (peerId) => ipcRenderer.invoke(IPC.ProfileGetPeer, peerId),
 
-  xferOffer: (toPeerId) => ipcRenderer.invoke(IPC.XferOffer, { toPeerId }),
+  xferOffer: (toPeerId, filePath) => ipcRenderer.invoke(IPC.XferOffer, { toPeerId, filePath }),
   xferRespond: (id, accept) => ipcRenderer.invoke(IPC.XferRespond, { id, accept }),
+  listTransfers: () => ipcRenderer.invoke(IPC.XferList),
 
   talkInvite: (peerId, kind) => ipcRenderer.invoke(IPC.TalkInvite, { peerId, kind }),
   talkAccept: (callId) => ipcRenderer.invoke(IPC.TalkAccept, { callId }),

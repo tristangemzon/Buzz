@@ -2102,6 +2102,15 @@ html[data-chat-theme='compact'] .chat-log > div {
   margin: 4px 3px;
 }
 .im-actionbar-spacer { flex: 1; }
+.im-dragover { outline: 3px dashed var(--c-accent, #ffb84a); outline-offset: -3px; }
+.im-dragover::after {
+  content: 'Drop to send file';
+  position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 13px; pointer-events: none; z-index: 9999;
+}
 .im-action-btn {
   display: flex;
   flex-direction: column;

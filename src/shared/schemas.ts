@@ -343,6 +343,7 @@ export type PeerProfile = z.infer<typeof PeerProfile>;
 
 export const XferOfferReq = z.object({
   toPeerId: PeerIdStr,
+  filePath: z.string().min(1).max(4096).optional(),
 });
 export type XferOfferReq = z.infer<typeof XferOfferReq>;
 

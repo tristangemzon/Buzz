@@ -443,20 +443,22 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
 
   // ── file transfer ────────────────────────────────────────────────────────
-  handle(IPC.XferOffer, XferOfferReq, async ({ toPeerId }) => {
+  handle(IPC.XferOffer, XferOfferReq, async ({ toPeerId, filePath }) => {
     const xfer = session.xfer;
     if (!xfer) throw new Error('Locked');
-    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
-    const pick = await dialog.showOpenDialog(sender as BrowserWindow, {
-      title: 'Send a File',
-      properties: ['openFile'],
-    });
-    if (pick.canceled || !pick.filePaths[0]) return { id: '', cancelled: true } as const;
-    const filePath = pick.filePaths[0];
-    // Pre-insert a row so the IM window can show progress immediately.
+    let chosenPath = filePath;
+    if (!chosenPath) {
+      const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+      const pick = await dialog.showOpenDialog(sender as BrowserWindow, {
+        title: 'Send a File',
+        properties: ['openFile'],
+      });
+      if (pick.canceled || !pick.filePaths[0]) return { id: '', cancelled: true } as const;
+      chosenPath = pick.filePaths[0];
+    }
     const id = randomUUID();
-    const stat = await import('node:fs/promises').then((m) => m.stat(filePath));
-    const fileName = path.basename(filePath);
+    const stat = await import('node:fs/promises').then((m) => m.stat(chosenPath as string));
+    const fileName = path.basename(chosenPath);
     if (session.db) {
       repos.insertTransfer(session.db, {
         id,
@@ -466,7 +468,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
         fileSize: stat.size,
         fileHash: '',
         status: 'active',
-        savedPath: filePath,
+        savedPath: chosenPath,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -474,7 +476,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     // The XferService allocates its own id internally; surface that through
     // the started-event chain. Kick off, then return the picked metadata.
     void xfer
-      .sendFile(toPeerId, filePath)
+      .sendFile(toPeerId, chosenPath)
       .catch(() => undefined);
     return {
       id,
@@ -511,6 +513,10 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     }
     xfer.respond(id, true, save.filePath);
     return { ok: true as const };
+  });
+  handle(IPC.XferList, null, () => {
+    const db = requireDb(session);
+    return repos.listTransfers(db, 200);
   });
 
   // ── voice talk ───────────────────────────────────────────────────────────

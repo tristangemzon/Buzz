@@ -66,6 +66,7 @@ function App(): JSX.Element {
   const [warnLevel, setWarnLevel] = useState(0);
   const [showProfile, setShowProfile] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
+  const [dragHover, setDragHover] = useState(false);
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [myAvatar, setMyAvatar] = useState<string>('');
   const [theirAvatar, setTheirAvatar] = useState<string>('');
@@ -381,14 +382,14 @@ function App(): JSX.Element {
     setWarnLevel(lvl);
   }
 
-  async function _sendFile(): Promise<void> {
+  async function sendFile(filePath?: string): Promise<void> {
     if (blocked) {
       setErr('You have blocked this user. Unblock to send files.');
       return;
     }
     setErr('');
     try {
-      const r = await window.buzz.xferOffer(peerId);
+      const r = await window.buzz.xferOffer(peerId, filePath);
       if (r.cancelled) return;
       // Optimistically add an outgoing card; progress will replace state.
       upsertXfer((prev) => [
@@ -455,7 +456,33 @@ function App(): JSX.Element {
   const myName = me?.screenName ?? 'me';
 
   return (
-    <div className="window">
+    <div
+      className={`window${dragHover ? ' im-dragover' : ''}`}
+      onDragEnter={(e) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+          setDragHover(true);
+        }
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.target === e.currentTarget) setDragHover(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragHover(false);
+        const files = Array.from(e.dataTransfer?.files ?? []);
+        for (const f of files) {
+          const fp = (f as unknown as { path?: string }).path;
+          if (fp) void sendFile(fp);
+        }
+      }}
+    >
       <WindowChrome
         title={
           <span title={status === 'away' && awayMessage ? `Away: ${awayMessage}` : ''}>
@@ -710,6 +737,15 @@ function App(): JSX.Element {
         >
           <span className="im-action-btn-icon">📹</span>
           <span className="im-action-btn-label">Video</span>
+        </button>
+        <button
+          className="im-action-btn"
+          onClick={() => void sendFile()}
+          disabled={blocked}
+          title="Send a file (or drag and drop)"
+        >
+          <span className="im-action-btn-icon">📎</span>
+          <span className="im-action-btn-label">File</span>
         </button>
 
         <span className="im-actionbar-spacer" />

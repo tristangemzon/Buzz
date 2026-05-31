@@ -7,7 +7,7 @@ import type { SoundScheme } from '../../sounds/synth';
 import type { Theme } from '@shared/schemas';
 import type { UpdateStatus } from '@shared/types';
 
-type Section = 'themes' | 'sounds' | 'audio' | 'updates' | 'backup';
+type Section = 'themes' | 'sounds' | 'audio' | 'updates' | 'backup' | 'transfers';
 
 function App(): JSX.Element {
   const [section, setSection] = useState<Section>('themes');
@@ -22,13 +22,13 @@ function App(): JSX.Element {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* ── Left nav ── */}
         <div className="settings-nav">
-          {(['themes', 'sounds', 'audio', 'updates', 'backup'] as Section[]).map((s) => (
+          {(['themes', 'sounds', 'audio', 'updates', 'backup', 'transfers'] as Section[]).map((s) => (
             <button
               key={s}
               className={`settings-nav-item${section === s ? ' active' : ''}`}
               onClick={() => setSection(s)}
             >
-              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : s === 'updates' ? '🔄 Updates' : '💾 Backup'}
+              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : s === 'updates' ? '🔄 Updates' : s === 'backup' ? '💾 Backup' : '📁 Transfers'}
             </button>
           ))}
         </div>
@@ -39,6 +39,7 @@ function App(): JSX.Element {
           {section === 'audio' && <AudioPane />}
           {section === 'updates' && <UpdatesPane />}
           {section === 'backup' && <BackupPane />}
+          {section === 'transfers' && <TransfersPane />}
         </div>
       </div>
     </div>
@@ -495,6 +496,83 @@ function BackupPane(): JSX.Element {
         </div>
       </div>
       {msg && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>{msg}</div>}
+    </div>
+  );
+}
+
+type TransferRowUi = Awaited<ReturnType<typeof window.buzz.listTransfers>>[number];
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function TransfersPane(): JSX.Element {
+  const [rows, setRows] = useState<TransferRowUi[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  async function refresh(): Promise<void> {
+    setRows(await window.buzz.listTransfers());
+  }
+  useEffect(() => { void refresh(); }, []);
+  async function retry(t: TransferRowUi): Promise<void> {
+    if (!t.savedPath) { setMsg('No source path on record to retry.'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const r = await window.buzz.xferOffer(t.peerId, t.savedPath);
+      if (r.cancelled) setMsg('Retry cancelled.');
+      else setMsg(`Retry sent: ${r.fileName}`);
+      await refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Retry failed.');
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="settings-pane">
+      <div className="settings-section">
+        <div className="settings-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Transfer History</span>
+          <button onClick={() => void refresh()} disabled={busy}>Refresh</button>
+        </div>
+        {rows.length === 0 && <p style={{ fontSize: 12, opacity: 0.7 }}>No transfers yet.</p>}
+        {rows.length > 0 && (
+          <div style={{ maxHeight: 360, overflow: 'auto', border: '1px solid var(--c-bevel-dark, #888)' }}>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--c-panel)' }}>
+                  <th style={{ textAlign: 'left', padding: '4px 6px' }}>Dir</th>
+                  <th style={{ textAlign: 'left', padding: '4px 6px' }}>Peer</th>
+                  <th style={{ textAlign: 'left', padding: '4px 6px' }}>File</th>
+                  <th style={{ textAlign: 'right', padding: '4px 6px' }}>Size</th>
+                  <th style={{ textAlign: 'left', padding: '4px 6px' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '4px 6px' }}>When</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((t) => (
+                  <tr key={t.id} style={{ borderTop: '1px solid var(--c-bevel-light, #ccc)' }}>
+                    <td style={{ padding: '4px 6px' }}>{t.direction === 'in' ? '↓' : '↑'}</td>
+                    <td style={{ padding: '4px 6px' }}>{t.alias || t.peerId.slice(0, 10) + '…'}</td>
+                    <td style={{ padding: '4px 6px' }}>{t.fileName}</td>
+                    <td style={{ padding: '4px 6px', textAlign: 'right' }}>{formatBytes(t.fileSize)}</td>
+                    <td style={{ padding: '4px 6px' }}>{t.status}</td>
+                    <td style={{ padding: '4px 6px' }}>{new Date(t.createdAt).toLocaleString()}</td>
+                    <td style={{ padding: '4px 6px' }}>
+                      {t.direction === 'out' && (t.status === 'failed' || t.status === 'declined') && (
+                        <button disabled={busy} onClick={() => void retry(t)}>Retry</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {msg && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>{msg}</div>}
+      </div>
     </div>
   );
 }

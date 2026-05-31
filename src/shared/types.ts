@@ -208,11 +208,24 @@ export type AppApi = {
   getPeerProfile(peerId: string): Promise<PeerProfile | null>;
 
   // file transfer
-  xferOffer(toPeerId: string): Promise<
+  xferOffer(toPeerId: string, filePath?: string): Promise<
     | { id: string; cancelled: true }
     | { id: string; cancelled: false; fileName: string; fileSize: number; peerId: string }
   >;
   xferRespond(id: string, accept: boolean): Promise<{ ok: true }>;
+  listTransfers(): Promise<Array<{
+    id: string;
+    peerId: string;
+    direction: 'in' | 'out';
+    fileName: string;
+    fileSize: number;
+    fileHash: string;
+    status: 'pending' | 'active' | 'complete' | 'failed' | 'declined';
+    savedPath: string | null;
+    createdAt: number;
+    updatedAt: number;
+    alias: string | null;
+  }>>;
 
   // voice talk
   talkInvite(peerId: string, kind?: 'voice' | 'video'): Promise<TalkCallState>;
