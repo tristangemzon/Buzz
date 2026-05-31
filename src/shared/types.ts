@@ -155,6 +155,7 @@ export type AppApi = {
   renameBuddy(peerId: string, alias: string): Promise<void>;
   blockBuddy(peerId: string, blocked: boolean): Promise<void>;
   warnBuddy(peerId: string, delta?: number): Promise<number>;
+  muteBuddy(peerId: string, muted: boolean): Promise<void>;
 
   // buddy add requests (approve/deny flow)
   sendBuddyRequest(req: BuddyRequestSendReq): Promise<void>;
@@ -235,6 +236,7 @@ export type AppApi = {
   roomsListPinned(req: { roomId: string; channelId?: string }): Promise<RoomMessage[]>;
   roomsKick(req: RoomKickReq): Promise<{ ok: true }>;
   roomsSetRole(req: RoomSetRoleReq): Promise<{ ok: true }>;
+  muteRoom(roomId: string, muted: boolean): Promise<void>;
   roomsSetCategory(req: RoomSetCategoryReq): Promise<{ ok: true }>;
   // v0.7.0 message actions
   roomsReact(req: RoomReactReq): Promise<{ ok: true }>;

@@ -1084,7 +1084,7 @@ export class Session {
         this.broadcastUnread();
         // Desktop notification if no IM window for this peer is focused.
         const allFocused = BrowserWindow.getAllWindows().some((w) => w.isFocused());
-        if (!allFocused) {
+        if (!allFocused && !repos.isBuddyMuted(db, fromPeerId)) {
           const alias = repos.listBuddies(db).find((b) => b.peerId === fromPeerId)?.alias ?? fromPeerId.slice(0, 12);
           notifyIm(alias, body);
         }

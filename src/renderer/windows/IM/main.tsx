@@ -78,6 +78,7 @@ function App(): JSX.Element {
   const [reactions, setReactions] = useState<Map<string, { emoji: string; count: number; mine: boolean }[]>>(new Map());
   const [emojiPickerPos, setEmojiPickerPos] = useState<{ id: string; x: number; y: number } | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
+  const mutedRef = useRef(false);
   // Search
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -124,6 +125,7 @@ function App(): JSX.Element {
           setAlias(b.alias);
           setBlocked(b.blocked);
           setWarnLevel(b.warnLevel);
+          mutedRef.current = !!b.muted;
         }
         // Chain status lookup so we have the correct alias available.
         return window.buzz.getPeerStatus(peerId).then((s) => {
@@ -167,9 +169,14 @@ function App(): JSX.Element {
     const offRecv = window.buzz.onImReceived((m) => {
       if (m.peerId !== peerId) return;
       setMessages((prev) => [...prev, m]);
-      playSound('im-receive');
+      if (!mutedRef.current) playSound('im-receive');
       // Window is open — flush this message from the unread tally.
       void window.buzz.markImRead(peerId).catch(() => undefined);
+      // Refresh cached mute flag in case it changed.
+      void window.buzz
+        .listBuddies()
+        .then((bs) => { mutedRef.current = !!bs.find((b) => b.peerId === peerId)?.muted; })
+        .catch(() => undefined);
     });
     const offAck = window.buzz.onImAck(({ id, status }) => {
       setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS buddies (
   grp           TEXT NOT NULL DEFAULT 'Buddies',
   blocked       INTEGER NOT NULL DEFAULT 0,
   warn_level    INTEGER NOT NULL DEFAULT 0,
+  muted         INTEGER NOT NULL DEFAULT 0,
   added_at      INTEGER NOT NULL
 );
 

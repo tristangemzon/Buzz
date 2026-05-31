@@ -5,7 +5,7 @@ import { Prefs as PrefsSchema } from '@shared/schemas.js';
 export type Reaction = { msgId: string; peerId: string; emoji: string; ts: number };
 export type RoomMemberRow = { peerId: string; role: 'owner' | 'mod' | 'member' };
 
-type RoomRow = { id: string; name: string; keyB64: string; createdAt: number; ownerPeerId: string };
+type RoomRow = { id: string; name: string; keyB64: string; createdAt: number; ownerPeerId: string; muted: number };
 type RoomMemberLookupRow = { roomId: string; peerId: string; role: string };
 
 // ── identity ─────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ export function getIdentity(db: Db): { peerId: string; screenName: string } | nu
 export function listBuddies(db: Db): Buddy[] {
   const rows = db
     .prepare(
-      `SELECT peer_id as peerId, alias, grp as "group", blocked, warn_level as warnLevel
+      `SELECT peer_id as peerId, alias, grp as "group", blocked, warn_level as warnLevel, muted
        FROM buddies ORDER BY grp, alias COLLATE NOCASE`,
     )
     .all() as Array<{
@@ -39,6 +39,7 @@ export function listBuddies(db: Db): Buddy[] {
       group: string;
       blocked: number;
       warnLevel: number;
+      muted: number;
     }>;
   return rows.map((r) => ({
     peerId: r.peerId,
@@ -46,6 +47,7 @@ export function listBuddies(db: Db): Buddy[] {
     group: r.group,
     blocked: !!r.blocked,
     warnLevel: r.warnLevel ?? 0,
+    muted: !!r.muted,
     status: 'offline' as const,
   }));
 }
@@ -75,6 +77,28 @@ export function isBlocked(db: Db, peerId: string): boolean {
     | { blocked: number }
     | undefined;
   return !!row?.blocked;
+}
+
+export function setBuddyMuted(db: Db, peerId: string, muted: boolean): void {
+  db.prepare('UPDATE buddies SET muted=? WHERE peer_id=?').run(muted ? 1 : 0, peerId);
+}
+
+export function isBuddyMuted(db: Db, peerId: string): boolean {
+  const row = db.prepare('SELECT muted FROM buddies WHERE peer_id=?').get(peerId) as
+    | { muted: number }
+    | undefined;
+  return !!row?.muted;
+}
+
+export function setRoomMuted(db: Db, roomId: string, muted: boolean): void {
+  db.prepare('UPDATE rooms SET muted=? WHERE id=?').run(muted ? 1 : 0, roomId);
+}
+
+export function isRoomMuted(db: Db, roomId: string): boolean {
+  const row = db.prepare('SELECT muted FROM rooms WHERE id=?').get(roomId) as
+    | { muted: number }
+    | undefined;
+  return !!row?.muted;
 }
 
 // Warn level is clamped 0..100. Each call bumps by `delta` (default +10) and
@@ -293,7 +317,7 @@ function getMods(db: Db, roomId: string): string[] {
 export function listRooms(db: Db): Array<Room & { keyB64: string }> {
   const rows = db
     .prepare(
-      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId FROM rooms ORDER BY created_at DESC`,
+      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId, muted FROM rooms ORDER BY created_at DESC`,
     )
     .all() as RoomRow[];
   if (rows.length === 0) return [];
@@ -327,13 +351,14 @@ export function listRooms(db: Db): Array<Room & { keyB64: string }> {
     ownerPeerId: r.ownerPeerId ?? '',
     mods: modsByRoom.get(r.id) ?? [],
     members: membersByRoom.get(r.id) ?? [],
+    muted: !!r.muted,
   }));
 }
 
 export function getRoom(db: Db, id: string): (Room & { keyB64: string }) | null {
   const r = db
     .prepare(
-      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId FROM rooms WHERE id=?`,
+      `SELECT id, name, key_b64 as keyB64, created_at as createdAt, owner_peer_id as ownerPeerId, muted FROM rooms WHERE id=?`,
     )
     .get(id) as RoomRow | undefined;
   if (!r) return null;
@@ -345,6 +370,7 @@ export function getRoom(db: Db, id: string): (Room & { keyB64: string }) | null 
     ownerPeerId: r.ownerPeerId ?? '',
     mods: getMods(db, r.id),
     members: getRoomMembers(db, r.id),
+    muted: !!r.muted,
   };
 }
 

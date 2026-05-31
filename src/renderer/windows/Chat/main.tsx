@@ -60,6 +60,7 @@ function App(): JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const myPeerIdRef = useRef<string | null>(null);
+  const mutedRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEditorHandle>(null);
   // Mirror activeChannelId in a ref so the persistent room-message listener
@@ -85,6 +86,7 @@ function App(): JSX.Element {
     const rooms = await window.buzz.listRooms();
     const r = rooms.find((x) => x.id === roomId) ?? null;
     setRoom(r);
+    mutedRef.current = !!r?.muted;
   }
 
   async function refreshChannels(): Promise<RoomChannel[]> {
@@ -131,7 +133,7 @@ function App(): JSX.Element {
 
     const offMsg = window.buzz.onRoomMessage((m) => {
       if (m.roomId !== roomId) return;
-      if (m.direction === 'in') playSound('im-receive');
+      if (m.direction === 'in' && !mutedRef.current) playSound('im-receive');
       // Only append to the visible log if it's for the active channel.
       if (m.channelId !== activeChannelIdRef.current) return;
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));

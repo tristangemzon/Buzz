@@ -150,6 +150,11 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     z.object({ peerId: PeerIdStr, delta: z.number().int().min(-100).max(100).default(10) }),
     ({ peerId, delta }) => repos.warnBuddy(requireDb(session), peerId, delta),
   );
+  handle(
+    IPC.BuddiesMute,
+    z.object({ peerId: PeerIdStr, muted: z.boolean() }),
+    ({ peerId, muted }) => repos.setBuddyMuted(requireDb(session), peerId, muted),
+  );
 
   // ── auto-discovery ────────────────────────────────────────────────────────
   handle(IPC.DiscoveryList, null, () => session.listDiscovered());
@@ -738,6 +743,12 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     }
     return { ok: true as const };
   });
+
+  handle(
+    IPC.RoomsMute,
+    z.object({ roomId: z.string().min(1), muted: z.boolean() }),
+    ({ roomId, muted }) => repos.setRoomMuted(requireDb(session), roomId, muted),
+  );
 
   handle(IPC.RoomsSetCategory, RoomSetCategoryReq, async ({ roomId, channelId, category }) => {
     const db = requireDb(session);

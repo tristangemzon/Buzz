@@ -59,6 +59,7 @@ export const Buddy = z.object({
   group: z.string().min(1).max(32).default('Buddies'),
   blocked: z.boolean().default(false),
   warnLevel: z.number().int().min(0).max(100).default(0),
+  muted: z.boolean().default(false),
   status: Status.default('offline'),
   awayMessage: z.string().max(1024).optional(),
 });
@@ -401,6 +402,7 @@ export const Room = z.object({
   createdAt: z.number().int().nonnegative(),
   ownerPeerId: z.string().max(512).default(''),
   mods: z.array(PeerIdStr).default([]),
+  muted: z.boolean().default(false),
 });
 export type Room = z.infer<typeof Room>;
 

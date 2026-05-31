@@ -27,6 +27,7 @@ const api: AppApi = {
   renameBuddy: (peerId, alias) => ipcRenderer.invoke(IPC.BuddiesRename, { peerId, alias }),
   blockBuddy: (peerId, blocked) => ipcRenderer.invoke(IPC.BuddiesBlock, { peerId, blocked }),
   warnBuddy: (peerId, delta = 10) => ipcRenderer.invoke(IPC.BuddiesWarn, { peerId, delta }),
+  muteBuddy: (peerId, muted) => ipcRenderer.invoke(IPC.BuddiesMute, { peerId, muted }),
 
   sendBuddyRequest: (req) => ipcRenderer.invoke(IPC.BuddiesSendRequest, req),
   listBuddyRequests: () => ipcRenderer.invoke(IPC.BuddiesListRequests),
@@ -109,6 +110,7 @@ const api: AppApi = {
   roomsListPinned: (req) => ipcRenderer.invoke(IPC.RoomsListPinned, req),
   roomsKick: (req) => ipcRenderer.invoke(IPC.RoomsKick, req),
   roomsSetRole: (req) => ipcRenderer.invoke(IPC.RoomsSetRole, req),
+  muteRoom: (roomId, muted) => ipcRenderer.invoke(IPC.RoomsMute, { roomId, muted }),
   roomsSetCategory: (req) => ipcRenderer.invoke(IPC.RoomsSetCategory, req),
   // v0.7.0 message actions
   roomsReact: (req) => ipcRenderer.invoke(IPC.RoomsReact, req),

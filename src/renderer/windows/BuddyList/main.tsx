@@ -333,6 +333,12 @@ function App(): JSX.Element {
     await refreshBuddies();
   }
 
+  async function ctxMuteBuddy(peerId: string, muted: boolean): Promise<void> {
+    setCtx(null);
+    await window.buzz.muteBuddy(peerId, muted);
+    await refreshBuddies();
+  }
+
   function openRoomCtx(e: React.MouseEvent, roomId: string): void {
     e.preventDefault();
     const menuW = 160; const menuH = 120;
@@ -346,6 +352,13 @@ function App(): JSX.Element {
     if (!confirm('Leave this chat room? It will be removed from your list.')) return;
     await window.buzz.leaveRoom({ roomId });
     setRooms((prev) => prev.filter((r) => r.id !== roomId));
+  }
+
+  async function ctxMuteRoom(roomId: string, muted: boolean): Promise<void> {
+    setRoomCtx(null);
+    await window.buzz.muteRoom(roomId, muted);
+    const fresh = await window.buzz.listRooms();
+    setRooms(fresh);
   }
 
   function ctxOpenInviteRoom(roomId: string): void {
@@ -510,6 +523,9 @@ function App(): JSX.Element {
                         {b.warnLevel}%
                       </span>
                     )}
+                    {b.muted && (
+                      <span title="Muted" style={{ marginLeft: 4, opacity: 0.7 }}>🔕</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -556,6 +572,9 @@ function App(): JSX.Element {
                       {unread.rooms[r.id]}
                     </span>
                   ) : null}
+                  {r.muted && (
+                    <span title="Muted" style={{ marginLeft: 4, opacity: 0.7 }}>🔕</span>
+                  )}
                 </div>
               ))
             )}
@@ -855,6 +874,9 @@ function App(): JSX.Element {
               <button onClick={() => { setRoomCtx(null); void window.buzzWindows.openChat(room.id); }}>Open</button>
               <button onClick={() => ctxOpenInviteRoom(room.id)}>Invite Buddy…</button>
               <div className="sep" />
+              <button onClick={() => void ctxMuteRoom(room.id, !room.muted)}>
+                {room.muted ? 'Unmute' : 'Mute'}
+              </button>
               <button onClick={() => void ctxLeaveRoom(room.id)}>Leave Room</button>
             </div>
           </>
@@ -919,6 +941,10 @@ function App(): JSX.Element {
                 </button>
               )}
               <div className="sep" />
+              <div className="sep" />
+              <button onClick={() => void ctxMuteBuddy(b.peerId, !b.muted)}>
+                {b.muted ? 'Unmute' : 'Mute'}
+              </button>
               <button onClick={() => void ctxBlock(b.peerId, !b.blocked)}>
                 {b.blocked ? 'Unblock' : 'Block'}
               </button>

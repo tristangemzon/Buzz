@@ -42,6 +42,9 @@ export function openDb(file: string, key: Uint8Array): Db {
   // Migration: add v0.6.0 columns (replies, @mentions, pinning, roles, categories).
   migrateV060(db);
 
+  // Migration: add v0.8.7 'muted' column to buddies + rooms.
+  migrateV087(db);
+
   return db;
 }
 
@@ -210,5 +213,16 @@ function migrateV060(db: Db): void {
   const chanCols = (db.prepare('PRAGMA table_info(room_channels)').all() as Array<{ name: string }>).map((c) => c.name);
   if (!chanCols.includes('category')) {
     db.exec("ALTER TABLE room_channels ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  }
+}
+
+function migrateV087(db: Db): void {
+  const buddyCols = (db.prepare('PRAGMA table_info(buddies)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!buddyCols.includes('muted')) {
+    db.exec('ALTER TABLE buddies ADD COLUMN muted INTEGER NOT NULL DEFAULT 0');
+  }
+  const roomCols = (db.prepare('PRAGMA table_info(rooms)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!roomCols.includes('muted')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN muted INTEGER NOT NULL DEFAULT 0');
   }
 }

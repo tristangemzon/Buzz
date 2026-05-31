@@ -21,6 +21,7 @@ export const IPC = {
   BuddiesRename: 'buddies:rename',
   BuddiesBlock: 'buddies:block',
   BuddiesWarn: 'buddies:warn',
+  BuddiesMute: 'buddies:mute',
 
   // buddy requests (approve/deny flow)
   BuddiesListRequests: 'buddies:listRequests',
@@ -102,6 +103,7 @@ export const IPC = {
   RoomsListPinned: 'rooms:listPinned',
   RoomsKick: 'rooms:kick',
   RoomsSetRole: 'rooms:setRole',
+  RoomsMute: 'rooms:mute',
   RoomsSetCategory: 'rooms:setCategory',
 
   // unread counters
