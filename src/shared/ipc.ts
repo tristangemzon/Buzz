@@ -74,6 +74,7 @@ export const IPC = {
   XferRespond: 'xfer:respond',
   XferList: 'xfer:list',
   VoiceStage: 'voice:stage',
+  MailboxSendMedia: 'mailbox:sendMedia',
 
   // voice talk
   TalkInvite: 'talk:invite',

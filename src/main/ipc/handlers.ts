@@ -534,6 +534,47 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       return { filePath, fileName };
     },
   );
+  handle(
+    IPC.MailboxSendMedia,
+    z.object({
+      toPeerId: PeerIdStr,
+      stagedPath: z.string().min(1).max(4096),
+      mime: z.string().min(1).max(128),
+      fileName: z.string().min(1).max(256),
+      caption: z.string().max(2048).optional(),
+    }),
+    async ({ toPeerId, stagedPath, mime, fileName, caption }) => {
+      const mbx = session.mailbox;
+      if (!mbx) throw new Error('Mailbox not available');
+      const db = requireDb(session);
+      const fs = await import('node:fs/promises');
+      const buf = await fs.readFile(stagedPath);
+      if (buf.byteLength === 0) throw new Error('Empty media');
+      if (buf.byteLength > 256 * 1024) {
+        throw new Error('Media too large for offline mailbox (max 256 KiB)');
+      }
+      const id = randomUUID();
+      const ts = Date.now();
+      const msg: ImMessage = ImMessage.parse({
+        id,
+        peerId: toPeerId,
+        direction: 'out',
+        ts,
+        body: caption ?? '',
+        status: 'queued',
+      });
+      repos.insertMessage(db, msg);
+      const queued = await mbx.pushToRelays(toPeerId, {
+        id,
+        ts,
+        body: caption ?? '',
+        media: { mime, name: fileName, data: new Uint8Array(buf) },
+      });
+      const status = queued ? 'sent' : 'failed';
+      repos.setMessageStatus(db, id, status);
+      return { ok: queued, id, status } as const;
+    },
+  );
 
   // ── voice talk ───────────────────────────────────────────────────────────
   handle(

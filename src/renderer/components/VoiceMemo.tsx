@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 type Props = {
   peerId: string;
   disabled?: boolean;
+  peerOnline?: boolean;
   onError?: (msg: string) => void;
   onSent?: (info: { id: string; fileName: string; fileSize: number }) => void;
 };
@@ -15,7 +16,7 @@ type Props = {
 const MIME = 'audio/webm;codecs=opus';
 const MAX_DURATION_MS = 5 * 60 * 1000;
 
-export function VoiceMemo({ peerId, disabled, onError, onSent }: Props): JSX.Element {
+export function VoiceMemo({ peerId, disabled, peerOnline, onError, onSent }: Props): JSX.Element {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -91,6 +92,19 @@ export function VoiceMemo({ peerId, disabled, onError, onSent }: Props): JSX.Ele
         return;
       }
       const staged = await window.buzz.stageVoice(buf, 'webm');
+      if (peerOnline === false && buf.byteLength <= 256 * 1024) {
+        // Peer is offline; embed memo into a sealed mailbox envelope so the
+        // recipient gets it next time they come online.
+        const r = await window.buzz.sendMailboxMedia({
+          toPeerId: peerId,
+          stagedPath: staged.filePath,
+          mime: MIME,
+          fileName: staged.fileName,
+        });
+        if (r.ok) onSent?.({ id: r.id, fileName: staged.fileName, fileSize: buf.byteLength });
+        else onError?.('No mailbox relay accepted the memo.');
+        return;
+      }
       const r = await window.buzz.xferOffer(peerId, staged.filePath);
       if (!r.cancelled) onSent?.({ id: r.id, fileName: r.fileName, fileSize: r.fileSize });
     } catch (e) {

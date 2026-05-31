@@ -751,6 +751,7 @@ function App(): JSX.Element {
         <VoiceMemo
           peerId={peerId}
           disabled={blocked}
+          peerOnline={status === 'online' || status === 'away' || status === 'idle' || status === 'dnd'}
           onError={(m) => setErr(m)}
           onSent={(info) => upsertXfer((prev) => [
             ...prev,

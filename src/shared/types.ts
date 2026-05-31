@@ -227,6 +227,13 @@ export type AppApi = {
     alias: string | null;
   }>>;
   stageVoice(data: Uint8Array, ext: string): Promise<{ filePath: string; fileName: string }>;
+  sendMailboxMedia(req: {
+    toPeerId: string;
+    stagedPath: string;
+    mime: string;
+    fileName: string;
+    caption?: string;
+  }): Promise<{ ok: boolean; id: string; status: 'sent' | 'failed' }>;
 
   // voice talk
   talkInvite(peerId: string, kind?: 'voice' | 'video'): Promise<TalkCallState>;

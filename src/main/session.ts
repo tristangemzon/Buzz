@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import type { Libp2p } from 'libp2p';
 
 import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
@@ -1285,6 +1285,7 @@ export class Session {
     ts: number;
     body: string;
     fromPeerId: string;
+    media?: { mime: string; name: string; data: Uint8Array };
   }): Promise<boolean> {
     if (!this.db || !this.im) return false;
     if (repos.isBlocked(this.db, m.fromPeerId)) return true; // drop silently but ack
@@ -1303,6 +1304,47 @@ export class Session {
     };
     repos.insertMessage(this.db, msg);
     this.broadcast(IPC.EvtImReceived, msg);
+    if (m.media) {
+      try {
+        const dir = path.join(app.getPath('userData'), 'mailbox-media');
+        await fsp.mkdir(dir, { recursive: true });
+        const safeName = m.media.name.replace(/[^\w.-]+/g, '_').slice(0, 120) || 'attachment';
+        const filePath = path.join(dir, `${m.id}-${safeName}`);
+        await fsp.writeFile(filePath, Buffer.from(m.media.data), { mode: 0o600 });
+        const xferId = `${m.id}:media`;
+        repos.insertTransfer(this.db, {
+          id: xferId,
+          peerId: m.fromPeerId,
+          direction: 'in',
+          fileName: safeName,
+          fileSize: m.media.data.byteLength,
+          fileHash: '',
+          status: 'complete',
+          savedPath: filePath,
+          createdAt: m.ts,
+          updatedAt: Date.now(),
+        });
+        const offer: XferOfferEvent = {
+          id: xferId,
+          peerId: m.fromPeerId,
+          fileName: safeName,
+          fileSize: m.media.data.byteLength,
+          hash: '',
+        };
+        this.broadcast(IPC.EvtXferOffered, offer);
+        const done: XferDoneEvent = {
+          id: xferId,
+          peerId: m.fromPeerId,
+          direction: 'in',
+          fileName: safeName,
+          ok: true,
+          savedPath: filePath,
+        };
+        this.broadcast(IPC.EvtXferDone, done);
+      } catch {
+        /* media write failure: still ack so relay frees row */
+      }
+    }
     this.broadcast(IPC.EvtMailboxDelivered, { peerId: m.fromPeerId, count: 1 });
     this.broadcastUnread();
     return true;

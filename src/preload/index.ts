@@ -73,6 +73,8 @@ const api: AppApi = {
   xferRespond: (id, accept) => ipcRenderer.invoke(IPC.XferRespond, { id, accept }),
   listTransfers: () => ipcRenderer.invoke(IPC.XferList),
   stageVoice: (data: Uint8Array, ext: string) => ipcRenderer.invoke(IPC.VoiceStage, { data, ext }),
+  sendMailboxMedia: (req: { toPeerId: string; stagedPath: string; mime: string; fileName: string; caption?: string }) =>
+    ipcRenderer.invoke(IPC.MailboxSendMedia, req),
 
   talkInvite: (peerId, kind) => ipcRenderer.invoke(IPC.TalkInvite, { peerId, kind }),
   talkAccept: (callId) => ipcRenderer.invoke(IPC.TalkAccept, { callId }),

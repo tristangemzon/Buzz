@@ -29,8 +29,9 @@ import * as repos from '../db/repos.js';
 import type { Db } from '../db/open.js';
 
 export const MBX_PROTOCOL = '/buzz/mailbox/1.0.0';
-export const MAX_FRAME = 256 * 1024;
+export const MAX_FRAME = 384 * 1024;
 export const MAX_BODY_BYTES = 64 * 1024;
+export const MAX_MEDIA_BYTES = 256 * 1024;
 
 type Frame =
   | { type: 'store'; id: string; recipient: string; sender: string; ctB64: string; ts: number }
@@ -43,6 +44,7 @@ type Frame =
   | { type: 'ackOk'; count: number };
 
 // What the sender CBOR-encodes inside the sealed-box.
+type InnerMedia = { mime: string; name: string; data: Uint8Array };
 type InnerEnvelope = {
   v: 1;
   msgId: string;
@@ -51,6 +53,7 @@ type InnerEnvelope = {
   fromPeerId: string;
   toPeerId: string;
   sig: Uint8Array; // 64-byte Ed25519 sig over signingPayload(...)
+  media?: InnerMedia;
 };
 
 const DOMAIN_TAG = 'buzz:mbox:v1';
@@ -60,6 +63,7 @@ export type DeliveredMessage = {
   ts: number;
   body: string;
   fromPeerId: string;
+  media?: { mime: string; name: string; data: Uint8Array };
 };
 
 export type MailboxBridge = {
@@ -77,13 +81,12 @@ async function signingPayload(
   body: string,
   fromPeerId: string,
   toPeerId: string,
+  mediaHashHex = '',
 ): Promise<Uint8Array> {
   const s = await sodium();
-  return s.crypto_generichash(
-    32,
-    s.from_string(`${DOMAIN_TAG}|${msgId}|${ts}|${body}|${fromPeerId}|${toPeerId}`),
-    null,
-  );
+  const base = `${DOMAIN_TAG}|${msgId}|${ts}|${body}|${fromPeerId}|${toPeerId}`;
+  const tail = mediaHashHex ? `|${mediaHashHex}` : '';
+  return s.crypto_generichash(32, s.from_string(base + tail), null);
 }
 
 async function recipientCurveKeys(seed: Uint8Array): Promise<{
@@ -243,7 +246,10 @@ export class MailboxService {
   }
 
   // ── Sender side: seal + push to every configured relay ───────────────────
-  async pushToRelays(toPeerId: string, msg: { id: string; ts: number; body: string }): Promise<boolean> {
+  async pushToRelays(
+    toPeerId: string,
+    msg: { id: string; ts: number; body: string; media?: InnerMedia },
+  ): Promise<boolean> {
     const relays = this.getRelays();
     if (relays.length === 0) return false;
     const ctB64 = await this.sealEnvelope(toPeerId, msg);
@@ -279,13 +285,19 @@ export class MailboxService {
 
   private async sealEnvelope(
     toPeerId: string,
-    msg: { id: string; ts: number; body: string },
+    msg: { id: string; ts: number; body: string; media?: InnerMedia },
   ): Promise<string> {
     if (msg.body.length > MAX_BODY_BYTES) throw new Error('body too large for mailbox');
+    if (msg.media && msg.media.data.byteLength > MAX_MEDIA_BYTES) {
+      throw new Error('media too large for mailbox');
+    }
     const s = await sodium();
     const fromPeerId = this.node.peerId.toString();
+    const mediaHashHex = msg.media
+      ? bytesToHexLocal(s.crypto_generichash(32, msg.media.data, null))
+      : '';
     const sig = s.crypto_sign_detached(
-      await signingPayload(msg.id, msg.ts, msg.body, fromPeerId, toPeerId),
+      await signingPayload(msg.id, msg.ts, msg.body, fromPeerId, toPeerId, mediaHashHex),
       this.bridge.identity.secretKey,
     );
     const inner: InnerEnvelope = {
@@ -296,6 +308,7 @@ export class MailboxService {
       fromPeerId,
       toPeerId,
       sig,
+      ...(msg.media ? { media: msg.media } : {}),
     };
     const plaintext = encode(inner);
     const recipientX = await peerCurvePk(toPeerId);
@@ -376,19 +389,24 @@ export class MailboxService {
       const inner = decode(plaintext) as InnerEnvelope;
       if (!inner || inner.v !== 1) return false;
       if (inner.toPeerId !== this.node.peerId.toString()) return false;
+      const mediaHashHex = inner.media
+        ? bytesToHexLocal(s.crypto_generichash(32, inner.media.data, null))
+        : '';
       // Verify sender signature against the embedded fromPeerId.
       const senderEd = await peerEdPk(inner.fromPeerId);
       const ok = s.crypto_sign_verify_detached(
         inner.sig,
-        await signingPayload(inner.msgId, inner.ts, inner.body, inner.fromPeerId, inner.toPeerId),
+        await signingPayload(inner.msgId, inner.ts, inner.body, inner.fromPeerId, inner.toPeerId, mediaHashHex),
         senderEd,
       );
       if (!ok) return false;
+      if (inner.media && inner.media.data.byteLength > MAX_MEDIA_BYTES) return false;
       return await this.bridge.deliver({
         id: inner.msgId,
         ts: inner.ts,
         body: inner.body,
         fromPeerId: inner.fromPeerId,
+        ...(inner.media ? { media: inner.media } : {}),
       });
     } catch {
       return false;
@@ -400,4 +418,10 @@ export class MailboxService {
     for (const [k, v] of this.lastPoll) out[k] = v;
     return out;
   }
+}
+
+function bytesToHexLocal(b: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < b.length; i++) s += (b[i] ?? 0).toString(16).padStart(2, '0');
+  return s;
 }
