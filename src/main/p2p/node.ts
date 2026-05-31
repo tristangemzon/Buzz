@@ -1,9 +1,14 @@
-// libp2p host: Noise XX + Yamux + TCP/WS, Bootstrap + KadDHT.
+// libp2p host: Noise XX + Yamux + TCP/WS, Bootstrap + mDNS.
 //
 // Identity is provided by the keystore: we feed the 32-byte seed in as the
 // libp2p Ed25519 private key (libp2p uses { Ed25519, secret = seed | pub }
 // internally; createFromPrivKey accepts the protobuf-encoded form, but we
 // use peer-id-factory's createFromPrivKey + privKey-from-Uint8Array helpers).
+//
+// Note: kadDHT was removed in v0.9.6 — we never queried it directly, peer
+// discovery already runs through Bootstrap + mDNS (LAN) + Tailscale (mesh),
+// and dropping it eliminates GHSA-32mq-hpph-xfvr (unbounded PUT_VALUE disk
+// exhaustion on DHT server nodes) without forcing a libp2p 2.x migration.
 
 import { createLibp2p, type Libp2p } from 'libp2p';
 import { tcp } from '@libp2p/tcp';
@@ -11,7 +16,6 @@ import { webSockets } from '@libp2p/websockets';
 import { noise } from '@chainsafe/libp2p-noise';
 import { yamux } from '@chainsafe/libp2p-yamux';
 import { identify } from '@libp2p/identify';
-import { kadDHT } from '@libp2p/kad-dht';
 import { bootstrap } from '@libp2p/bootstrap';
 import { mdns } from '@libp2p/mdns';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
@@ -132,7 +136,6 @@ export async function createNode(opts: NodeOptions): Promise<Libp2p> {
     peerDiscovery,
     services: {
       identify: identify(),
-      dht: kadDHT({ clientMode: true }),
     },
   });
 
