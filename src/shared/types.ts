@@ -34,6 +34,10 @@ import type {
   RoomVoiceLeaveReq,
   RoomVoicePresenceEvent,
   RoomVoiceAudioEvent,
+  RoomScreenStartReq,
+  RoomScreenStopReq,
+  RoomScreenStateEvent,
+  RoomScreenVideoEvent,
   RoomCreateReq,
   RoomHistoryReq,
   RoomInvitedEvent,
@@ -275,6 +279,10 @@ export type AppApi = {
   roomVoiceLeave(req: RoomVoiceLeaveReq): Promise<{ ok: true }>;
   roomVoiceSendAudio(req: RoomVoiceJoinReq, data: Uint8Array): Promise<void>;
 
+  roomScreenStart(req: RoomScreenStartReq): Promise<{ ok: true }>;
+  roomScreenStop(req: RoomScreenStopReq): Promise<{ ok: true }>;
+  roomScreenSendVideo(req: RoomScreenStopReq, data: Uint8Array): Promise<void>;
+
   // offline mailbox relay
   mailboxStats(): Promise<MailboxStats>;
   mailboxAddRelay(req: MailboxAddRelayReq): Promise<MailboxStats>;
@@ -307,6 +315,8 @@ export type AppApi = {
   onRoomChannel(cb: (e: RoomChannelEvent) => void): () => void;
   onRoomVoicePresence(cb: (e: RoomVoicePresenceEvent) => void): () => void;
   onRoomVoiceAudio(cb: (e: RoomVoiceAudioEvent) => void): () => void;
+  onRoomScreenState(cb: (e: RoomScreenStateEvent) => void): () => void;
+  onRoomScreenVideo(cb: (e: RoomScreenVideoEvent) => void): () => void;
   // v0.6.0 moderation events
   onRoomPin(cb: (e: RoomPinEvent) => void): () => void;
   onRoomKick(cb: (e: RoomKickEvent) => void): () => void;

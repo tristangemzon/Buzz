@@ -477,6 +477,37 @@ export const RoomVoiceAudioEvent = z.object({
 });
 export type RoomVoiceAudioEvent = z.infer<typeof RoomVoiceAudioEvent>;
 
+// ── Screen share in voice channels ───────────────────────────────────────
+export const RoomScreenStartReq = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  sourceName: z.string().max(120).optional(),
+  resolution: z.enum(['480p', '720p', '1080p']).optional(),
+});
+export type RoomScreenStartReq = z.infer<typeof RoomScreenStartReq>;
+export const RoomScreenStopReq = z.object({ roomId: RoomId, channelId: Uuid });
+export type RoomScreenStopReq = z.infer<typeof RoomScreenStopReq>;
+export const RoomScreenSendReq = z.object({ roomId: RoomId, channelId: Uuid });
+export type RoomScreenSendReq = z.infer<typeof RoomScreenSendReq>;
+export const RoomScreenStateEvent = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  peerId: PeerIdStr,
+  screenName: z.string().max(64).default(''),
+  presenting: z.boolean(),
+  sourceName: z.string().max(120).optional(),
+  resolution: z.enum(['480p', '720p', '1080p']).optional(),
+});
+export type RoomScreenStateEvent = z.infer<typeof RoomScreenStateEvent>;
+export const RoomScreenVideoEvent = z.object({
+  roomId: RoomId,
+  channelId: Uuid,
+  peerId: PeerIdStr,
+  screenName: z.string().max(64).default(''),
+  data: z.instanceof(Uint8Array),
+});
+export type RoomScreenVideoEvent = z.infer<typeof RoomScreenVideoEvent>;
+
 export const RoomMessage = z.object({
   id: Uuid,
   roomId: RoomId,

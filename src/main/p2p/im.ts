@@ -108,6 +108,28 @@ export type Frame =
       fromName?: string;
       ts: number;
     }
+  // Multi-peer screen share inside a voice channel. State announces presenter
+  // join/leave; video chunks are VP8/WebM frames secret-boxed with the room
+  // key, fanned out to every member (same trust model as room-voice-audio).
+  | {
+      type: 'room-screen-state';
+      roomId: string;
+      channelId: string;
+      presenting: boolean;
+      sourceName?: string;
+      resolution?: '480p' | '720p' | '1080p';
+      fromName?: string;
+      ts: number;
+    }
+  | {
+      type: 'room-screen-video';
+      roomId: string;
+      channelId: string;
+      ctB64: string;
+      nonceB64: string;
+      fromName?: string;
+      ts: number;
+    }
   // Buddy add request flow.
   | { type: 'buddy-req'; screenName: string; ts: number }
   | { type: 'buddy-resp'; accepted: boolean; screenName?: string }
@@ -158,6 +180,23 @@ export type RoomVoiceAudioPayload = {
   fromName?: string;
   ts: number;
 };
+export type RoomScreenStatePayload = {
+  roomId: string;
+  channelId: string;
+  presenting: boolean;
+  sourceName?: string;
+  resolution?: '480p' | '720p' | '1080p';
+  fromName?: string;
+  ts: number;
+};
+export type RoomScreenVideoPayload = {
+  roomId: string;
+  channelId: string;
+  ctB64: string;
+  nonceB64: string;
+  fromName?: string;
+  ts: number;
+};
 export type RoomPinPayload = { roomId: string; msgId: string; isPinned: boolean; ts: number };
 export type RoomKickPayload = { roomId: string; peerId: string; ts: number };
 export type RoomRolePayload = { roomId: string; peerId: string; role: string; ts: number };
@@ -179,6 +218,8 @@ export type ImEvents = {
   onRoomChannelDel?(peerId: string, p: RoomChannelDelPayload): void;
   onRoomVoiceState?(peerId: string, p: RoomVoiceStatePayload): void;
   onRoomVoiceAudio?(peerId: string, p: RoomVoiceAudioPayload): void;
+  onRoomScreenState?(peerId: string, p: RoomScreenStatePayload): void;
+  onRoomScreenVideo?(peerId: string, p: RoomScreenVideoPayload): void;
   // v0.6.0 moderation
   onRoomPin?(peerId: string, p: RoomPinPayload): void;
   onRoomKick?(peerId: string, p: RoomKickPayload): void;
@@ -497,6 +538,45 @@ export class ImService {
           typeof f.nonceB64 === 'string'
         ) {
           this.events.onRoomVoiceAudio(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            ctB64: f.ctB64,
+            nonceB64: f.nonceB64,
+            fromName: f.fromName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-screen-state':
+        if (
+          this.events.onRoomScreenState &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.presenting === 'boolean'
+        ) {
+          this.events.onRoomScreenState(peerIdStr, {
+            roomId: f.roomId,
+            channelId: f.channelId,
+            presenting: f.presenting,
+            sourceName: typeof f.sourceName === 'string' ? f.sourceName : undefined,
+            resolution:
+              f.resolution === '480p' || f.resolution === '720p' || f.resolution === '1080p'
+                ? f.resolution
+                : undefined,
+            fromName: f.fromName,
+            ts: typeof f.ts === 'number' ? f.ts : Date.now(),
+          });
+        }
+        break;
+      case 'room-screen-video':
+        if (
+          this.events.onRoomScreenVideo &&
+          typeof f.roomId === 'string' &&
+          typeof f.channelId === 'string' &&
+          typeof f.ctB64 === 'string' &&
+          typeof f.nonceB64 === 'string'
+        ) {
+          this.events.onRoomScreenVideo(peerIdStr, {
             roomId: f.roomId,
             channelId: f.channelId,
             ctB64: f.ctB64,

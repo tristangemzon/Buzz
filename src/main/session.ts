@@ -89,6 +89,15 @@ export class Session {
   private roomVoiceMembers = new Map<string, Set<string>>();
   // Voice channels we are currently joined to (same key shape as above).
   private localVoiceJoined = new Set<string>();
+  // Active remote presenter per voice channel (for the one-at-a-time rule).
+  private roomScreenPresenters = new Map<string, {
+    peerId: string;
+    screenName: string;
+    sourceName?: string;
+    resolution?: '480p' | '720p' | '1080p';
+  }>();
+  // Voice channels where we are the active local screen presenter.
+  private localScreenPresenting = new Set<string>();
   // Auto-discovered peers (LAN via mDNS) that speak the Buzz IM protocol and
   // aren't already in our buddy list. Cleared on lock.
   private discovered = new Map<string, DiscoveredPeer>();
@@ -460,6 +469,8 @@ export class Session {
         onRoomChannelDel: (peer, p) => this.rooms?.handleChannelDel(peer, p),
         onRoomVoiceState: (peer, p) => this.rooms?.handleVoiceState(peer, p),
         onRoomVoiceAudio: (peer, p) => this.rooms?.handleVoiceAudio(peer, p),
+        onRoomScreenState: (peer, p) => this.rooms?.handleScreenState(peer, p),
+        onRoomScreenVideo: (peer, p) => this.rooms?.handleScreenVideo(peer, p),
         onRoomPin: (peer, p) => this.rooms?.handlePin(peer, p),
         onRoomKick: (peer, p) => this.rooms?.handleKick(peer, p),
         onRoomRole: (peer, p) => this.rooms?.handleRole(peer, p),
@@ -874,6 +885,10 @@ export class Session {
           // peer learns we're here too. Cheap: a single small frame.
           if (p.joined && this.localVoiceJoined.has(key)) {
             this.rooms?.broadcastVoiceState(p.roomId, p.channelId, true).catch(() => undefined);
+            // Also let late joiners know we're presenting, if we are.
+            if (this.localScreenPresenting.has(key)) {
+              this.rooms?.broadcastScreenState(p.roomId, p.channelId, true).catch(() => undefined);
+            }
           }
         },
         onVoiceAudio: (fromPeerId, p) => {
@@ -895,6 +910,49 @@ export class Session {
               data: copy,
             };
             this.broadcast(IPC.EvtRoomVoiceAudio, ev);
+          })();
+        },
+        onScreenState: (fromPeerId, p) => {
+          const key = `${p.roomId}|${p.channelId}`;
+          if (p.presenting) {
+            this.roomScreenPresenters.set(key, {
+              peerId: fromPeerId,
+              screenName: p.fromName ?? '',
+              sourceName: p.sourceName,
+              resolution: p.resolution,
+            });
+          } else {
+            const cur = this.roomScreenPresenters.get(key);
+            if (cur && cur.peerId === fromPeerId) this.roomScreenPresenters.delete(key);
+          }
+          this.broadcast(IPC.EvtRoomScreenState, {
+            roomId: p.roomId,
+            channelId: p.channelId,
+            peerId: fromPeerId,
+            screenName: p.fromName ?? '',
+            presenting: p.presenting,
+            sourceName: p.sourceName,
+            resolution: p.resolution,
+          });
+          // If we just joined the voice channel and someone else starts
+          // presenting, the late-join echo is handled automatically because
+          // they re-broadcast on every roomVoiceState join below.
+        },
+        onScreenVideo: (fromPeerId, p) => {
+          const key = `${p.roomId}|${p.channelId}`;
+          if (!this.localVoiceJoined.has(key)) return;
+          void (async () => {
+            const plain = await this.rooms?.decryptScreenVideo(p.roomId, p.ctB64, p.nonceB64);
+            if (!plain) return;
+            const copy = new Uint8Array(plain.byteLength);
+            copy.set(plain);
+            this.broadcast(IPC.EvtRoomScreenVideo, {
+              roomId: p.roomId,
+              channelId: p.channelId,
+              peerId: fromPeerId,
+              screenName: p.fromName ?? '',
+              data: copy,
+            });
           })();
         },
         onPin: (_fromPeerId, p) => {
@@ -1958,6 +2016,10 @@ export class Session {
     const key = `${roomId}|${channelId}`;
     if (!this.localVoiceJoined.has(key)) return;
     this.localVoiceJoined.delete(key);
+    if (this.localScreenPresenting.has(key)) {
+      this.localScreenPresenting.delete(key);
+      await this.rooms.broadcastScreenState(roomId, channelId, false).catch(() => undefined);
+    }
     await this.rooms.broadcastVoiceState(roomId, channelId, false);
     this.broadcastHealth();
   }
@@ -1967,6 +2029,38 @@ export class Session {
     const key = `${roomId}|${channelId}`;
     if (!this.localVoiceJoined.has(key)) return;
     await this.rooms.broadcastVoiceAudio(roomId, channelId, data);
+  }
+
+  // ── screen share within a voice channel ───────────────────────────────
+  async roomScreenStart(
+    roomId: string,
+    channelId: string,
+    opts?: { sourceName?: string; resolution?: '480p' | '720p' | '1080p' },
+  ): Promise<void> {
+    if (!this.rooms) throw new Error('locked');
+    const key = `${roomId}|${channelId}`;
+    if (!this.localVoiceJoined.has(key)) throw new Error('Join the voice channel first');
+    const remote = this.roomScreenPresenters.get(key);
+    if (remote && remote.peerId !== this.peerIdStr()) {
+      throw new Error(`${remote.screenName || 'Someone'} is already presenting`);
+    }
+    this.localScreenPresenting.add(key);
+    await this.rooms.broadcastScreenState(roomId, channelId, true, opts);
+  }
+
+  async roomScreenStop(roomId: string, channelId: string): Promise<void> {
+    if (!this.rooms) return;
+    const key = `${roomId}|${channelId}`;
+    if (!this.localScreenPresenting.has(key)) return;
+    this.localScreenPresenting.delete(key);
+    await this.rooms.broadcastScreenState(roomId, channelId, false);
+  }
+
+  async roomScreenSendVideo(roomId: string, channelId: string, data: Uint8Array): Promise<void> {
+    if (!this.rooms) return;
+    const key = `${roomId}|${channelId}`;
+    if (!this.localScreenPresenting.has(key)) return;
+    await this.rooms.broadcastScreenVideo(roomId, channelId, data);
   }
 
   // List remote peers currently joined to a voice channel (excludes us).

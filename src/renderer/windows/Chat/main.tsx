@@ -4,6 +4,8 @@ import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatf
 import { WindowChrome } from '../../components/WindowChrome';
 import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useRoomVoice } from '../../components/useRoomVoice';
+import { useRoomScreen } from '../../components/useRoomScreen';
+import { ScreenSourcePicker } from '../../components/ScreenSourcePicker';
 import { playSound, setSoundsEnabled, setSoundScheme, setDnd } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
 import { GamePicker } from '../../components/GamePicker';
@@ -573,6 +575,7 @@ function App(): JSX.Element {
               channelId={activeChannelId}
               channelName={activeChannel.name}
               nameFor={nameFor}
+              myPeerId={me?.peerId ?? null}
             />
           ) : (
             <>
@@ -1146,9 +1149,31 @@ function VoiceChannelPane(props: {
   channelId: string;
   channelName: string;
   nameFor: (peerId: string) => string;
+  myPeerId: string | null;
 }): JSX.Element {
-  const { roomId, channelId, channelName, nameFor } = props;
+  const { roomId, channelId, channelName, nameFor, myPeerId } = props;
   const voice = useRoomVoice(roomId, channelId);
+  const screen = useRoomScreen(roomId, channelId, voice.joined, myPeerId);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const screenContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const host = screenContainerRef.current;
+    if (!host) return;
+    while (host.firstChild) host.removeChild(host.firstChild);
+    if (screen.videoEl) {
+      screen.videoEl.style.width = '100%';
+      screen.videoEl.style.height = '100%';
+      screen.videoEl.style.objectFit = 'contain';
+      screen.videoEl.style.background = '#000';
+      host.appendChild(screen.videoEl);
+    }
+    return () => {
+      if (screen.videoEl && host.contains(screen.videoEl)) host.removeChild(screen.videoEl);
+    };
+  }, [screen.videoEl]);
+
+  const someoneElsePresenting = !!screen.presenter && screen.presenter.peerId !== myPeerId;
   return (
     <div
       style={{
@@ -1177,9 +1202,54 @@ function VoiceChannelPane(props: {
           <>
             <button onClick={() => voice.toggleMute()}>{voice.muted ? 'Unmute' : 'Mute'}</button>
             <button onClick={() => void voice.leave()}>Leave</button>
+            {screen.iAmPresenting ? (
+              <button onClick={() => void screen.stopShare()}>Stop Sharing</button>
+            ) : (
+              <button
+                onClick={() => setPickerOpen(true)}
+                disabled={someoneElsePresenting}
+                title={someoneElsePresenting ? `${screen.presenter?.screenName || 'Someone'} is presenting` : 'Share your screen with the channel'}
+              >
+                Share Screen
+              </button>
+            )}
           </>
         )}
       </div>
+
+      {someoneElsePresenting && (
+        <div style={{ width: '100%', maxWidth: 480, marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 11, opacity: 0.75 }}>
+            🖥 {screen.presenter?.screenName || nameFor(screen.presenter?.peerId ?? '')} is presenting{screen.presenter?.sourceName ? ` (${screen.presenter.sourceName})` : ''}
+          </div>
+          <div
+            ref={screenContainerRef}
+            style={{
+              width: '100%',
+              aspectRatio: '16 / 9',
+              background: '#000',
+              borderRadius: 4,
+              overflow: 'hidden',
+            }}
+          />
+        </div>
+      )}
+
+      {screen.iAmPresenting && (
+        <div style={{ fontSize: 11, opacity: 0.75 }}>You are sharing your screen.</div>
+      )}
+      {screen.error && (
+        <div style={{ color: '#a00', fontSize: 11 }}>{screen.error}</div>
+      )}
+
+      <ScreenSourcePicker
+        open={pickerOpen}
+        onCancel={() => setPickerOpen(false)}
+        onShare={(source, resolution) => {
+          setPickerOpen(false);
+          void screen.startShare(source, resolution);
+        }}
+      />
 
       <div
         style={{

@@ -113,6 +113,11 @@ const api: AppApi = {
   roomVoiceSendAudio: async (req, data) => {
     ipcRenderer.send(IPC.RoomsVoiceSendAudio, req, data);
   },
+  roomScreenStart: (req) => ipcRenderer.invoke(IPC.RoomsScreenStart, req),
+  roomScreenStop: (req) => ipcRenderer.invoke(IPC.RoomsScreenStop, req),
+  roomScreenSendVideo: async (req, data) => {
+    ipcRenderer.send(IPC.RoomsScreenSendVideo, req, data);
+  },
   // v0.6.0 moderation
   roomsPin: (req) => ipcRenderer.invoke(IPC.RoomsPin, req),
   roomsListPinned: (req) => ipcRenderer.invoke(IPC.RoomsListPinned, req),
@@ -154,6 +159,8 @@ const api: AppApi = {
   onRoomChannel: (cb) => on(IPC.EvtRoomChannel, cb),
   onRoomVoicePresence: (cb) => on(IPC.EvtRoomVoicePresence, cb),
   onRoomVoiceAudio: (cb) => on(IPC.EvtRoomVoiceAudio, cb),
+  onRoomScreenState: (cb) => on(IPC.EvtRoomScreenState, cb),
+  onRoomScreenVideo: (cb) => on(IPC.EvtRoomScreenVideo, cb),
   // v0.6.0 moderation events
   onRoomPin: (cb) => on(IPC.EvtRoomPin, cb),
   onRoomKick: (cb) => on(IPC.EvtRoomKick, cb),

@@ -103,6 +103,9 @@ export const IPC = {
   RoomsVoiceJoin: 'rooms:voiceJoin',
   RoomsVoiceLeave: 'rooms:voiceLeave',
   RoomsVoiceSendAudio: 'rooms:voiceSendAudio',
+  RoomsScreenStart: 'rooms:screenStart',
+  RoomsScreenStop: 'rooms:screenStop',
+  RoomsScreenSendVideo: 'rooms:screenSendVideo',
   RoomsReact: 'rooms:react',
   RoomsUnreact: 'rooms:unreact',
   RoomsEditMsg: 'rooms:editMsg',
@@ -147,6 +150,8 @@ export const IPC = {
   EvtRoomChannel: 'evt:roomChannel',
   EvtRoomVoicePresence: 'evt:roomVoicePresence',
   EvtRoomVoiceAudio: 'evt:roomVoiceAudio',
+  EvtRoomScreenState: 'evt:roomScreenState',
+  EvtRoomScreenVideo: 'evt:roomScreenVideo',
   // v0.6.0 moderation events
   EvtRoomPin: 'evt:roomPin',
   EvtRoomKick: 'evt:roomKick',

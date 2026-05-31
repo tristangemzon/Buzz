@@ -33,6 +33,8 @@ import {
   RoomChannelDeleteReq,
   RoomVoiceJoinReq,
   RoomVoiceLeaveReq,
+  RoomScreenStartReq,
+  RoomScreenStopReq,
   RoomReactReq,
   RoomUnreactReq,
   RoomEditMsgReq,
@@ -791,6 +793,26 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     IPC.RoomsVoiceSendAudio,
     (_e, payload: { roomId: string; channelId: string }, data: Uint8Array) => {
       void session.roomVoiceSendAudio(payload.roomId, payload.channelId, data);
+    },
+  );
+
+  // ── v0.9.4 screen share in voice channels ──────────────────────────────
+  handle(
+    IPC.RoomsScreenStart,
+    RoomScreenStartReq,
+    async ({ roomId, channelId, sourceName, resolution }) => {
+      await session.roomScreenStart(roomId, channelId, { sourceName, resolution });
+      return { ok: true as const };
+    },
+  );
+  handle(IPC.RoomsScreenStop, RoomScreenStopReq, async ({ roomId, channelId }) => {
+    await session.roomScreenStop(roomId, channelId);
+    return { ok: true as const };
+  });
+  ipcMain.on(
+    IPC.RoomsScreenSendVideo,
+    (_e, payload: { roomId: string; channelId: string }, data: Uint8Array) => {
+      void session.roomScreenSendVideo(payload.roomId, payload.channelId, data);
     },
   );
 

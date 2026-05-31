@@ -32,6 +32,8 @@ import type {
   RoomRolePayload,
   RoomVoiceStatePayload,
   RoomVoiceAudioPayload,
+  RoomScreenStatePayload,
+  RoomScreenVideoPayload,
   RoomReactionPayload,
   RoomEditMsgPayload,
   RoomDeleteMsgPayload,
@@ -49,6 +51,8 @@ export type RoomServiceEvents = {
   onChannelDel(fromPeerId: string, p: RoomChannelDelPayload): void;
   onVoiceState(fromPeerId: string, p: RoomVoiceStatePayload): void;
   onVoiceAudio(fromPeerId: string, p: RoomVoiceAudioPayload): void;
+  onScreenState(fromPeerId: string, p: RoomScreenStatePayload): void;
+  onScreenVideo(fromPeerId: string, p: RoomScreenVideoPayload): void;
   // v0.6.0 moderation
   onPin(fromPeerId: string, p: RoomPinPayload): void;
   onKick(fromPeerId: string, p: RoomKickPayload): void;
@@ -105,6 +109,12 @@ export class RoomService {
   };
   readonly handleVoiceAudio = (fromPeerId: string, p: RoomVoiceAudioPayload): void => {
     this.events.onVoiceAudio(fromPeerId, p);
+  };
+  readonly handleScreenState = (fromPeerId: string, p: RoomScreenStatePayload): void => {
+    this.events.onScreenState(fromPeerId, p);
+  };
+  readonly handleScreenVideo = (fromPeerId: string, p: RoomScreenVideoPayload): void => {
+    this.events.onScreenVideo(fromPeerId, p);
   };
   readonly handlePin = (fromPeerId: string, p: RoomPinPayload): void => {
     this.events.onPin(fromPeerId, p);
@@ -318,6 +328,64 @@ export class RoomService {
     } catch {
       return null;
     }
+  }
+
+  async broadcastScreenState(
+    roomId: string,
+    channelId: string,
+    presenting: boolean,
+    opts?: { sourceName?: string; resolution?: '480p' | '720p' | '1080p' },
+  ): Promise<void> {
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const ts = Date.now();
+    const fromName = this.bridge.myScreenName();
+    await Promise.all(
+      recipients.map((peer) =>
+        this.im
+          .send(peer, {
+            type: 'room-screen-state',
+            roomId,
+            channelId,
+            presenting,
+            sourceName: opts?.sourceName,
+            resolution: opts?.resolution,
+            fromName,
+            ts,
+          })
+          .catch(() => undefined),
+      ),
+    );
+  }
+
+  async broadcastScreenVideo(
+    roomId: string,
+    channelId: string,
+    data: Uint8Array,
+  ): Promise<void> {
+    const key = this.bridge.getRoomKey(roomId);
+    if (!key) return;
+    const s = await sodium();
+    const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
+    const ct = s.crypto_secretbox_easy(data, nonce, key);
+    const me = this.bridge.myPeerId();
+    const recipients = this.bridge.getRoomMembers(roomId).filter((m) => m !== me);
+    const frame = {
+      type: 'room-screen-video' as const,
+      roomId,
+      channelId,
+      ctB64: s.to_base64(ct, s.base64_variants.ORIGINAL),
+      nonceB64: s.to_base64(nonce, s.base64_variants.ORIGINAL),
+      fromName: this.bridge.myScreenName(),
+      ts: Date.now(),
+    };
+    await Promise.all(
+      recipients.map((peer) => this.im.send(peer, frame).catch(() => undefined)),
+    );
+  }
+
+  async decryptScreenVideo(roomId: string, ctB64: string, nonceB64: string): Promise<Uint8Array | null> {
+    return this.decryptVoiceAudio(roomId, ctB64, nonceB64);
   }
 
   async broadcastChannelDel(roomId: string, channelId: string): Promise<void> {
