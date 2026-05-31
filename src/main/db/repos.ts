@@ -98,12 +98,12 @@ export function insertMessage(db: Db, m: ImMessage): void {
   ).run(m.id, m.peerId, m.direction, m.ts, m.body, m.status, m.editedAt ?? null, m.deletedAt ?? null);
 }
 
-export function editMessage(db: Db, id: string, body: string): void {
-  db.prepare('UPDATE messages SET body=?, edited_at=? WHERE id=?').run(body, Date.now(), id);
+export function editMessage(db: Db, id: string, body: string, at: number = Date.now()): void {
+  db.prepare('UPDATE messages SET body=?, edited_at=? WHERE id=?').run(body, at, id);
 }
 
-export function deleteMessage(db: Db, id: string): void {
-  db.prepare('UPDATE messages SET deleted_at=? WHERE id=?').run(Date.now(), id);
+export function deleteMessage(db: Db, id: string, at: number = Date.now()): void {
+  db.prepare('UPDATE messages SET deleted_at=? WHERE id=?').run(at, id);
 }
 
 export function setMessageStatus(db: Db, id: string, status: ImMessage['status']): void {

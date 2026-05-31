@@ -158,7 +158,8 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   handle(IPC.ImSend, SendImReq, async ({ toPeerId, body }) => {
     const db = requireDb(session);
     const im = session.im;
-    if (!im) throw new Error('Locked');
+    const hive = session.hiveClient;
+    if (!im && !hive) throw new Error('Locked');
     const msg: ImMessage = ImMessage.parse({
       id: randomUUID(),
       peerId: toPeerId,
@@ -168,29 +169,40 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       status: 'queued',
     });
     repos.insertMessage(db, msg);
-    try {
-      await im.send(toPeerId, { type: 'msg', id: msg.id, ts: msg.ts, body: msg.body });
-      msg.status = 'sent';
-      repos.setMessageStatus(db, msg.id, 'sent');
-    } catch (err) {
-      // Direct send failed (peer offline / no route). If we have offline
-      // mailbox relays configured, try to push a sealed envelope through
-      // them so the recipient picks it up next time they're online.
-      const mbx = session.mailbox;
-      let queued = false;
-      if (mbx) {
-        queued = await mbx
-          .pushToRelays(toPeerId, { id: msg.id, ts: msg.ts, body: msg.body })
-          .catch(() => false);
-      }
-      if (queued) {
+    if (im) {
+      try {
+        await im.send(toPeerId, { type: 'msg', id: msg.id, ts: msg.ts, body: msg.body });
         msg.status = 'sent';
         repos.setMessageStatus(db, msg.id, 'sent');
-      } else {
-        msg.status = 'failed';
-        repos.setMessageStatus(db, msg.id, 'failed');
-        throw err;
+      } catch (err) {
+        // Direct send failed (peer offline / no route). If we have offline
+        // mailbox relays configured, try to push a sealed envelope through
+        // them so the recipient picks it up next time they're online.
+        const mbx = session.mailbox;
+        let queued = false;
+        if (mbx) {
+          queued = await mbx
+            .pushToRelays(toPeerId, { id: msg.id, ts: msg.ts, body: msg.body })
+            .catch(() => false);
+        }
+        if (queued) {
+          msg.status = 'sent';
+          repos.setMessageStatus(db, msg.id, 'sent');
+        } else {
+          msg.status = 'failed';
+          repos.setMessageStatus(db, msg.id, 'failed');
+          throw err;
+        }
       }
+    } else if (hive) {
+      const cipherB64 = hive.sealMessage(toPeerId, msg.body);
+      if (!cipherB64) {
+        repos.setMessageStatus(db, msg.id, 'failed');
+        throw new Error('Cannot seal message: recipient public key unknown');
+      }
+      hive.sendIm(toPeerId, msg.id, msg.ts, cipherB64);
+      msg.status = 'sent';
+      repos.setMessageStatus(db, msg.id, 'sent');
     }
     return msg;
   });
@@ -221,24 +233,31 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
 
   handle(IPC.ImEdit, ImEditReq, ({ id, body }) => {
     const db = requireDb(session);
-    repos.editMessage(db, id, body);
-    const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(id) as { peer_id: string } | undefined;
     const editedAt = Date.now();
+    repos.editMessage(db, id, body, editedAt);
+    const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(id) as { peer_id: string } | undefined;
     const evt = { id, body, editedAt };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.EvtImEdited, evt);
     }
-    // TODO: relay edit to peer in server mode (requires Hive Phase 4 edit types)
+    if (session.hiveClient && row) {
+      const cipherB64 = session.hiveClient.sealMessage(row.peer_id, body);
+      if (cipherB64) session.hiveClient.sendEditMsg(row.peer_id, id, editedAt, cipherB64);
+    }
     return { ok: true as const, editedAt, peerId: row?.peer_id };
   });
 
   handle(IPC.ImDelete, ImDeleteReq, ({ id }) => {
     const db = requireDb(session);
-    repos.deleteMessage(db, id);
     const deletedAt = Date.now();
+    const row = db.prepare('SELECT peer_id FROM messages WHERE id=?').get(id) as { peer_id: string } | undefined;
+    repos.deleteMessage(db, id, deletedAt);
     const evt = { id, deletedAt };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.EvtImDeleted, evt);
+    }
+    if (session.hiveClient && row) {
+      session.hiveClient.sendDeleteMsg(row.peer_id, id, deletedAt);
     }
     return { ok: true as const, deletedAt };
   });

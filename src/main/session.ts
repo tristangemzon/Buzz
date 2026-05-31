@@ -1212,6 +1212,18 @@ export class Session {
         repos.deleteRoomMessage(this.db, msgId, ts);
         this.broadcast(IPC.EvtRoomDeleted, { roomId, msgId, deletedAt: ts });
       },
+      onEditMsg: (_from, msgId, ts, cipherB64) => {
+        if (!this.db || !this.hiveClient) return;
+        const body = this.hiveClient.openMessage(cipherB64);
+        if (body == null) return;
+        repos.editMessage(this.db, msgId, body, ts);
+        this.broadcast(IPC.EvtImEdited, { id: msgId, body, editedAt: ts });
+      },
+      onDeleteMsg: (_from, msgId, ts) => {
+        if (!this.db) return;
+        repos.deleteMessage(this.db, msgId, ts);
+        this.broadcast(IPC.EvtImDeleted, { id: msgId, deletedAt: ts });
+      },
       onRoomPin: (roomId, _from, msgId, isPinned) => {
         if (!this.db) return;
         repos.pinRoomMessage(this.db, msgId, isPinned);
