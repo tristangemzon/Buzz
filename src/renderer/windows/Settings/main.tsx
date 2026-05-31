@@ -7,7 +7,7 @@ import type { SoundScheme } from '../../sounds/synth';
 import type { Theme } from '@shared/schemas';
 import type { UpdateStatus } from '@shared/types';
 
-type Section = 'themes' | 'sounds' | 'audio' | 'updates' | 'backup' | 'transfers';
+type Section = 'themes' | 'sounds' | 'audio' | 'updates' | 'backup' | 'transfers' | 'about';
 
 function App(): JSX.Element {
   const [section, setSection] = useState<Section>('themes');
@@ -22,13 +22,13 @@ function App(): JSX.Element {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* ── Left nav ── */}
         <div className="settings-nav">
-          {(['themes', 'sounds', 'audio', 'updates', 'backup', 'transfers'] as Section[]).map((s) => (
+          {(['themes', 'sounds', 'audio', 'updates', 'backup', 'transfers', 'about'] as Section[]).map((s) => (
             <button
               key={s}
               className={`settings-nav-item${section === s ? ' active' : ''}`}
               onClick={() => setSection(s)}
             >
-              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : s === 'updates' ? '🔄 Updates' : s === 'backup' ? '💾 Backup' : '📁 Transfers'}
+              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : s === 'updates' ? '🔄 Updates' : s === 'backup' ? '💾 Backup' : s === 'transfers' ? '📁 Transfers' : 'ℹ️ About'}
             </button>
           ))}
         </div>
@@ -40,6 +40,7 @@ function App(): JSX.Element {
           {section === 'updates' && <UpdatesPane />}
           {section === 'backup' && <BackupPane />}
           {section === 'transfers' && <TransfersPane />}
+          {section === 'about' && <AboutPane />}
         </div>
       </div>
     </div>
@@ -579,3 +580,82 @@ function TransfersPane(): JSX.Element {
 
 const root = createRoot(document.getElementById('root')!);
 root.render(<App />);
+
+/* ── About pane (version + opt-in local telemetry) ─────────────────────── */
+
+function AboutPane(): JSX.Element {
+  const [version, setVersion] = useState<string>('');
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [t, setT] = useState<{
+    imsSent: number;
+    callsTotal: number;
+    callMillis: number;
+    voiceJoins: number;
+    screenShares: number;
+    sinceTs: number;
+  } | null>(null);
+
+  async function refresh(): Promise<void> {
+    const [v, p, snap] = await Promise.all([
+      window.buzz.getAppVersion(),
+      window.buzz.getPrefs(),
+      window.buzz.getTelemetry(),
+    ]);
+    setVersion(v);
+    setEnabled(p.telemetryEnabled);
+    setT(snap);
+  }
+
+  useEffect(() => { void refresh(); }, []);
+
+  async function toggle(next: boolean): Promise<void> {
+    setEnabled(next);
+    await window.buzz.setPrefs({ telemetryEnabled: next });
+  }
+  async function reset(): Promise<void> {
+    const snap = await window.buzz.resetTelemetry();
+    setT(snap);
+  }
+
+  const fmtMins = (ms: number): string => `${Math.round(ms / 60000)} min`;
+  const since = t && t.sinceTs ? new Date(t.sinceTs).toLocaleString() : '—';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="label">About</div>
+      <div style={{ fontSize: 12 }}>
+        <div><b>Buzz</b> v{version || '…'}</div>
+        <div style={{ opacity: 0.7, marginTop: 4 }}>
+          Crash dumps (if any) are written to your local user-data folder under <code>crashes/</code> and are never uploaded.
+        </div>
+      </div>
+
+      <div className="label" style={{ marginTop: 8 }}>Local usage stats</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => void toggle(e.target.checked)}
+        />
+        Count my own usage locally (nothing is ever uploaded)
+      </label>
+
+      {enabled && t && (
+        <table style={{ fontSize: 12, borderCollapse: 'collapse' }}>
+          <tbody>
+            <tr><td style={{ paddingRight: 12, opacity: 0.7 }}>IMs sent</td><td>{t.imsSent}</td></tr>
+            <tr><td style={{ paddingRight: 12, opacity: 0.7 }}>1:1 calls</td><td>{t.callsTotal} ({fmtMins(t.callMillis)})</td></tr>
+            <tr><td style={{ paddingRight: 12, opacity: 0.7 }}>Voice channel joins</td><td>{t.voiceJoins}</td></tr>
+            <tr><td style={{ paddingRight: 12, opacity: 0.7 }}>Screen shares started</td><td>{t.screenShares}</td></tr>
+            <tr><td style={{ paddingRight: 12, opacity: 0.7 }}>Counting since</td><td>{since}</td></tr>
+          </tbody>
+        </table>
+      )}
+      {enabled && (
+        <div>
+          <button onClick={() => void reset()}>Reset counters</button>
+        </div>
+      )}
+    </div>
+  );
+}

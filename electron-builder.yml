@@ -15,11 +15,12 @@ asarUnpack:
   - "**/node_modules/keytar/**"
 
 win:
-  # No code-signing cert by default — produce an unsigned .exe. Users will see
-  # SmartScreen "unrecognized app" once; click More info → Run anyway. To sign,
-  # set certificateFile / certificatePassword (or CSC_LINK / CSC_KEY_PASSWORD
-  # env vars) and remove `signAndEditExecutable: false`.
-  signAndEditExecutable: false
+  # Code-signing is opt-in via env vars (CSC_LINK + CSC_KEY_PASSWORD, or the
+  # WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD variants). When neither is set the
+  # build still succeeds and produces an unsigned .exe — SmartScreen will warn
+  # users on first launch (More info → Run anyway). See docs/SIGNING.md.
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
   target:
     - target: nsis        # Windows installer (.exe)
       arch: [x64, arm64]

@@ -55,6 +55,8 @@ const api: AppApi = {
 
   getPrefs: () => ipcRenderer.invoke(IPC.PrefsGet),
   setPrefs: (req) => ipcRenderer.invoke(IPC.PrefsSet, req),
+  getTelemetry: () => ipcRenderer.invoke(IPC.TelemetryGet),
+  resetTelemetry: () => ipcRenderer.invoke(IPC.TelemetryReset),
 
   getNetworkConfig: () => ipcRenderer.invoke(IPC.NetworkGet),
   setNetworkConfig: (cfg) => ipcRenderer.invoke(IPC.NetworkSet, cfg),

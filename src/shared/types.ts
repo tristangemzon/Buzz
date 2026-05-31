@@ -193,6 +193,8 @@ export type AppApi = {
   // prefs
   getPrefs(): Promise<Prefs>;
   setPrefs(req: SetPrefsReq): Promise<Prefs>;
+  getTelemetry(): Promise<Prefs['telemetry']>;
+  resetTelemetry(): Promise<Prefs['telemetry']>;
 
   // network mode (readable while locked)
   getNetworkConfig(): Promise<NetworkConfig>;

@@ -52,6 +52,10 @@ export const IPC = {
   PrefsGet: 'prefs:get',
   PrefsSet: 'prefs:set',
 
+  // local-only telemetry (opt-in, surfaced in Settings → About)
+  TelemetryGet: 'telemetry:get',
+  TelemetryReset: 'telemetry:reset',
+
   // network mode (readable while locked)
   NetworkGet: 'network:get',
   NetworkSet: 'network:set',

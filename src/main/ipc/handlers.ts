@@ -57,6 +57,7 @@ import * as backup from '../backup.js';
 import { sodium } from '../crypto/keystore.js';
 import { loadNetworkConfig, saveNetworkConfig } from '../network.js';
 import { setNotificationsEnabled } from '../notify.js';
+import { telemetry } from '../telemetry.js';
 import type { Session } from '../session.js';
 
 function platform(): Platform {
@@ -270,6 +271,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       msg.status = 'sent';
       repos.setMessageStatus(db, msg.id, 'sent');
     }
+    if (msg.status === 'sent') telemetry.recordIm(db);
     return msg;
   });
   handle(IPC.ImHistory, HistoryReq, ({ peerId, limit, before }) =>
@@ -399,6 +401,9 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     }
     return updated;
   });
+
+  handle(IPC.TelemetryGet, null, () => telemetry.snapshot(requireDb(session)));
+  handle(IPC.TelemetryReset, null, () => telemetry.reset(requireDb(session)));
 
   // ── network mode (pre-unlock readable) ───────────────────────────────────
   handle(IPC.NetworkGet, null, () => loadNetworkConfig());
@@ -782,6 +787,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   });
   handle(IPC.RoomsVoiceJoin, RoomVoiceJoinReq, async ({ roomId, channelId }) => {
     await session.roomVoiceJoin(roomId, channelId);
+    telemetry.recordVoiceJoin(requireDb(session));
     return { ok: true as const };
   });
   handle(IPC.RoomsVoiceLeave, RoomVoiceLeaveReq, async ({ roomId, channelId }) => {
@@ -802,6 +808,7 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     RoomScreenStartReq,
     async ({ roomId, channelId, sourceName, resolution }) => {
       await session.roomScreenStart(roomId, channelId, { sourceName, resolution });
+      telemetry.recordScreenShare(requireDb(session));
       return { ok: true as const };
     },
   );

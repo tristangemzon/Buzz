@@ -216,6 +216,17 @@ export const Prefs = z.object({
   // Offline mailbox relays (peer ids) — used as both push targets when a
   // direct send fails and as poll sources for envelopes addressed to us.
   mailboxRelays: z.array(PeerIdStr).max(8).default([]),
+  // Local-only usage counters, opt-in. Nothing is uploaded — `telemetry:get`
+  // simply surfaces the same numbers in Settings → About.
+  telemetryEnabled: z.boolean().default(false),
+  telemetry: z.object({
+    imsSent: z.number().int().min(0).default(0),
+    callsTotal: z.number().int().min(0).default(0),
+    callMillis: z.number().int().min(0).default(0),
+    voiceJoins: z.number().int().min(0).default(0),
+    screenShares: z.number().int().min(0).default(0),
+    sinceTs: z.number().int().min(0).default(0),
+  }).default({ imsSent: 0, callsTotal: 0, callMillis: 0, voiceJoins: 0, screenShares: 0, sinceTs: 0 }),
 });
 export type Prefs = z.infer<typeof Prefs>;
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, protocol, session as electronSession, shell } from 'electron';
+import { app, BrowserWindow, crashReporter, ipcMain, nativeImage, protocol, session as electronSession, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,7 @@ import { registerIpc } from './ipc/handlers.js';
 import { Session } from './session.js';
 import { migrateLegacy } from './profiles.js';
 import { initUpdater, registerUpdaterIpc } from './updater.js';
+import { installRedactedConsole } from './log.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,6 +17,26 @@ const isDev = !!process.env['ELECTRON_RENDERER_URL'];
 // and window titles all read "Buzz" instead of "Electron" in dev.
 app.setName('Buzz');
 process.title = 'Buzz';
+
+// Crash dumps land under <userData>/crashes/ and are NEVER uploaded.
+// `submitURL` is required by Electron's CrashReporter API even when uploading
+// is disabled; the empty string + uploadToServer:false guarantees no network.
+app.setPath('crashDumps', path.join(app.getPath('userData'), 'crashes'));
+try {
+  crashReporter.start({
+    submitURL: '',
+    uploadToServer: false,
+    compress: true,
+    productName: 'Buzz',
+    ignoreSystemCrashHandler: false,
+  });
+} catch {
+  // CrashReporter is best-effort: never block boot on it.
+}
+
+// Auto-redact PeerIds and IPv4 addresses from all main-process console output
+// in production builds. No-op in dev so developers see raw values.
+if (!isDev) installRedactedConsole();
 
 // Register buzz-file:// as a privileged scheme so <img> tags can load
 // local files served from the main process without violating the CSP.
