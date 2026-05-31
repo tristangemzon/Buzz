@@ -518,6 +518,22 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     const db = requireDb(session);
     return repos.listTransfers(db, 200);
   });
+  handle(
+    IPC.VoiceStage,
+    z.object({ data: z.instanceof(Uint8Array), ext: z.string().regex(/^[a-z0-9]{1,8}$/) }),
+    async ({ data, ext }) => {
+      if (data.byteLength === 0) throw new Error('Empty audio');
+      if (data.byteLength > 32 * 1024 * 1024) throw new Error('Voice memo too large');
+      const fs = await import('node:fs/promises');
+      const dir = path.join(app.getPath('userData'), 'voice');
+      await fs.mkdir(dir, { recursive: true });
+      const id = randomUUID();
+      const fileName = `voice-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+      const filePath = path.join(dir, `${id}.${ext}`);
+      await fs.writeFile(filePath, Buffer.from(data), { mode: 0o600 });
+      return { filePath, fileName };
+    },
+  );
 
   // ── voice talk ───────────────────────────────────────────────────────────
   handle(

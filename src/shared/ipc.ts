@@ -73,6 +73,7 @@ export const IPC = {
   XferOffer: 'xfer:offer',
   XferRespond: 'xfer:respond',
   XferList: 'xfer:list',
+  VoiceStage: 'voice:stage',
 
   // voice talk
   TalkInvite: 'talk:invite',

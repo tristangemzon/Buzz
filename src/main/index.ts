@@ -386,6 +386,7 @@ app.whenReady().then(() => {
       const mimeMap: Record<string, string> = {
         png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
         gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+        webm: 'audio/webm', ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4',
       };
       const contentType = mimeMap[ext] ?? 'application/octet-stream';
       return new Response(data, { headers: { 'Content-Type': contentType } });

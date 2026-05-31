@@ -226,6 +226,7 @@ export type AppApi = {
     updatedAt: number;
     alias: string | null;
   }>>;
+  stageVoice(data: Uint8Array, ext: string): Promise<{ filePath: string; fileName: string }>;
 
   // voice talk
   talkInvite(peerId: string, kind?: 'voice' | 'video'): Promise<TalkCallState>;

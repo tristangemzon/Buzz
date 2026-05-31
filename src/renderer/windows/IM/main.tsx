@@ -5,6 +5,7 @@ import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileViewer } from '../../components/ProfilePanes';
 import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useTalk, fmtCallTime } from '../../components/useTalk';
+import { VoiceMemo } from '../../components/VoiceMemo';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
 import { GamePicker } from '../../components/GamePicker';
 import { playSound, setSoundsEnabled, setSoundScheme, setDnd } from '../../sounds/synth';
@@ -747,6 +748,15 @@ function App(): JSX.Element {
           <span className="im-action-btn-icon">📎</span>
           <span className="im-action-btn-label">File</span>
         </button>
+        <VoiceMemo
+          peerId={peerId}
+          disabled={blocked}
+          onError={(m) => setErr(m)}
+          onSent={(info) => upsertXfer((prev) => [
+            ...prev,
+            { kind: 'xfer', id: info.id, direction: 'out', fileName: info.fileName, fileSize: info.fileSize, state: 'active', bytes: 0 },
+          ])}
+        />
 
         <span className="im-actionbar-spacer" />
 
@@ -1000,6 +1010,13 @@ function XferLine(props: {
               src={`buzz-file://${card.id}`}
               alt={card.fileName}
               style={{ maxWidth: '100%', maxHeight: 240, marginTop: 4, display: 'block', borderRadius: 2 }}
+            />
+          )}
+          {/\.(webm|ogg|mp3|wav|m4a)$/i.test(card.fileName) && (
+            <audio
+              src={`buzz-file://${card.id}`}
+              controls
+              style={{ marginTop: 4, display: 'block', maxWidth: '100%' }}
             />
           )}
         </div>
