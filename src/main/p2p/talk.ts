@@ -26,6 +26,13 @@ export const TALK_MAX_FRAME = 256 * 1024;
 export const TALK_MIME = 'audio/webm;codecs=opus';
 export const TALK_VIDEO_MIME = 'video/webm;codecs=vp8';
 
+// Bounded outbound buffer per peer. Audio is the smallest/most latency-
+// sensitive stream; capping the byte budget per peer means a slow peer
+// can never inflate our memory or stall the local UI. When the budget is
+// exceeded we drop the oldest media frames first (audio/video/screen) and
+// always preserve control frames (invite/accept/reject/bye/*State).
+const TALK_OUT_BUDGET_BYTES = 2 * 1024 * 1024;
+
 export type TalkFrame =
   | { type: 'invite'; callId: string; screenName: string; ts: number; kind?: 'voice' | 'video' }
   | { type: 'accept'; callId: string }
@@ -113,7 +120,9 @@ export class TalkService {
 
   private attach(peerIdStr: string, stream: Stream): ConnState {
     this.activePeers.add(peerIdStr);
-    const outQueue: Uint8Array[] = [];
+    type Item = { bytes: Uint8Array; media: boolean };
+    const outQueue: Item[] = [];
+    let outBytes = 0;
     let resolveWaiter: (() => void) | null = null;
     let closed = false;
 
@@ -123,7 +132,10 @@ export class TalkService {
           await new Promise<void>((r) => (resolveWaiter = r));
         }
         const next = outQueue.shift();
-        if (next) yield next;
+        if (next) {
+          outBytes -= next.bytes.length;
+          yield next.bytes;
+        }
       }
     })();
 
@@ -135,7 +147,32 @@ export class TalkService {
       const dv = new DataView(out.buffer);
       dv.setUint32(0, payload.length, false);
       out.set(payload, 4);
-      outQueue.push(out);
+      const isMedia = f.type === 'audio' || f.type === 'video' || f.type === 'screen';
+      // Backpressure: if we're over the per-peer byte budget, drop the
+      // oldest media frames (keep control frames). This bounds memory under
+      // a slow peer and prevents the queue from growing without limit, which
+      // would otherwise show up to the user as ever-increasing call latency.
+      if (isMedia) {
+        while (outBytes + out.length > TALK_OUT_BUDGET_BYTES && outQueue.length > 0) {
+          let dropped = false;
+          for (let i = 0; i < outQueue.length; i++) {
+            const entry = outQueue[i];
+            if (entry && entry.media) {
+              outQueue.splice(i, 1);
+              outBytes -= entry.bytes.length;
+              dropped = true;
+              break;
+            }
+          }
+          if (!dropped) break;
+        }
+        if (outBytes + out.length > TALK_OUT_BUDGET_BYTES) {
+          // Still over budget after dropping all media \u2014 drop this one too.
+          return;
+        }
+      }
+      outQueue.push({ bytes: out, media: isMedia });
+      outBytes += out.length;
       if (resolveWaiter) {
         const r = resolveWaiter;
         resolveWaiter = null;
@@ -168,12 +205,41 @@ export class TalkService {
   }
 
   private async readLoop(peerIdStr: string, stream: Stream): Promise<void> {
-    let buf = new Uint8Array(0);
-    const append = (chunk: Uint8Array): void => {
-      const next = new Uint8Array(buf.length + chunk.length);
-      next.set(buf, 0);
-      next.set(chunk, buf.length);
-      buf = next;
+    // Chunk-list accumulator: avoids reallocating a single growing buffer on
+    // every inbound chunk (which is O(n\u00b2) under the high-throughput case of
+    // audio + video + screen interleaved at ~25\u201350 chunks/sec).
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+
+    const peek4 = (): number | null => {
+      if (total < 4) return null;
+      const out = new Uint8Array(4);
+      let need = 4;
+      let off = 0;
+      for (const c of chunks) {
+        const take = Math.min(need, c.length);
+        out.set(c.subarray(0, take), off);
+        off += take;
+        need -= take;
+        if (need === 0) break;
+      }
+      return new DataView(out.buffer).getUint32(0, false);
+    };
+
+    const consume = (n: number): Uint8Array => {
+      const out = new Uint8Array(n);
+      let off = 0;
+      while (off < n) {
+        const head = chunks[0];
+        if (!head) break;
+        const take = Math.min(n - off, head.length);
+        out.set(head.subarray(0, take), off);
+        off += take;
+        if (take === head.length) chunks.shift();
+        else chunks[0] = head.subarray(take);
+      }
+      total -= n;
+      return out;
     };
 
     for await (const chunk of stream.source) {
@@ -181,16 +247,18 @@ export class TalkService {
         chunk instanceof Uint8Array
           ? chunk
           : (chunk as { subarray(): Uint8Array }).subarray();
-      append(u8);
-      while (buf.length >= 4) {
-        const len = new DataView(buf.buffer, buf.byteOffset, 4).getUint32(0, false);
+      chunks.push(u8);
+      total += u8.length;
+      while (total >= 4) {
+        const len = peek4();
+        if (len === null) break;
         if (len > TALK_MAX_FRAME) {
           await stream.close();
           return;
         }
-        if (buf.length < 4 + len) break;
-        const payload = buf.subarray(4, 4 + len);
-        buf = buf.subarray(4 + len);
+        if (total < 4 + len) break;
+        consume(4); // length prefix
+        const payload = consume(len);
         let frame: TalkFrame;
         try {
           frame = decode(payload) as TalkFrame;

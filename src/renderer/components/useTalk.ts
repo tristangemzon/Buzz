@@ -497,8 +497,6 @@ export function useTalk(
     });
     const offAudio = window.buzz.onTalkAudio((e) => {
       if (e.peerId !== peerId) return;
-      // eslint-disable-next-line no-console
-      console.debug('[talk] rx audio', e.data.byteLength);
       playback.push(e.data);
     });
     const offVideo = window.buzz.onTalkVideo((e) => {
@@ -583,13 +581,10 @@ export function useTalk(
     void capture
       .start(async (data) => {
         if (cancelled) return;
-        // eslint-disable-next-line no-console
-        console.debug('[talk] tx audio', data.byteLength);
-        try {
-          await window.buzz.talkSendAudio(call.callId, data);
-        } catch {
-          /* peer disconnected; main side will drop call */
-        }
+        // Fire-and-forget; preload sends via ipcRenderer.send so this is
+        // already non-blocking, but the synchronous call signature lets the
+        // MediaRecorder callback return immediately.
+        void window.buzz.talkSendAudio(call.callId, data).catch(() => undefined);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Microphone unavailable');
@@ -599,12 +594,8 @@ export function useTalk(
     if ((call.kind ?? 'voice') === 'video' && !videoOn) {
       void (async () => {
         try {
-          await videoCapture.start(async (data) => {
-            try {
-              await window.buzz.talkSendVideo(call.callId, data);
-            } catch {
-              /* peer dropped */
-            }
+          await videoCapture.start((data) => {
+            void window.buzz.talkSendVideo(call.callId, data).catch(() => undefined);
           });
           if (!cancelled) {
             setVideoOn(true);
@@ -711,12 +702,8 @@ export function useTalk(
         return;
       }
       try {
-        await videoCapture.start(async (data) => {
-          try {
-            await window.buzz.talkSendVideo(call.callId, data);
-          } catch {
-            /* peer disconnected */
-          }
+        await videoCapture.start((data) => {
+          void window.buzz.talkSendVideo(call.callId, data).catch(() => undefined);
         });
         setVideoOn(true);
         await window.buzz.talkSetVideo(call.callId, true).catch(() => undefined);
@@ -732,12 +719,8 @@ export function useTalk(
         await screenCapture.start(
           source,
           resolution,
-          async (data) => {
-            try {
-              await window.buzz.talkSendScreen(call.callId, data);
-            } catch {
-              /* peer disconnected */
-            }
+          (data) => {
+            void window.buzz.talkSendScreen(call.callId, data).catch(() => undefined);
           },
           () => {
             setScreenOn(false);

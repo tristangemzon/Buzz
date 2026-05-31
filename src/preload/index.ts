@@ -71,11 +71,21 @@ const api: AppApi = {
   talkAccept: (callId) => ipcRenderer.invoke(IPC.TalkAccept, { callId }),
   talkReject: (callId, reason) => ipcRenderer.invoke(IPC.TalkReject, { callId, reason }),
   talkEnd: (callId) => ipcRenderer.invoke(IPC.TalkEnd, { callId }),
-  talkSendAudio: (callId, data) => ipcRenderer.invoke(IPC.TalkAudio, { callId, data }),
-  talkSendVideo: (callId, data) => ipcRenderer.invoke(IPC.TalkVideo, { callId, data }),
+  // Media chunks use fire-and-forget ipcRenderer.send so the renderer doesn't
+  // block waiting for an IPC round-trip per ~80ms timeslice. Each chunk is
+  // independently queued + dropped (oldest-first) on the main side under
+  // backpressure; we don't need delivery confirmation here.
+  talkSendAudio: async (callId, data) => {
+    ipcRenderer.send(IPC.TalkAudio, { callId }, data);
+  },
+  talkSendVideo: async (callId, data) => {
+    ipcRenderer.send(IPC.TalkVideo, { callId }, data);
+  },
   talkSetVideo: (callId, on) => ipcRenderer.invoke(IPC.TalkVideoState, { callId, on }),
   talkGetScreenSources: () => ipcRenderer.invoke(IPC.TalkScreenSources),
-  talkSendScreen: (callId, data) => ipcRenderer.invoke(IPC.TalkScreen, { callId, data }),
+  talkSendScreen: async (callId, data) => {
+    ipcRenderer.send(IPC.TalkScreen, { callId }, data);
+  },
   talkSetScreen: (callId, on, sourceName, resolution) =>
     ipcRenderer.invoke(IPC.TalkScreenState, { callId, on, sourceName, resolution }),
   talkGetActive: (peerId) => ipcRenderer.invoke(IPC.TalkGetActive, { peerId }),

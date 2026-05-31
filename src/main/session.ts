@@ -1718,16 +1718,14 @@ export class Session {
     if (this.currentCall.callId !== callId) return;
     if (this.currentCall.state !== 'active') return;
     const peerId = this.currentCall.peerId;
-    // eslint-disable-next-line no-console
-    console.debug('[talk] tx->peer', peerId.slice(0, 8), data.byteLength);
     if (this.hiveClient) {
       this.hiveClient.sendTalkAudio(peerId, callId, Buffer.from(data));
       return;
     }
-    // We don't bother numbering on the main side; renderer-side seq is fine.
-    await this.talk?.send(peerId, { type: 'audio', callId, seq: 0, data }).catch((err) => {
-      console.warn('[talk] tx send failed', err);
-    });
+    // Fire-and-forget: TalkService enforces a bounded outbound queue with a
+    // drop-oldest policy on backpressure, so awaiting here would only block
+    // the IPC handler without changing what the peer actually sees.
+    void this.talk?.send(peerId, { type: 'audio', callId, seq: 0, data }).catch(() => undefined);
   }
 
   async sendCallVideo(callId: string, data: Uint8Array): Promise<void> {
@@ -1739,9 +1737,7 @@ export class Session {
       this.hiveClient.sendTalkVideo(peerId, callId, Buffer.from(data));
       return;
     }
-    await this.talk?.send(peerId, { type: 'video', callId, seq: 0, data }).catch((err) => {
-      console.warn('[talk] video tx send failed', err);
-    });
+    void this.talk?.send(peerId, { type: 'video', callId, seq: 0, data }).catch(() => undefined);
   }
 
   async setCallVideo(callId: string, on: boolean): Promise<void> {
@@ -1763,9 +1759,7 @@ export class Session {
       this.hiveClient.sendTalkScreen(peerId, callId, Buffer.from(data));
       return;
     }
-    await this.talk?.send(peerId, { type: 'screen', callId, seq: 0, data }).catch((err) => {
-      console.warn('[talk] screen tx send failed', err);
-    });
+    void this.talk?.send(peerId, { type: 'screen', callId, seq: 0, data }).catch(() => undefined);
   }
 
   async setCallScreen(callId: string, on: boolean, sourceName?: string, resolution?: ScreenShareResolution): Promise<void> {
@@ -1844,8 +1838,6 @@ export class Session {
     if (!this.currentCall || this.currentCall.callId !== callId) return;
     if (this.currentCall.peerId !== peerId) return;
     if (this.currentCall.state !== 'active') return;
-    // eslint-disable-next-line no-console
-    console.debug('[talk] rx<-peer', peerId.slice(0, 8), data.byteLength);
     // Copy into a fresh ArrayBuffer-backed Uint8Array so it satisfies the
     // TalkAudioEvent schema (and to detach from the libp2p stream buffer).
     const copy = new Uint8Array(data.byteLength);

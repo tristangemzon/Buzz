@@ -451,18 +451,31 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
   handle(IPC.TalkEnd, z.object({ callId: Uuid }), async ({ callId }) => {
     await session.endCall(callId);
   });
-  handle(
+  // Media chunks: fire-and-forget on a separate ipcMain.on. No return value,
+  // raw bytes — avoids a Promise round-trip per ~80ms timeslice. Backpressure
+  // and drop policy are enforced in TalkService.send().
+  ipcMain.on(
     IPC.TalkAudio,
-    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
-    async ({ callId, data }) => {
-      await session.sendCallAudio(callId, data);
+    (_e, payload: { callId: string }, data: Uint8Array) => {
+      if (typeof payload?.callId === 'string' && data instanceof Uint8Array) {
+        void session.sendCallAudio(payload.callId, data);
+      }
     },
   );
-  handle(
+  ipcMain.on(
     IPC.TalkVideo,
-    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
-    async ({ callId, data }) => {
-      await session.sendCallVideo(callId, data);
+    (_e, payload: { callId: string }, data: Uint8Array) => {
+      if (typeof payload?.callId === 'string' && data instanceof Uint8Array) {
+        void session.sendCallVideo(payload.callId, data);
+      }
+    },
+  );
+  ipcMain.on(
+    IPC.TalkScreen,
+    (_e, payload: { callId: string }, data: Uint8Array) => {
+      if (typeof payload?.callId === 'string' && data instanceof Uint8Array) {
+        void session.sendCallScreen(payload.callId, data);
+      }
     },
   );
   handle(
@@ -487,13 +500,6 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
       })),
     };
   });
-  handle(
-    IPC.TalkScreen,
-    z.object({ callId: Uuid, data: z.instanceof(Uint8Array) }),
-    async ({ callId, data }) => {
-      await session.sendCallScreen(callId, data);
-    },
-  );
   handle(IPC.TalkScreenState, TalkScreenStateReq, async ({ callId, on, sourceName, resolution }) => {
     await session.setCallScreen(callId, on, sourceName, resolution);
   });
