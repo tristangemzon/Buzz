@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { zxcvbn } from 'zxcvbn-ts';
 import { applyPlatformTheme } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { SignOnSettings } from '../../components/SignOnSettings';
@@ -20,6 +21,18 @@ function App(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+
+  const strength = useMemo(() => {
+    if (mode !== 'create' || !pass) return { score: 0, label: '', warning: '' };
+    const userInputs = [screenName].filter(Boolean);
+    const r = zxcvbn(pass, userInputs);
+    const labels = ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'];
+    return {
+      score: r.score,
+      label: labels[r.score] ?? '',
+      warning: r.feedback?.warning ?? '',
+    };
+  }, [pass, screenName, mode]);
 
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
@@ -49,6 +62,7 @@ function App(): JSX.Element {
     if (mode === 'create') {
       if (!screenName.trim()) return setErr('Choose a screen name.');
       if (pass !== pass2) return setErr('Passphrases do not match.');
+      if (strength.score < 2) return setErr('Passphrase is too weak. Try adding length or unrelated words.');
     } else {
       if (!selectedId) return setErr('Pick an account.');
     }
@@ -160,6 +174,33 @@ function App(): JSX.Element {
               value={pass2}
               onChange={(e) => setPass2(e.target.value)}
             />
+          </div>
+        )}
+
+        {mode === 'create' && pass.length > 0 && (
+          <div className="signon-row">
+            <span className="signon-label" />
+            <div className="signon-field" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ display: 'flex', height: 6, gap: 2 }}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      background:
+                        i <= strength.score
+                          ? ['#c0392b', '#e67e22', '#f1c40f', '#2ecc71', '#27ae60'][strength.score]
+                          : 'rgba(128,128,128,0.25)',
+                      border: '1px solid rgba(0,0,0,0.25)',
+                    }}
+                  />
+                ))}
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>
+                {strength.label}
+                {strength.warning ? ` — ${strength.warning}` : ''}
+              </div>
+            </div>
           </div>
         )}
 

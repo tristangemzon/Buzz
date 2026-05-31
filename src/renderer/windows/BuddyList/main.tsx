@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatform';
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
@@ -36,6 +38,8 @@ function App(): JSX.Element {
   const [showAway, setShowAway] = useState(false);
   const [awayDraft, setAwayDraft] = useState('');
   const [code, setCode] = useState('');
+  const [pasteErr, setPasteErr] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState('');
   const [alias, setAlias] = useState('');
   const [group, setGroup] = useState('Buddies');
   const [err, setErr] = useState('');
@@ -189,6 +193,50 @@ function App(): JSX.Element {
     }
     return out;
   }, [buddies, statuses]);
+
+  // Render the buddy-code QR whenever My Info opens.
+  useEffect(() => {
+    if (!showInfo || !me) { setQrDataUrl(''); return; }
+    let cancelled = false;
+    QRCode.toDataURL(me.buddyCode, { margin: 1, width: 192, errorCorrectionLevel: 'M' })
+      .then((url) => { if (!cancelled) setQrDataUrl(url); })
+      .catch(() => { if (!cancelled) setQrDataUrl(''); });
+    return () => { cancelled = true; };
+  }, [showInfo, me]);
+
+  async function decodePastedImage(file: Blob): Promise<string | null> {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx2d = canvas.getContext('2d');
+    if (!ctx2d) return null;
+    ctx2d.drawImage(bitmap, 0, 0);
+    const img = ctx2d.getImageData(0, 0, canvas.width, canvas.height);
+    const res = jsQR(img.data, img.width, img.height);
+    return res?.data ?? null;
+  }
+
+  async function onAddBuddyPaste(e: React.ClipboardEvent<HTMLInputElement>): Promise<void> {
+    setPasteErr('');
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        const file = it.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        try {
+          const decoded = await decodePastedImage(file);
+          if (decoded) setCode(decoded.trim());
+          else setPasteErr('No QR code found in pasted image.');
+        } catch {
+          setPasteErr('Could not read pasted image.');
+        }
+        return;
+      }
+    }
+  }
 
   async function addBuddy(): Promise<void> {
     setErr('');
@@ -642,9 +690,16 @@ function App(): JSX.Element {
               className="bevel-in"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="paste base58 PeerId"
+              onPaste={(e) => { void onAddBuddyPaste(e); }}
+              placeholder="paste base58 PeerId or QR image"
             />
           </div>
+          {pasteErr && (
+            <div className="row" style={{ marginTop: -4 }}>
+              <label className="label" />
+              <span style={{ fontSize: 11, color: '#c0392b' }}>{pasteErr}</span>
+            </div>
+          )}
           <div className="row">
             <label className="label">Display Name</label>
             <input
@@ -677,6 +732,17 @@ function App(): JSX.Element {
             Buddy Code (share this so others can add you)
           </div>
           <div className="code">{me.buddyCode}</div>
+          {qrDataUrl && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+              <img
+                src={qrDataUrl}
+                alt="Buddy Code QR"
+                width={192}
+                height={192}
+                style={{ imageRendering: 'pixelated', background: '#fff', padding: 4 }}
+              />
+            </div>
+          )}
           <div className="actions">
             <button onClick={() => navigator.clipboard.writeText(me.buddyCode)}>
               Copy Code
