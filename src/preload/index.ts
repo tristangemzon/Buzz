@@ -18,6 +18,10 @@ const api: AppApi = {
   factoryReset: () => ipcRenderer.invoke(IPC.AuthFactoryReset),
   migrateDb: (req: { profileId: string; passphrase: string }) =>
     ipcRenderer.invoke(IPC.AuthMigrateDb, req),
+  exportBackup: () => ipcRenderer.invoke(IPC.BackupExport),
+  importBackup: () => ipcRenderer.invoke(IPC.BackupImport),
+  exportHistoryJson: () => ipcRenderer.invoke(IPC.HistoryExportJson),
+  exportHistoryCsv: () => ipcRenderer.invoke(IPC.HistoryExportCsv),
   getPlatform: () => ipcRenderer.invoke(IPC.AuthGetPlatform),
   getMyId: () => ipcRenderer.invoke(IPC.AuthGetMyId),
 

@@ -7,7 +7,7 @@ import type { SoundScheme } from '../../sounds/synth';
 import type { Theme } from '@shared/schemas';
 import type { UpdateStatus } from '@shared/types';
 
-type Section = 'themes' | 'sounds' | 'audio' | 'updates';
+type Section = 'themes' | 'sounds' | 'audio' | 'updates' | 'backup';
 
 function App(): JSX.Element {
   const [section, setSection] = useState<Section>('themes');
@@ -22,13 +22,13 @@ function App(): JSX.Element {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* ── Left nav ── */}
         <div className="settings-nav">
-          {(['themes', 'sounds', 'audio', 'updates'] as Section[]).map((s) => (
+          {(['themes', 'sounds', 'audio', 'updates', 'backup'] as Section[]).map((s) => (
             <button
               key={s}
               className={`settings-nav-item${section === s ? ' active' : ''}`}
               onClick={() => setSection(s)}
             >
-              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : '🔄 Updates'}
+              {s === 'themes' ? '🎨 Themes' : s === 'sounds' ? '🔊 Sounds' : s === 'audio' ? '🎙 Audio' : s === 'updates' ? '🔄 Updates' : '💾 Backup'}
             </button>
           ))}
         </div>
@@ -38,6 +38,7 @@ function App(): JSX.Element {
           {section === 'sounds' && <SoundsPane />}
           {section === 'audio' && <AudioPane />}
           {section === 'updates' && <UpdatesPane />}
+          {section === 'backup' && <BackupPane />}
         </div>
       </div>
     </div>
@@ -443,6 +444,57 @@ function UpdatesPane(): JSX.Element {
           Updates are downloaded from the official GitHub Releases page and verified by a cryptographic hash before install.
         </div>
       </div>
+    </div>
+  );
+}
+
+function BackupPane(): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  async function run(fn: () => Promise<{ ok: boolean; path?: string; cancelled?: true }>, label: string): Promise<void> {
+    setBusy(true);
+    setMsg('');
+    try {
+      const r = await fn();
+      if (r.ok && r.path) setMsg(`${label} saved to ${r.path}`);
+      else if (!r.ok && r.cancelled) setMsg('');
+      else setMsg(`${label} failed.`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : `${label} failed.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="settings-pane">
+      <div className="settings-section">
+        <div className="settings-section-title">Account Backup</div>
+        <p style={{ fontSize: 12, opacity: 0.85, marginTop: 0 }}>
+          Exports your keystore and encrypted database into a single
+          <code> .buzzbackup </code>file. You will still need your passphrase to sign in
+          after restoring on another machine.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button disabled={busy} onClick={() => void run(() => window.buzz.exportBackup(), 'Backup')}>
+            Export Backup…
+          </button>
+        </div>
+      </div>
+      <div className="settings-section">
+        <div className="settings-section-title">Message History</div>
+        <p style={{ fontSize: 12, opacity: 0.85, marginTop: 0 }}>
+          Exports all 1:1 message history as plaintext. Keep these files somewhere safe.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button disabled={busy} onClick={() => void run(() => window.buzz.exportHistoryJson(), 'History (JSON)')}>
+            Export as JSON…
+          </button>
+          <button disabled={busy} onClick={() => void run(() => window.buzz.exportHistoryCsv(), 'History (CSV)')}>
+            Export as CSV…
+          </button>
+        </div>
+      </div>
+      {msg && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>{msg}</div>}
     </div>
   );
 }

@@ -51,6 +51,7 @@ import {
 import type { Platform } from '@shared/types.js';
 
 import * as repos from '../db/repos.js';
+import * as backup from '../backup.js';
 import { sodium } from '../crypto/keystore.js';
 import { loadNetworkConfig, saveNetworkConfig } from '../network.js';
 import { setNotificationsEnabled } from '../notify.js';
@@ -99,6 +100,64 @@ export function registerIpc(session: Session, opts: RegisterIpcOpts = {}): void 
     z.object({ profileId: z.string(), passphrase: z.string() }),
     ({ profileId, passphrase }) => session.migrateDb(profileId, passphrase),
   );
+
+  // ── backup / export ──────────────────────────────────────────────────────
+  handle(IPC.BackupExport, null, async () => {
+    const profileId = session.profileId;
+    if (!profileId) throw new Error('Locked');
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    const profile = session.listProfiles().find((p) => p.id === profileId);
+    const suggested = `${(profile?.screenName ?? 'buzz').replace(/[^\w.-]+/g, '_')}-${new Date().toISOString().slice(0, 10)}.buzzbackup`;
+    const save = await dialog.showSaveDialog(sender as BrowserWindow, {
+      title: 'Export Backup',
+      defaultPath: suggested,
+      filters: [{ name: 'Buzz Backup', extensions: ['buzzbackup'] }],
+    });
+    if (save.canceled || !save.filePath) return { ok: false as const, cancelled: true as const };
+    const buf = backup.exportProfileBundle(profileId);
+    await (await import('node:fs/promises')).writeFile(save.filePath, buf, { mode: 0o600 });
+    return { ok: true as const, path: save.filePath };
+  });
+  handle(IPC.BackupImport, null, async () => {
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    const pick = await dialog.showOpenDialog(sender as BrowserWindow, {
+      title: 'Import Backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Buzz Backup', extensions: ['buzzbackup'] }],
+    });
+    if (pick.canceled || !pick.filePaths[0]) return { ok: false as const, cancelled: true as const };
+    try {
+      const buf = await (await import('node:fs/promises')).readFile(pick.filePaths[0]);
+      const r = backup.importProfileBundle(buf);
+      return { ok: true as const, profileId: r.profileId, screenName: r.screenName };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : 'Import failed' };
+    }
+  });
+  handle(IPC.HistoryExportJson, null, async () => {
+    const db = requireDb(session);
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    const save = await dialog.showSaveDialog(sender as BrowserWindow, {
+      title: 'Export History (JSON)',
+      defaultPath: `buzz-history-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (save.canceled || !save.filePath) return { ok: false as const, cancelled: true as const };
+    await (await import('node:fs/promises')).writeFile(save.filePath, backup.exportHistoryJson(db), 'utf8');
+    return { ok: true as const, path: save.filePath };
+  });
+  handle(IPC.HistoryExportCsv, null, async () => {
+    const db = requireDb(session);
+    const sender = BrowserWindow.getFocusedWindow() ?? undefined;
+    const save = await dialog.showSaveDialog(sender as BrowserWindow, {
+      title: 'Export History (CSV)',
+      defaultPath: `buzz-history-${new Date().toISOString().slice(0, 10)}.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    });
+    if (save.canceled || !save.filePath) return { ok: false as const, cancelled: true as const };
+    await (await import('node:fs/promises')).writeFile(save.filePath, backup.exportHistoryCsv(db), 'utf8');
+    return { ok: true as const, path: save.filePath };
+  });
   handle(IPC.AppGetVersion, null, () => app.getVersion());
   handle(IPC.AuthGetPlatform, null, () => platform());
   handle(IPC.AuthGetMyId, null, () => ({

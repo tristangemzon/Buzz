@@ -23,6 +23,12 @@ export const IPC = {
   BuddiesWarn: 'buddies:warn',
   BuddiesMute: 'buddies:mute',
 
+  // backup / export
+  BackupExport: 'backup:export',
+  BackupImport: 'backup:import',
+  HistoryExportJson: 'history:exportJson',
+  HistoryExportCsv: 'history:exportCsv',
+
   // buddy requests (approve/deny flow)
   BuddiesListRequests: 'buddies:listRequests',
   BuddiesSendRequest: 'buddies:sendRequest',

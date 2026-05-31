@@ -145,6 +145,12 @@ export type AppApi = {
   lock(): Promise<void>;
   factoryReset(): Promise<void>;
   migrateDb(req: { profileId: string; passphrase: string }): Promise<void>;
+
+  // backup / export
+  exportBackup(): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }>;
+  importBackup(): Promise<{ ok: true; profileId: string; screenName: string } | { ok: false; cancelled: true } | { ok: false; error: string }>;
+  exportHistoryJson(): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }>;
+  exportHistoryCsv(): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }>;
   getPlatform(): Promise<Platform>;
   getMyId(): Promise<{ peerId: string; buddyCode: string; screenName: string }>;
 

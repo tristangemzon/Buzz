@@ -263,6 +263,34 @@ function App(): JSX.Element {
               <span className="signon-iconbtn-label">Cancel</span>
             </button>
           )}
+          <button
+            className="signon-iconbtn"
+            onClick={async () => {
+              setErr('');
+              setBusy(true);
+              try {
+                const r = await window.buzz.importBackup();
+                if (!r.ok) {
+                  if ('cancelled' in r) return;
+                  setErr(r.error || 'Import failed.');
+                  return;
+                }
+                const list = await window.buzz.listProfiles();
+                const filtered = list.filter((p) => !p.serverUrl);
+                setProfiles(filtered);
+                setMode('signin');
+                setSelectedId(r.profileId);
+                setErr(`Imported "${r.screenName}". Enter the original passphrase to sign in.`);
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+            title="Import a .buzzbackup file"
+          >
+            <span className="signon-iconbtn-glyph">⤓</span>
+            <span className="signon-iconbtn-label">Import</span>
+          </button>
           <span className="signon-actionbar-spacer" />
           <button
             className="signon-iconbtn signon-iconbtn-primary"
