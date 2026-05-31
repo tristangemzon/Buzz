@@ -14,7 +14,7 @@ import type { IdentityMaterial } from '../crypto/keystore.js';
 // ── Hive wire-protocol types (subset needed by the client) ──────────────────
 // These mirror the types in the Hive server project's src/shared/types.ts.
 
-export type UserStatus = 'online' | 'away' | 'idle' | 'invisible' | 'offline';
+export type UserStatus = 'online' | 'away' | 'idle' | 'dnd' | 'invisible' | 'offline';
 
 export type BuddyEntry = {
   peerId: string;

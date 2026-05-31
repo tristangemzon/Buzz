@@ -232,6 +232,9 @@ button:disabled {
 .list .row .status.idle {
   background: #cccccc;
 }
+.list .row .status.dnd {
+  background: #d83b3b;
+}
 .list .row .status.offline {
   background: #888;
   opacity: 0.6;

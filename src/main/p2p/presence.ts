@@ -36,8 +36,8 @@ export type BroadcastFn = (peerId: string, status: Status, awayMessage?: string)
 export type PrefsBridge = {
   getIdleMinutes(): number;
   getAwayMessage(): string;
-  getLastStatus(): 'online' | 'invisible';
-  setLastStatus(s: 'online' | 'invisible'): void;
+  getLastStatus(): 'online' | 'dnd' | 'invisible';
+  setLastStatus(s: 'online' | 'dnd' | 'invisible'): void;
   getProfile(): Profile;
 };
 
@@ -64,6 +64,10 @@ export class PresenceManager {
     // When set, the offline debounce is extended for active-call peers so a
     // brief transport hiccup doesn't interrupt a call in progress.
     private readonly isInActiveCall: (peerId: string) => boolean = () => false,
+    // Optional: invoked whenever our own SelfPresence changes (setStatus or
+    // idle transition). Used by session.ts to fan-out EvtSelfPresence and
+    // gate sound/notification subsystems on DND.
+    private readonly onSelfChange: (self: SelfPresence) => void = () => undefined,
   ) {}
 
   start(): void {
@@ -72,13 +76,16 @@ export class PresenceManager {
 
     this.base = this.prefs.getLastStatus();
     this.awayMessage = this.prefs.getAwayMessage() || undefined;
-    this.effective = this.base === 'invisible' ? 'invisible' : 'online';
+    if (this.base === 'invisible') this.effective = 'invisible';
+    else if (this.base === 'dnd') this.effective = 'dnd';
+    else this.effective = 'online';
 
     this.node.addEventListener('peer:connect', this.onPeerConnect);
     this.node.addEventListener('peer:disconnect', this.onPeerDisconnect);
 
     this.timer = setInterval(() => this.tickIdle(), IDLE_POLL_MS);
     this.reannounceTimer = setInterval(() => void this.broadcastToConnected(), REANNOUNCE_INTERVAL_MS);
+    this.onSelfChange(this.getSelf());
   }
 
   async stop(): Promise<void> {
@@ -143,6 +150,9 @@ export class PresenceManager {
     } else if (status === 'invisible') {
       this.awayMessage = undefined;
       this.effective = 'invisible';
+    } else if (status === 'dnd') {
+      this.awayMessage = undefined;
+      this.effective = 'dnd';
     } else {
       // 'online' — preserve the away message in prefs but don't broadcast it.
       this.awayMessage = undefined;
@@ -150,7 +160,7 @@ export class PresenceManager {
     }
 
     // Persist only the user-selectable persistent states.
-    if (status === 'online' || status === 'invisible') {
+    if (status === 'online' || status === 'invisible' || status === 'dnd') {
       this.prefs.setLastStatus(status);
     }
 
@@ -160,6 +170,7 @@ export class PresenceManager {
     }
 
     await this.broadcastToConnected();
+    this.onSelfChange(this.getSelf());
     return this.getSelf();
   }
 
@@ -211,6 +222,7 @@ export class PresenceManager {
     if (next !== this.effective) {
       this.effective = next;
       await this.broadcastToConnected();
+      this.onSelfChange(this.getSelf());
     }
   }
 

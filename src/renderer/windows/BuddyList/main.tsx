@@ -4,7 +4,7 @@ import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatf
 import { WindowChrome } from '../../components/WindowChrome';
 import { ProfileEditor, ProfileViewer } from '../../components/ProfilePanes';
 import { Modal } from '../../components/Modal';
-import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme } from '../../sounds/synth';
+import { playSound, setSoundsEnabled, setSoundScheme, getSoundScheme, setDnd } from '../../sounds/synth';
 import type { SoundScheme } from '../../sounds/synth';
 import type {
   Buddy,
@@ -83,7 +83,7 @@ function App(): JSX.Element {
         prevStatusRef.current[b.peerId] = b.status ?? 'offline';
       }
     });
-    void window.buzz.getSelfPresence().then(setSelf).catch(() => undefined);
+    void window.buzz.getSelfPresence().then((sp) => { setSelf(sp); setDnd(sp.status === 'dnd'); }).catch(() => undefined);
     void window.buzz
       .getPrefs()
       .then((p) => {
@@ -162,6 +162,7 @@ function App(): JSX.Element {
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     const offTheme = window.buzz.onThemeChanged((theme) => applyThemeAttributes(theme));
+    const offSelf = window.buzz.onSelfPresence((sp) => { setSelf(sp); setDnd(sp.status === 'dnd'); });
 
     return () => {
       off();
@@ -175,6 +176,7 @@ function App(): JSX.Element {
       offTalkInvite();
       offGameInvite();
       offTheme();
+      offSelf();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
@@ -386,6 +388,7 @@ function App(): JSX.Element {
         >
           <option value="online">Available</option>
           <option value="away">Away…</option>
+          <option value="dnd">Do not disturb</option>
           <option value="invisible">Invisible</option>
         </select>
         {health && <HealthPill health={health} />}

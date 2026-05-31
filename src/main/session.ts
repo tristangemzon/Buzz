@@ -22,7 +22,7 @@ import { buddyCodeFor, createNode, MESH_LIBP2P_PORT } from './p2p/node.js';
 import { MeshNode } from './p2p/mesh.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
-import { notifyIm } from './notify.js';
+import { notifyIm, setNotificationsEnabled } from './notify.js';
 import { IPC } from '@shared/ipc.js';
 import type {
   ImAckEvent,
@@ -605,6 +605,7 @@ export class Session {
       // Suppress (or extend debounce for) offline signals while a video/voice
       // call is in progress with this peer.
       (peerId) => (this.talk?.getActivePeerIds().has(peerId) ?? false),
+      (self) => this.handleSelfPresenceChange(self),
     );
     this.presence.start();
     this.presence.loginBurst();
@@ -1018,7 +1019,12 @@ export class Session {
       },
       onConnected: () => {
         // Send our current status to the server.
-        this.hiveClient?.setStatus(prefs.lastStatus === 'invisible' ? 'invisible' : 'online', prefs.awayMessage || undefined);
+        this.hiveClient?.setStatus(
+          prefs.lastStatus === 'invisible' ? 'invisible'
+            : prefs.lastStatus === 'dnd' ? 'dnd'
+            : 'online',
+          prefs.awayMessage || undefined,
+        );
         this.broadcastHealth();
       },
       onDisconnected: () => {
@@ -1986,6 +1992,24 @@ export class Session {
 
   private broadcastHealth(): void {
     this.broadcast(IPC.EvtHealth, this.connectionHealth());
+  }
+
+  private handleSelfPresenceChange(self: { status: string; baseStatus: string; awayMessage?: string }): void {
+    // Mirror to Hive (server mode) so peers see the new status.
+    if (this.hiveClient) {
+      const wire = self.status === 'invisible' ? 'invisible'
+        : self.status === 'dnd' ? 'dnd'
+        : self.status === 'away' ? 'away'
+        : self.status === 'idle' ? 'idle'
+        : 'online';
+      this.hiveClient.setStatus(wire as 'online' | 'away' | 'idle' | 'dnd' | 'invisible' | 'offline', self.awayMessage);
+    }
+    // Gate notifications: respect user pref AND suppress while DND.
+    const prefs = this.db ? repos.getPrefs(this.db) : null;
+    const notifPref = prefs?.notificationsEnabled ?? true;
+    setNotificationsEnabled(notifPref && self.status !== 'dnd');
+    // Tell renderers (so sound subsystem can mute, status pill updates, etc.).
+    this.broadcast(IPC.EvtSelfPresence, self);
   }
 
   private broadcast(channel: string, payload: unknown): void {

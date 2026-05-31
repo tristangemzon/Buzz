@@ -260,6 +260,7 @@ export type AppApi = {
 
   // events
   onBuddyStatus(cb: (e: BuddyStatusEvent) => void): () => void;
+  onSelfPresence(cb: (e: SelfPresence) => void): () => void;
   onImReceived(cb: (e: ImReceivedEvent) => void): () => void;
   onImAck(cb: (e: ImAckEvent) => void): () => void;
   onImEdited(cb: (e: { id: string; body: string; editedAt: number }) => void): () => void;

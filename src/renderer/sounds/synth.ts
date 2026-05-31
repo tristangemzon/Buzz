@@ -33,6 +33,7 @@ const CLASSIC_MAP: Record<Cue, string> = {
 
 let ctx: AudioContext | null = null;
 let enabled = true;
+let dnd = false;
 
 // Initialise scheme from localStorage so it survives across windows/sessions
 // without requiring an authenticated DB read.
@@ -64,6 +65,10 @@ function ensureCtx(): AudioContext | null {
 
 export function setSoundsEnabled(on: boolean): void {
   enabled = on;
+}
+
+export function setDnd(on: boolean): void {
+  dnd = on;
 }
 
 // One simple beep: gain envelope around an oscillator.
@@ -111,7 +116,7 @@ function glide(
 }
 
 export function playSound(cue: Cue): void {
-  if (!enabled) return;
+  if (!enabled || dnd) return;
 
   // Classic scheme: play the corresponding AIM .wav file
   if (scheme === 'classic') {

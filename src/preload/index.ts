@@ -126,6 +126,7 @@ const api: AppApi = {
   listDiscovered: () => ipcRenderer.invoke(IPC.DiscoveryList),
 
   onBuddyStatus: (cb) => on(IPC.EvtBuddyStatus, cb),
+  onSelfPresence: (cb) => on(IPC.EvtSelfPresence, cb),
   onImReceived: (cb) => on(IPC.EvtImReceived, cb),
   onImAck: (cb) => on(IPC.EvtImAck, cb),
   onImEdited: (cb) => on(IPC.EvtImEdited, cb),

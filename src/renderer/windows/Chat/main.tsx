@@ -4,7 +4,7 @@ import { applyPlatformTheme, applyThemeAttributes } from '../../theme/applyPlatf
 import { WindowChrome } from '../../components/WindowChrome';
 import { RichEditor, RichEditorHandle, RichText } from '../../components/RichText';
 import { useRoomVoice } from '../../components/useRoomVoice';
-import { playSound, setSoundsEnabled, setSoundScheme } from '../../sounds/synth';
+import { playSound, setSoundsEnabled, setSoundScheme, setDnd } from '../../sounds/synth';
 import type { Buddy, Room, RoomChannel, RoomMessage, Theme } from '@shared/schemas';
 import { GamePicker } from '../../components/GamePicker';
 
@@ -96,6 +96,7 @@ function App(): JSX.Element {
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
     void window.buzz.getMyId().then((id) => { setMe(id); myPeerIdRef.current = id.peerId; });
+    void window.buzz.getSelfPresence().then((sp) => setDnd(sp.status === 'dnd')).catch(() => undefined);
     void window.buzz
       .getPrefs()
       .then((p) => {
@@ -234,6 +235,7 @@ function App(): JSX.Element {
       if (e.roomId !== roomId) return;
       setMessages((prev) => prev.map((m) => m.id === e.msgId ? { ...m, deletedAt: e.deletedAt } : m));
     });
+    const offSelf = window.buzz.onSelfPresence((sp) => setDnd(sp.status === 'dnd'));
 
     return () => {
       offMsg();
@@ -248,6 +250,7 @@ function App(): JSX.Element {
       offReaction();
       offRoomEdited();
       offRoomDeleted();
+      offSelf();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

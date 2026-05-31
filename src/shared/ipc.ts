@@ -117,6 +117,7 @@ export const IPC = {
 
   // events (main -> renderer)
   EvtBuddyStatus: 'evt:buddyStatus',
+  EvtSelfPresence: 'evt:selfPresence',
   EvtImReceived: 'evt:imReceived',
   EvtImAck: 'evt:imAck',
   EvtTyping: 'evt:typing',

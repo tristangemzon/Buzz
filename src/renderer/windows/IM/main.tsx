@@ -7,7 +7,7 @@ import { RichEditor, RichEditorHandle, RichText } from '../../components/RichTex
 import { useTalk, fmtCallTime } from '../../components/useTalk';
 import { WaveformCanvas } from '../../components/WaveformCanvas';
 import { GamePicker } from '../../components/GamePicker';
-import { playSound, setSoundsEnabled, setSoundScheme } from '../../sounds/synth';
+import { playSound, setSoundsEnabled, setSoundScheme, setDnd } from '../../sounds/synth';
 import type { ImMessage, Theme, XferOfferEvent } from '@shared/schemas';
 
 const DEFAULT_THEME: Theme = {
@@ -55,7 +55,7 @@ function App(): JSX.Element {
   const editorRef = useRef<RichEditorHandle>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSendingTypingRef = useRef(false);
-  const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle'>('offline');
+  const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'idle' | 'dnd'>('offline');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
   const peerTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +101,7 @@ function App(): JSX.Element {
   useEffect(() => {
     void applyPlatformTheme(window.buzz);
     void window.buzz.getMyId().then((info) => { setMe(info); myPeerIdRef.current = info.peerId; });
+    void window.buzz.getSelfPresence().then((sp) => setDnd(sp.status === 'dnd')).catch(() => undefined);
     void window.buzz
       .getPrefs()
       .then((p) => {
@@ -130,6 +131,7 @@ function App(): JSX.Element {
           setStatus(resolved);
           if (resolved === 'offline') setStatusNotice(`${resolvedAlias} is offline.`);
           else if (resolved === 'away') setStatusNotice(`${resolvedAlias} is away.`);
+          else if (resolved === 'dnd') setStatusNotice(`${resolvedAlias} has Do Not Disturb on.`);
           if (s) setAwayMessage(s.awayMessage);
         });
       })
@@ -174,11 +176,12 @@ function App(): JSX.Element {
     });
     const offStatus = window.buzz.onBuddyStatus((e) => {
       if (e.peerId === peerId) {
-        const next = e.status === 'invisible' ? 'offline' : (e.status as 'online' | 'offline' | 'away' | 'idle');
+        const next = e.status === 'invisible' ? 'offline' : (e.status as 'online' | 'offline' | 'away' | 'idle' | 'dnd');
         setStatus((prev) => {
           if (next === prev) return prev;
           if (next === 'offline') setStatusNotice(`${alias} has gone offline.`);
           else if (next === 'away') setStatusNotice(`${alias} has gone away.`);
+          else if (next === 'dnd') setStatusNotice(`${alias} turned on Do Not Disturb.`);
           else if (next === 'online' || next === 'idle') setStatusNotice(null);
           return next;
         });
@@ -282,6 +285,7 @@ function App(): JSX.Element {
         peerTypingTimerRef.current = setTimeout(() => setPeerTyping(false), 6000);
       }
     });
+    const offSelf = window.buzz.onSelfPresence((sp) => setDnd(sp.status === 'dnd'));
     return () => {
       offRecv();
       offAck();
@@ -296,6 +300,7 @@ function App(): JSX.Element {
       offReaction();
       offTheme();
       offTyping();
+      offSelf();
       if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };

@@ -50,7 +50,7 @@ export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
 // ── Buddies ──────────────────────────────────────────────────────────────────
 
-export const Status = z.enum(['online', 'away', 'idle', 'invisible', 'offline']);
+export const Status = z.enum(['online', 'away', 'idle', 'dnd', 'invisible', 'offline']);
 export type Status = z.infer<typeof Status>;
 
 export const Buddy = z.object({
@@ -182,9 +182,9 @@ export const Prefs = z.object({
   idleMinutes: z.number().int().min(1).max(180).default(10),
   soundsEnabled: z.boolean().default(true),
   soundScheme: z.enum(['buzz', 'classic']).default('buzz'),
-  // Persisted base status across sessions. Only 'online' or 'invisible'
+  // Persisted base status across sessions. Only 'online', 'dnd' or 'invisible'
   // are persisted; 'away'/'idle' are derived/transient.
-  lastStatus: z.enum(['online', 'invisible']).default('online'),
+  lastStatus: z.enum(['online', 'dnd', 'invisible']).default('online'),
   // Desktop notifications
   notificationsEnabled: z.boolean().default(true),
   // Audio device & voice settings
@@ -294,7 +294,7 @@ export type ConnectionHealth = z.infer<typeof ConnectionHealth>;
 
 // Only states the user can directly select. 'idle' is auto-derived from
 // system idle time; 'offline' is implied by being locked / disconnected.
-export const SelectableStatus = z.enum(['online', 'away', 'invisible']);
+export const SelectableStatus = z.enum(['online', 'away', 'dnd', 'invisible']);
 export type SelectableStatus = z.infer<typeof SelectableStatus>;
 
 export const PresenceSetStatusReq = z.object({
