@@ -38,7 +38,7 @@
     "@libp2p/peer-id-factory": "^4.2.0",
     "@libp2p/tcp": "^9.1.0",
     "@libp2p/websockets": "^8.1.0",
-    "@noble/hashes": "^1.4.0",
+    "@noble/hashes": "^2.2.0",
     "@types/libsodium-wrappers-sumo": "^0.7.8",
     "@types/ws": "^8.18.1",
     "argon2": "^0.44.0",
