@@ -10,7 +10,7 @@
 // MeshNode.instance.stop() on sign-out.
 
 import { spawn, type ChildProcess } from 'child_process';
-import { createReadStream, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { chmod, rm } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';

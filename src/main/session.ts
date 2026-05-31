@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import type { Libp2p } from 'libp2p';
 
 import { Keystore, type IdentityMaterial } from './crypto/keystore.js';
@@ -22,7 +22,7 @@ import { buddyCodeFor, createNode, MESH_LIBP2P_PORT } from './p2p/node.js';
 import { MeshNode } from './p2p/mesh.js';
 import { loadNetworkConfig, peerIdFromMultiaddr } from './network.js';
 import { HiveClient, type HiveCallbacks } from './p2p/hive-client.js';
-import { notifyIm, setNotificationsEnabled } from './notify.js';
+import { notifyIm } from './notify.js';
 import { IPC } from '@shared/ipc.js';
 import type {
   ImAckEvent,
@@ -992,7 +992,7 @@ export class Session {
 
     const prefs = repos.getPrefs(db);
     const cbs: HiveCallbacks = {
-      onAuthed: (peerId, buddies, pendingRequests, pubKeys) => {
+      onAuthed: (peerId, buddies, pendingRequests, _pubKeys) => {
         // Now we know our peerId — store identity row in DB.
         if (!repos.getIdentity(db)) {
           repos.setIdentity(db, peerId, this.screenName);

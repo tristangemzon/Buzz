@@ -5,7 +5,6 @@ import { InviteOverlay, GameOverBanner, WaitingOverlay, CardView, shuffleDeck, e
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Street = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
-type ActionPhase = 'fold' | 'check' | 'call' | 'raise' | 'waiting';
 
 type PokerState = {
   phase: 'waiting' | 'playing' | 'over';

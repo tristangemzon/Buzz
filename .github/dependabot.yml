@@ -1,0 +1,57 @@
+# Dependabot configuration — weekly dependency PRs grouped by ecosystem.
+# Keeps Buzz on top of security patches without spam.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      libp2p:
+        patterns:
+          - "libp2p"
+          - "@libp2p/*"
+          - "@chainsafe/libp2p-*"
+          - "multiformats"
+          - "uint8arrays"
+          - "it-*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      build-tools:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "electron-vite"
+          - "electron-builder"
+          - "electron"
+          - "@electron/*"
+      linting:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@typescript-eslint/*"
+      types:
+        patterns:
+          - "@types/*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"

@@ -82,7 +82,7 @@ function ThemesPane(): JSX.Element {
 
       <div className="label" style={{ marginTop: 6 }}>Window theme</div>
       <div className="row" style={{ gap: 8 }}>
-        {(['classic', 'aqua', 'graphite', 'aero', 'metal'] as const).map((wt) => (
+        {(['classic', 'aqua', 'graphite', 'aero', 'metal', 'aluminum'] as const).map((wt) => (
           <label key={wt}>
             <input type="radio" name="wt" checked={t.windowTheme === wt} onChange={() => update('windowTheme', wt)} />{' '}
             {wt.charAt(0).toUpperCase() + wt.slice(1)}

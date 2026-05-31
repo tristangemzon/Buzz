@@ -19,7 +19,7 @@ export function openDb(file: string, key: Uint8Array): Db {
   // Sanity: this throws if key is wrong (SQLCipher will fail to read header).
   try {
     db.prepare('SELECT count(*) FROM sqlite_master').get();
-  } catch (err) {
+  } catch {
     db.close();
     throw new Error('Failed to open encrypted database (wrong key?)');
   }

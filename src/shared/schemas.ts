@@ -162,7 +162,7 @@ export type Profile = z.infer<typeof Profile>;
 // peers — they only affect how this user sees their own windows.
 export const ChatTheme = z.enum(['classic', 'balloons', 'compact']);
 export type ChatTheme = z.infer<typeof ChatTheme>;
-export const WindowTheme = z.enum(['classic', 'aqua', 'graphite', 'aero', 'metal']);
+export const WindowTheme = z.enum(['classic', 'aqua', 'graphite', 'aero', 'metal', 'aluminum']);
 export type WindowTheme = z.infer<typeof WindowTheme>;
 
 export const Theme = z.object({
@@ -231,13 +231,6 @@ export type SetPrefsReq = z.infer<typeof SetPrefsReq>;
 //   /dns4/relay.example.com/tcp/4001/p2p/12D3KooW...
 // or
 //   /ip4/198.51.100.7/tcp/4001/p2p/12D3KooW...
-
-// Loose multiaddr shape check; libp2p does the real validation.
-const Multiaddr = z
-  .string()
-  .min(8)
-  .max(512)
-  .regex(/^\/[A-Za-z0-9._\-/]+\/p2p\/[A-Za-z0-9]+$/, 'Must be a multiaddr ending in /p2p/<peerid>');
 
 // WSS URL for Hive server mode, e.g. wss://hive.example.com:7700
 const WssUrl = z

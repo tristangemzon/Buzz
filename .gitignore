@@ -7,6 +7,9 @@ dist
 .env.local
 release
 
+# Local SQLCipher artefacts (WAL/SHM from dev runs)
+*.sqlite-*
+
 # buzz-mesh sidecar — compiled binaries (run `make all` to regenerate)
 buzz-mesh/dist/
 

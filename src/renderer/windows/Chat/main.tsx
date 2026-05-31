@@ -1076,7 +1076,7 @@ createRoot(document.getElementById('root')!).render(<App />);
 
 const ROOM_EMOJI_LIST = ['👍','👎','❤️','😂','😮','😢','🔥','🎉','👀','💯','✅','❌','🤔','💀','🙏','🫡','💪','🤝','😎','🚀'];
 
-function RoomEmojiPickerPopover({ x, y, onPick, onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
+function RoomEmojiPickerPopover({ x, y, onPick, onClose: _onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
   return (
     <div
       style={{

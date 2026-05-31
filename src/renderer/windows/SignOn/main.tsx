@@ -10,7 +10,7 @@ type Mode = 'signin' | 'create' | 'migrate';
 
 function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
-  const [isMesh, setIsMesh] = useState(false);
+  const [, setIsMesh] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [mode, setMode] = useState<Mode>('signin');
   const [selectedId, setSelectedId] = useState<string>('');

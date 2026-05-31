@@ -84,7 +84,6 @@ function spadesReducer(s: SpadesState, a: SpadesAction): SpadesState {
     case 'myBid': {
       if (s.oppBid !== null) {
         // Both bid; non-dealer leads first trick (non-dealer = opponent of dealer)
-        const nonDealerLeads = true; // opp of dealer leads
         const iAmNonDealer = !s.amDealer;
         return { ...s, myBid: a.amount, phase: 'playing',
           isMyTurn: iAmNonDealer,
@@ -112,11 +111,7 @@ function spadesReducer(s: SpadesState, a: SpadesAction): SpadesState {
       const trick = [...s.trick, a.card];
       const trickLed = s.trick.length === 0 ? cardSuit(a.card) : s.trickLed;
       if (trick.length === 2) {
-        // Evaluate trick
-        const [first, second] = trick as [number, number];
-        const firstIsMine = a.isMine ? false : true; // first card played
-        const firstWins = compareTrick(trickLed!, first, second);
-        const iMineWon = firstIsMine ? firstWins : !firstWins;
+        // Evaluate trick (winner resolved by parent reducer step).
         return { ...s, myHand, oppHandSize: oppSize, trick, trickLed,
           spadesBroken: spades, isMyTurn: false, statusMsg: 'Resolving trick…' };
       }

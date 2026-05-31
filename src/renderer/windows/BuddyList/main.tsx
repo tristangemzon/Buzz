@@ -40,7 +40,7 @@ function App(): JSX.Element {
   const [group, setGroup] = useState('Buddies');
   const [err, setErr] = useState('');
   const [soundsOn, setSoundsOn] = useState(true);
-  const [soundScheme, setSoundSchemeState] = useState<SoundScheme>(getSoundScheme());
+  const [, setSoundSchemeState] = useState<SoundScheme>(getSoundScheme());
   const logoutSoundPlayedRef = useRef(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showRoom, setShowRoom] = useState(false);

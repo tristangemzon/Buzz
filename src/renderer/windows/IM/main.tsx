@@ -369,7 +369,7 @@ function App(): JSX.Element {
     setWarnLevel(lvl);
   }
 
-  async function sendFile(): Promise<void> {
+  async function _sendFile(): Promise<void> {
     if (blocked) {
       setErr('You have blocked this user. Unblock to send files.');
       return;
@@ -818,7 +818,7 @@ function App(): JSX.Element {
 
 const EMOJI_LIST = ['👍','👎','❤️','😂','😮','😢','🔥','🎉','👀','💯','✅','❌','🤔','💀','🙏','🫡','💪','🤝','😎','🚀'];
 
-function EmojiPickerPopover({ x, y, onPick, onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
+function EmojiPickerPopover({ x, y, onPick, onClose: _onClose }: { x: number; y: number; onPick: (e: string) => void; onClose: () => void }) {
   return (
     <div
       style={{
@@ -866,7 +866,7 @@ function ReactionPills({
   );
 }
 
-function MessageContextMenu({ x, y, canEdit, onEdit, onDelete, onReact, onClose }: {
+function MessageContextMenu({ x, y, canEdit, onEdit, onDelete, onReact, onClose: _onClose }: {
   x: number; y: number; canEdit: boolean;
   onEdit: () => void; onDelete: () => void; onReact: () => void; onClose: () => void;
 }) {
