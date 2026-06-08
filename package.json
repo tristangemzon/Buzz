@@ -39,7 +39,7 @@
     "@libp2p/tcp": "^9.1.0",
     "@libp2p/websockets": "^8.1.0",
     "@noble/hashes": "^1.4.0",
-    "@types/libsodium-wrappers-sumo": "^0.7.8",
+    "@types/libsodium-wrappers-sumo": "^0.8.2",
     "@types/ws": "^8.18.1",
     "argon2": "^0.44.0",
     "better-sqlite3-multiple-ciphers": "^12.10.0",
@@ -63,7 +63,7 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^20.12.0",
+    "@types/node": "^25.9.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
