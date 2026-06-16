@@ -57,7 +57,7 @@
     "react-dom": "^18.3.1",
     "uint8arrays": "^5.1.0",
     "ws": "^8.20.0",
-    "zod": "^3.23.8",
+    "zod": "^4.4.3",
     "zxcvbn-ts": "^2.2.0"
   },
   "devDependencies": {
