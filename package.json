@@ -61,7 +61,7 @@
     "zxcvbn-ts": "^2.2.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
+    "@electron/rebuild": "^4.0.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.12.0",
     "@types/qrcode": "^1.5.6",
@@ -69,14 +69,14 @@
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^41.7.1",
-    "electron-builder": "^26.8.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "^5.4.5",
-    "vite": "^7.3.2",
+    "vite": "^8.1.0",
     "vitest": "^4.1.5"
   },
   "build": {
